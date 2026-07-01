@@ -28,17 +28,24 @@ async function evaluateToolPolicy(
     return { policy: "allowedWithoutPermission", toolCallState };
   }
 
-  // YOLO Mode: If autoApproveAllTools is enabled, use "allowedWithoutPermission" as base policy
-  // This still goes through dynamic evaluation (terminal-security) to block dangerous commands
-  const basePolicy = autoApproveAllTools
-    ? "allowedWithoutPermission"
-    : (toolPolicies[toolCallState.toolCall.function.name] ??
-      activeTools.find(
-        (tool) => tool.function.name === toolCallState.toolCall.function.name,
-      )?.defaultToolPolicy ??
-      DEFAULT_TOOL_SETTING);
-
+  // First, determine the explicit policy for this tool (user config or tool default)
   const toolName = toolCallState.toolCall.function.name;
+  const explicitPolicy =
+    toolPolicies[toolName] ??
+    activeTools.find((tool) => tool.function.name === toolName)
+      ?.defaultToolPolicy ??
+    DEFAULT_TOOL_SETTING;
+
+  // YOLO Mode: If autoApproveAllTools is enabled, use "allowedWithoutPermission" as base policy
+  // BUT respect explicitly disabled tools - they remain disabled even in YOLO mode
+  // This still goes through dynamic evaluation (terminal-security) to block dangerous commands
+  const basePolicy =
+    explicitPolicy === "disabled"
+      ? "disabled"
+      : autoApproveAllTools
+        ? "allowedWithoutPermission"
+        : explicitPolicy;
+
   const result = await ideMessenger.request("tools/evaluatePolicy", {
     toolName,
     basePolicy,
@@ -65,6 +72,12 @@ async function evaluateToolPolicy(
     dynamicPolicy === "allowedWithoutPermission"
   ) {
     return { policy: "allowedWithPermission", displayValue, toolCallState }; // Cannot make more lenient
+  }
+
+  // YOLO Mode: If enabled and the command is not disabled (critical),
+  // auto-approve it regardless of the dynamic policy result
+  if (autoApproveAllTools && dynamicPolicy !== "disabled") {
+    return { policy: "allowedWithoutPermission", displayValue, toolCallState };
   }
 
   return { policy: dynamicPolicy, displayValue, toolCallState };
