@@ -15,6 +15,7 @@ import { lsToolImpl } from "./implementations/lsTool";
 import { readCurrentlyOpenFileImpl } from "./implementations/readCurrentlyOpenFile";
 import { readFileImpl } from "./implementations/readFile";
 
+import { getWorkspaceRootImpl } from "./implementations/getWorkspaceRoot";
 import { readFileRangeImpl } from "./implementations/readFileRange";
 import { readSkillImpl } from "./implementations/readSkill";
 import { requestRuleImpl } from "./implementations/requestRule";
@@ -224,6 +225,8 @@ export async function callBuiltInTool(
       return await viewRepoMapImpl(args, extras);
     case BuiltInToolNames.ViewSubdirectory:
       return await viewSubdirectoryImpl(args, extras);
+    case BuiltInToolNames.GetWorkspaceRoot:
+      return await getWorkspaceRootImpl(args, extras);
     default:
       throw new Error(`Tool "${functionName}" not found`);
   }

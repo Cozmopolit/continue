@@ -1,0 +1,12 @@
+name: CITT MCP Server
+version: 0.0.1
+schema: v1
+mcpServers:
+  - name: CITT
+    command: C:\Users\Zuser\Documents\Rolf\VSC_Projekte\CITT-Solution\CITT\CITT.MCP\dist\CITT.MCP.exe
+    args:
+      - --server
+      - COZMODROM
+      - --database
+      - CITT
+    env: {}

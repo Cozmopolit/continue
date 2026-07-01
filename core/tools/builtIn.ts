@@ -21,6 +21,7 @@ export enum BuiltInToolNames {
   // excluded from allTools for now
   ViewRepoMap = "view_repo_map",
   ViewSubdirectory = "view_subdirectory",
+  GetWorkspaceRoot = "get_workspace_root",
 }
 
 export const BUILT_IN_GROUP_NAME = "Built-In";

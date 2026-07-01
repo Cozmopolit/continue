@@ -139,13 +139,25 @@ export const streamNormalInput = createAsyncThunk<
       activeTools,
     );
 
+    // Inject workspace environment info into system message
+    // This provides the LLM with workspace context for tools requiring absolute paths
+    const workspaceDirs = await extra.ideMessenger.ide.getWorkspaceDirs();
+    const primaryWorkspace = workspaceDirs[0] ?? "unknown";
+    const envBlock = `
+<env>
+  workspace_root: ${primaryWorkspace}
+  platform: ${process.platform}
+</env>
+`;
+    const baseSystemMessageWithEnv = baseSystemMessage + envBlock;
+
     const systemMessage = systemToolsFramework
       ? addSystemMessageToolsToSystemMessage(
           systemToolsFramework,
-          baseSystemMessage,
+          baseSystemMessageWithEnv,
           activeTools,
         )
-      : baseSystemMessage;
+      : baseSystemMessageWithEnv;
 
     const withoutMessageIds = state.session.history.map((item) => {
       const { id, ...messageWithoutId } = item.message;

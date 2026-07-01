@@ -32,6 +32,7 @@ export const getConfigDependentToolDefinitions = async (
       toolDefinitions.viewSubdirectoryTool,
       toolDefinitions.codebaseTool,
       toolDefinitions.readFileRangeTool,
+      toolDefinitions.getWorkspaceRootTool,
     );
   }
 
