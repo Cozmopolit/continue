@@ -17,11 +17,7 @@ import { ROUTES } from "../util/navigation";
 import { FatalErrorIndicator } from "./config/FatalErrorNotice";
 import TextDialog from "./dialogs";
 import { useMainEditor } from "./mainInput/TipTapEditor";
-import {
-  isNewUserOnboarding,
-  OnboardingCard,
-  useOnboardingCard,
-} from "./OnboardingCard";
+import { isNewUserOnboarding, useOnboardingCard } from "./OnboardingCard";
 import OSRContextMenu from "./OSRContextMenu";
 
 const LayoutTopDiv = styled(CustomScrollbarDiv)`
@@ -33,8 +29,9 @@ const LayoutTopDiv = styled(CustomScrollbarDiv)`
 const GridDiv = styled.div`
   display: grid;
   grid-template-rows: 1fr auto;
-  height: 100vh;
-  overflow-x: visible;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
 `;
 
 const Layout = () => {
