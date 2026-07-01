@@ -93,9 +93,23 @@ class IdeProtocolClient(
                         respond(null)
                     }
 
-                    "getIdeSettings" -> {
+                                        "getIdeSettings" -> {
                         val settings = ide.getIdeSettings()
                         respond(settings)
+                    }
+
+                    "setIdeSettings" -> {
+                        val params = gsonService.gson.fromJson(
+                            dataElement.toString(),
+                            SetIdeSettingsParams::class.java
+                        )
+                        val settings = service<ContinueExtensionSettings>()
+                        when (params.key) {
+                            "autoApproveAllTools" -> {
+                                settings.continueState.autoApproveAllTools = params.value as? Boolean ?: false
+                            }
+                        }
+                        respond(null)
                     }
 
                     "getControlPlaneSessionInfo" -> {

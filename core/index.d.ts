@@ -816,6 +816,8 @@ export interface IdeSettings {
   userToken: string;
   continueTestEnvironment: "none" | "production" | "staging" | "local";
   pauseCodebaseIndexOnStart: boolean;
+  /** YOLO Mode: Automatically approve all tool calls without user confirmation */
+  autoApproveAllTools?: boolean;
 }
 
 export interface FileStats {

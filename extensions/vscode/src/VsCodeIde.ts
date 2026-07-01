@@ -2,8 +2,8 @@ import * as child_process from "node:child_process";
 import { exec } from "node:child_process";
 
 import { Range } from "core";
-import { EXTENSION_NAME } from "core/util/constants";
 import { DEFAULT_IGNORES, defaultIgnoresGlob } from "core/indexing/ignore";
+import { EXTENSION_NAME } from "core/util/constants";
 import * as URI from "uri-js";
 import * as vscode from "vscode";
 
@@ -694,6 +694,7 @@ class VsCodeIde implements IDE {
         "pauseCodebaseIndexOnStart",
         false,
       ),
+      autoApproveAllTools: settings.get<boolean>("autoApproveAllTools", false),
     };
     return ideSettings;
   }

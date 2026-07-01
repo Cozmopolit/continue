@@ -157,7 +157,7 @@ class IntelliJIDE(
             remoteName = remoteName,
             extensionVersion = extensionVersion,
             isPrerelease = false // TODO: Implement prerelease detection for JetBrains
-        )
+                )
     }
 
     suspend fun enableHubContinueDev(): Boolean {
@@ -174,6 +174,7 @@ class IntelliJIDE(
             userToken = settings.continueState.userToken ?: "",
             continueTestEnvironment = "production",
             pauseCodebaseIndexOnStart = false, // TODO: Needs to be implemented
+            autoApproveAllTools = settings.continueState.autoApproveAllTools ?: false,
         )
     }
 

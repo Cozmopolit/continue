@@ -13,12 +13,10 @@ import {
 } from "../redux/slices/profilesSlice";
 import {
   addContextItemsAtIndex,
-  newSession,
   setHasReasoningEnabled,
   setIsSessionMetadataLoading,
-  setMode,
 } from "../redux/slices/sessionSlice";
-import { setTTSActive } from "../redux/slices/uiSlice";
+import { setAutoApproveAllTools, setTTSActive } from "../redux/slices/uiSlice";
 
 import { modelSupportsReasoning } from "core/llm/autodetect";
 import { cancelStream } from "../redux/thunks/cancelStream";
@@ -106,6 +104,20 @@ function ParallelListeners() {
     async function initialLoadConfig() {
       dispatch(setIsSessionMetadataLoading(true));
       dispatch(setConfigLoading(true));
+
+      // Load IDE settings (including YOLO mode)
+      const ideSettingsResult = await ideMessenger.request(
+        "getIdeSettings",
+        undefined,
+      );
+      if (ideSettingsResult.status === "success") {
+        dispatch(
+          setAutoApproveAllTools(
+            ideSettingsResult.content.autoApproveAllTools ?? false,
+          ),
+        );
+      }
+
       const result = await ideMessenger.request(
         "config/getSerializedProfileInfo",
         undefined,

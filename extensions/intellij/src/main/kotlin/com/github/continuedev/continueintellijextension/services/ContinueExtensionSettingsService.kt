@@ -30,6 +30,7 @@ class ContinueSettingsComponent : DumbAware {
     val enableTabAutocomplete: JCheckBox = JCheckBox("Enable Tab Autocomplete")
     val displayEditorTooltip: JCheckBox = JCheckBox("Display Editor Tooltip")
     val showIDECompletionSideBySide: JCheckBox = JCheckBox("Show IDE completions side-by-side")
+    val autoApproveAllTools: JCheckBox = JCheckBox("YOLO Mode: Auto-approve all tool calls (use with caution!)")
 
     init {
         val constraints = GridBagConstraints()
@@ -58,6 +59,8 @@ class ContinueSettingsComponent : DumbAware {
         panel.add(displayEditorTooltip, constraints)
         constraints.gridy++
         panel.add(showIDECompletionSideBySide, constraints)
+        constraints.gridy++
+        panel.add(autoApproveAllTools, constraints)
         constraints.gridy++
 
         // Add a "filler" component that takes up all remaining vertical space
@@ -88,6 +91,8 @@ open class ContinueExtensionSettings : PersistentStateComponent<ContinueExtensio
         var displayEditorTooltip: Boolean = true
         var showIDECompletionSideBySide: Boolean = false
         var continueTestEnvironment: String = "production"
+        /** YOLO Mode: Automatically approve all tool calls without user confirmation */
+        var autoApproveAllTools: Boolean? = false
     }
 
     var continueState: ContinueState = ContinueState()
@@ -167,7 +172,7 @@ interface SettingsListener {
 class ContinueExtensionConfigurable : Configurable {
     private var mySettingsComponent: ContinueSettingsComponent? = null
 
-    override fun createComponent(): JComponent {
+        override fun createComponent(): JComponent {
         mySettingsComponent = ContinueSettingsComponent()
         return mySettingsComponent!!.panel
     }
@@ -180,7 +185,8 @@ class ContinueExtensionConfigurable : Configurable {
                     mySettingsComponent?.userToken?.text != settings.continueState.userToken ||
                     mySettingsComponent?.enableTabAutocomplete?.isSelected != settings.continueState.enableTabAutocomplete ||
                     mySettingsComponent?.displayEditorTooltip?.isSelected != settings.continueState.displayEditorTooltip ||
-                    mySettingsComponent?.showIDECompletionSideBySide?.isSelected != settings.continueState.showIDECompletionSideBySide
+                    mySettingsComponent?.showIDECompletionSideBySide?.isSelected != settings.continueState.showIDECompletionSideBySide ||
+                    mySettingsComponent?.autoApproveAllTools?.isSelected != (settings.continueState.autoApproveAllTools ?: false)
         return modified
     }
 
@@ -193,6 +199,7 @@ class ContinueExtensionConfigurable : Configurable {
         settings.continueState.displayEditorTooltip = mySettingsComponent?.displayEditorTooltip?.isSelected ?: true
         settings.continueState.showIDECompletionSideBySide =
             mySettingsComponent?.showIDECompletionSideBySide?.isSelected ?: false
+        settings.continueState.autoApproveAllTools = mySettingsComponent?.autoApproveAllTools?.isSelected ?: false
 
         ApplicationManager.getApplication().messageBus.syncPublisher(SettingsListener.TOPIC)
             .settingsUpdated(settings.continueState)
@@ -208,6 +215,7 @@ class ContinueExtensionConfigurable : Configurable {
         mySettingsComponent?.displayEditorTooltip?.isSelected = settings.continueState.displayEditorTooltip
         mySettingsComponent?.showIDECompletionSideBySide?.isSelected =
             settings.continueState.showIDECompletionSideBySide
+        mySettingsComponent?.autoApproveAllTools?.isSelected = settings.continueState.autoApproveAllTools ?: false
     }
 
     override fun disposeUIResources() {

@@ -67,6 +67,7 @@ export type ToIdeFromWebviewOrCoreProtocol = {
   // end methods from IDE type
 
   getIdeSettings: [undefined, IdeSettings];
+  setIdeSettings: [{ key: keyof IdeSettings; value: any }, void];
 
   // Git
   getBranch: [{ dir: string }, string];

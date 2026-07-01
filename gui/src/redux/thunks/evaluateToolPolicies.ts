@@ -21,18 +21,22 @@ async function evaluateToolPolicy(
   activeTools: Tool[],
   toolCallState: ToolCallState,
   toolPolicies: ToolPolicies,
+  autoApproveAllTools: boolean,
 ): Promise<EvaluatedPolicy> {
   // allow edit tool calls without permission
   if (isEditTool(toolCallState.toolCall.function.name)) {
     return { policy: "allowedWithoutPermission", toolCallState };
   }
 
-  const basePolicy =
-    toolPolicies[toolCallState.toolCall.function.name] ??
-    activeTools.find(
-      (tool) => tool.function.name === toolCallState.toolCall.function.name,
-    )?.defaultToolPolicy ??
-    DEFAULT_TOOL_SETTING;
+  // YOLO Mode: If autoApproveAllTools is enabled, use "allowedWithoutPermission" as base policy
+  // This still goes through dynamic evaluation (terminal-security) to block dangerous commands
+  const basePolicy = autoApproveAllTools
+    ? "allowedWithoutPermission"
+    : (toolPolicies[toolCallState.toolCall.function.name] ??
+      activeTools.find(
+        (tool) => tool.function.name === toolCallState.toolCall.function.name,
+      )?.defaultToolPolicy ??
+      DEFAULT_TOOL_SETTING);
 
   const toolName = toolCallState.toolCall.function.name;
   const result = await ideMessenger.request("tools/evaluatePolicy", {
@@ -77,6 +81,7 @@ export async function evaluateToolPolicies(
   activeTools: Tool[],
   generatedToolCalls: ToolCallState[],
   toolPolicies: ToolPolicies,
+  autoApproveAllTools: boolean,
 ): Promise<EvaluatedPolicy[]> {
   // Check if ALL tool calls are auto-approved using dynamic evaluation
   const policyResults = await Promise.all(
@@ -86,6 +91,7 @@ export async function evaluateToolPolicies(
         activeTools,
         toolCallState,
         toolPolicies,
+        autoApproveAllTools,
       ),
     ),
   );

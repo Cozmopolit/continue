@@ -1,9 +1,13 @@
 import {
   AtSymbolIcon,
+  BoltIcon as BoltIconOutline,
   LightBulbIcon as LightBulbIconOutline,
   PhotoIcon,
 } from "@heroicons/react/24/outline";
-import { LightBulbIcon as LightBulbIconSolid } from "@heroicons/react/24/solid";
+import {
+  BoltIcon as BoltIconSolid,
+  LightBulbIcon as LightBulbIconSolid,
+} from "@heroicons/react/24/solid";
 import { InputModifiers } from "core";
 import {
   modelSupportsImages,
@@ -15,7 +19,10 @@ import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { selectUseActiveFile } from "../../redux/selectors";
 import { selectSelectedChatModel } from "../../redux/slices/configSlice";
 import { setHasReasoningEnabled } from "../../redux/slices/sessionSlice";
-import { setReasoningSetting } from "../../redux/slices/uiSlice";
+import {
+  setAutoApproveAllTools,
+  setReasoningSetting,
+} from "../../redux/slices/uiSlice";
 import { exitEdit } from "../../redux/thunks/edit";
 import { getMetaKeyLabel, isMetaEquivalentKeyPressed } from "../../util";
 import { ToolTip } from "../gui/Tooltip";
@@ -56,6 +63,9 @@ function InputToolbar(props: InputToolbarProps) {
   const codeToEdit = useAppSelector((store) => store.editModeState.codeToEdit);
   const hasReasoningEnabled = useAppSelector(
     (store) => store.session.hasReasoningEnabled,
+  );
+  const autoApproveAllTools = useAppSelector(
+    (store) => store.ui.autoApproveAllTools,
   );
   const isEnterDisabled =
     props.disabled || (isInEdit && codeToEdit.length === 0);
@@ -165,6 +175,31 @@ function InputToolbar(props: InputToolbarProps) {
                 </ToolTip>
               </HoverItem>
             )}
+            <HoverItem
+              onClick={() => {
+                const newValue = !autoApproveAllTools;
+                dispatch(setAutoApproveAllTools(newValue));
+                ideMessenger.post("setIdeSettings", {
+                  key: "autoApproveAllTools",
+                  value: newValue,
+                });
+              }}
+            >
+              <ToolTip
+                place="top"
+                content={
+                  autoApproveAllTools
+                    ? "Disable YOLO Mode (require tool approval)"
+                    : "Enable YOLO Mode (auto-approve tool calls)"
+                }
+              >
+                {autoApproveAllTools ? (
+                  <BoltIconSolid className="h-3 w-3 text-amber-400 hover:brightness-150" />
+                ) : (
+                  <BoltIconOutline className="h-3 w-3 hover:brightness-150" />
+                )}
+              </ToolTip>
+            </HoverItem>
           </div>
         </div>
 

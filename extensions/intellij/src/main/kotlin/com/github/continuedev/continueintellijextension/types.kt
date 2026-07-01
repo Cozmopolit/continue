@@ -138,7 +138,9 @@ data class IdeSettings(
     val remoteConfigSyncPeriod: Int,
     val userToken: String,
     val pauseCodebaseIndexOnStart: Boolean,
-    val continueTestEnvironment: String
+    val continueTestEnvironment: String,
+    /** YOLO Mode: Automatically approve all tool calls without user confirmation */
+    val autoApproveAllTools: Boolean = false
 )
 
 data class TerminalOptions(

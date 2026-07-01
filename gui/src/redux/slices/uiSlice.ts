@@ -29,6 +29,8 @@ type UIState = {
   ruleSettings: RulePolicies;
   reasoningSettings: ReasoningSettings;
   ttsActive: boolean;
+  /** YOLO Mode: Auto-approve all tool calls without user confirmation */
+  autoApproveAllTools: boolean;
 };
 
 export const DEFAULT_TOOL_SETTING: ToolPolicy = "allowedWithPermission";
@@ -49,6 +51,7 @@ export const DEFAULT_UI_SLICE: UIState = {
   },
   ruleSettings: {},
   reasoningSettings: {},
+  autoApproveAllTools: false,
 };
 
 export const uiSlice = createSlice({
@@ -149,6 +152,9 @@ export const uiSlice = createSlice({
       state.reasoningSettings[action.payload.modelTitle] =
         action.payload.enabled;
     },
+    setAutoApproveAllTools: (state, action: PayloadAction<boolean>) => {
+      state.autoApproveAllTools = action.payload;
+    },
   },
 });
 
@@ -166,6 +172,7 @@ export const {
   toggleRuleSetting,
   setTTSActive,
   setReasoningSetting,
+  setAutoApproveAllTools,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;

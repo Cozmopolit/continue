@@ -296,6 +296,12 @@ export class VsCodeMessenger {
     this.onWebviewOrCore("getIdeSettings", async (msg) => {
       return ide.getIdeSettings();
     });
+
+    this.onWebviewOrCore("setIdeSettings", async (msg) => {
+      const { key, value } = msg.data;
+      const settings = vscode.workspace.getConfiguration("continue");
+      await settings.update(key, value, vscode.ConfigurationTarget.Global);
+    });
     this.onWebviewOrCore("getDiff", async (msg) => {
       return ide.getDiff(msg.data.includeUnstaged);
     });
