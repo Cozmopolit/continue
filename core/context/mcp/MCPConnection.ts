@@ -33,7 +33,12 @@ import { resolveRelativePathInDir } from "../../util/ideUtils";
 import { getEnvPathFromUserShell } from "../../util/shellPath";
 import { getOauthToken } from "./MCPOauth";
 
-const DEFAULT_MCP_TIMEOUT = 20_000; // 20 seconds
+// Timeout for initial connection to MCP server (connectivity check)
+const DEFAULT_MCP_CONNECTION_TIMEOUT = 20_000; // 20 seconds
+
+// Timeout for MCP tool execution - much higher as tools can run complex workflows
+// This is exported for use in callTool.ts
+export const DEFAULT_MCP_TOOL_CALL_TIMEOUT = 900_000; // 15 minutes
 
 // Commands that are batch scripts on Windows and need cmd.exe to execute
 const WINDOWS_BATCH_COMMANDS = [
@@ -202,7 +207,7 @@ Org-level secrets can only be used for MCP by Background Agents (https://docs.co
         const timeoutController = new AbortController();
         const connectionTimeout = setTimeout(
           () => timeoutController.abort(),
-          this.options.timeout ?? DEFAULT_MCP_TIMEOUT,
+          this.options.timeout ?? DEFAULT_MCP_CONNECTION_TIMEOUT,
         );
 
         try {

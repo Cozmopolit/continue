@@ -1,5 +1,6 @@
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ContextItem, McpUiState, Tool, ToolCall, ToolExtras } from "..";
+import { DEFAULT_MCP_TOOL_CALL_TIMEOUT } from "../context/mcp/MCPConnection";
 import { MCPManagerSingleton } from "../context/mcp/MCPManagerSingleton";
 import { ContinueError, ContinueErrorReason } from "../util/errors";
 import { canParseUrl } from "../util/url";
@@ -106,7 +107,7 @@ async function callToolFromUri(
           arguments: coercedArgs,
         },
         CallToolResultSchema,
-        { timeout: client.options.timeout },
+        { timeout: client.options.timeout ?? DEFAULT_MCP_TOOL_CALL_TIMEOUT },
       );
 
       if (response.isError === true) {

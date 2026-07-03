@@ -32,6 +32,7 @@ import {
   selectPendingToolCalls,
 } from "../selectors/selectToolCalls";
 import { getBaseSystemMessage } from "../util/getBaseSystemMessage";
+import { getPlatform } from "../../util";
 import { callToolById } from "./callToolById";
 import { evaluateToolPolicies } from "./evaluateToolPolicies";
 import { preprocessToolCalls } from "./preprocessToolCallArgs";
@@ -146,7 +147,7 @@ export const streamNormalInput = createAsyncThunk<
     const envBlock = `
 <env>
   workspace_root: ${primaryWorkspace}
-  platform: ${process.platform}
+  platform: ${getPlatform()}
 </env>
 `;
     const baseSystemMessageWithEnv = baseSystemMessage + envBlock;

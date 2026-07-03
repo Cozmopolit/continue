@@ -116,7 +116,7 @@ describe("runTerminalCommand timeout functionality", () => {
     const args = { command: "echo test", waitForCompletion: true };
     const resultPromise = runTerminalCommandImpl(args, extras);
     await vi.runOnlyPendingTimersAsync();
-    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 120_000);
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 300_000);
     mockChildProc.exitCode = 0;
     mockChildProc.emit("close", 0);
     await resultPromise;
@@ -128,7 +128,7 @@ describe("runTerminalCommand timeout functionality", () => {
     const args = { command: "sleep 10", waitForCompletion: false };
     const result = await runTerminalCommandImpl(args, extras);
     const timeoutCalls = setTimeoutSpy.mock.calls.filter(
-      (call: any[]) => call[1] === 120_000,
+      (call: any[]) => call[1] === 300_000,
     );
     expect(timeoutCalls.length).toBe(0);
     expect(result[0].status).toContain("background");
@@ -139,13 +139,13 @@ describe("runTerminalCommand timeout functionality", () => {
     const args = { command: "sleep 300", waitForCompletion: true };
     const resultPromise = runTerminalCommandImpl(args, extras);
     await vi.runOnlyPendingTimersAsync();
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(300_000);
     expect(mockChildProc.kill).toHaveBeenCalledWith("SIGTERM");
     await vi.advanceTimersByTimeAsync(5_000);
     await vi.runAllTimersAsync();
     const result = await resultPromise;
     expect(result[0].content).toContain(
-      "[Timeout: process killed after 2 minutes]",
+      "[Timeout: process killed after 5 minutes]",
     );
   });
 
@@ -171,8 +171,8 @@ describe("runTerminalCommand timeout functionality", () => {
     // Let initial setup complete
     await vi.runOnlyPendingTimersAsync();
 
-    // Advance to trigger main timeout (120s) — SIGTERM sent, SIGKILL timer started
-    await vi.advanceTimersByTimeAsync(120_000);
+    // Advance to trigger main timeout (300s) — SIGTERM sent, SIGKILL timer started
+    await vi.advanceTimersByTimeAsync(300_000);
     expect(mockChildProc.kill).toHaveBeenCalledWith("SIGTERM");
     expect(mockChildProc.kill).toHaveBeenCalledTimes(1);
 

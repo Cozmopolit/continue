@@ -165,14 +165,19 @@ describe("MCPConnection", () => {
 
     it("should resolve relative cwd using IDE workspace", async () => {
       const ide = {} as any;
+      // Use platform-appropriate file URL (Windows requires drive letter)
+      const isWindows = process.platform === "win32";
+      const mockFileUrl = isWindows
+        ? "file:///C:/workspace/src"
+        : "file:///workspace/src";
+      const expectedPath = isWindows ? "C:\\workspace\\src" : "/workspace/src";
+
       const mockResolve = vi
         .spyOn(ideUtils, "resolveRelativePathInDir")
-        .mockResolvedValue("file:///workspace/src");
+        .mockResolvedValue(mockFileUrl);
       const conn = new MCPConnection(baseOptions, { ide });
 
-      await expect((conn as any).resolveCwd("src")).resolves.toBe(
-        "/workspace/src",
-      );
+      await expect((conn as any).resolveCwd("src")).resolves.toBe(expectedPath);
       expect(mockResolve).toHaveBeenCalledWith("src", ide);
     });
 

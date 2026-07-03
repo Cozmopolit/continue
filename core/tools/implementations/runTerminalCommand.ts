@@ -3,8 +3,8 @@ import childProcess from "node:child_process";
 import os from "node:os";
 import { ContinueError, ContinueErrorReason } from "../../util/errors";
 
-// Default timeout for terminal commands (2 minutes)
-const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
+// Default timeout for terminal commands (5 minutes)
+const DEFAULT_TOOL_TIMEOUT_MS = 300_000;
 
 // Automatically decode the buffer according to the platform to avoid garbled Chinese
 function getDecodedOutput(data: Buffer): string {
@@ -172,7 +172,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
             timeoutId = setTimeout(() => {
               if (isRunning()) {
                 terminalOutput +=
-                  "\n[Timeout: process killed after 2 minutes]\n";
+                  "\n[Timeout: process killed after 5 minutes]\n";
 
                 // Update UI with timeout message
                 if (extras.onPartialOutput) {
@@ -408,7 +408,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
               // Set up timeout
               timeoutId = setTimeout(() => {
                 if (isRunning()) {
-                  stderr += "\n[Timeout: process killed after 2 minutes]\n";
+                  stderr += "\n[Timeout: process killed after 5 minutes]\n";
 
                   // Try graceful termination first
                   childProc.kill("SIGTERM");
