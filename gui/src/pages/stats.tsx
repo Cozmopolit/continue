@@ -61,6 +61,7 @@ function Stats() {
 
   return (
     <div
+      className="h-full overflow-auto"
       style={{
         backgroundColor: vscBackground,
       }}
