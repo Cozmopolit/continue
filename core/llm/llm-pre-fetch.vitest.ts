@@ -90,7 +90,7 @@ describe("LLM Pre-fetch", () => {
       expect.any(URL),
       {
         method: "POST",
-        // headers: expect.any(Object),
+        headers: expect.any(Object),
         signal: expect.any(AbortSignal),
         body: expect.stringContaining('"name":"say_name","args":{}'),
       },

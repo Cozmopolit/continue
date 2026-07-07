@@ -1,7 +1,7 @@
 # Feature B: Chat Completions via MCP HTTP Tunnel
 
-**Status:** Draft
-**Last Updated:** 2026-02-10
+**Status:** Draft (revised: decision #5 replaced by adapter bypass, see §5.4)
+**Last Updated:** 2026-07-07
 
 ## 1. Objective
 
@@ -18,13 +18,13 @@ that appear in the UI but cannot complete a single request.
 
 ## 2. Decisions (agreed upfront)
 
-| #   | Decision                                                                                                                                                                                                                       |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | **Always tunnel.** Discovered CITT endpoints never make direct HTTP calls. No hybrid/fallback mode.                                                                                                                            |
-| 2   | **Lifecycle cleanup.** On MCP reconnect/disconnect, all active tunnel streams are terminated with an error and the stream registry is cleared.                                                                                 |
-| 3   | **Abort semantics.** On `AbortSignal`: terminate the local stream immediately, send `proxy/cancel` fire-and-forget, silently discard late chunks for that `streamId` (spec: best-effort cancellation, late chunks acceptable). |
-| 4   | **Testing.** Automated unit + wire-format tests are the lasting safety net. One-time manual verification against real CITT.MCP is part of the implementation task's definition of done (see §9).                               |
-| 5   | **openai-adapters injection.** Add an optional `fetch` field to the adapter config in `packages/openai-adapters` (in-repo package, consumed via `file:` dependency — no external fork needed).                                 |
+| #   | Decision                                                                                                                                                                                                                                                                                  |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Always tunnel.** Discovered CITT endpoints never make direct HTTP calls. No hybrid/fallback mode.                                                                                                                                                                                       |
+| 2   | **Lifecycle cleanup.** On MCP reconnect/disconnect, all active tunnel streams are terminated with an error and the stream registry is cleared.                                                                                                                                            |
+| 3   | **Abort semantics.** On `AbortSignal`: terminate the local stream immediately, send `proxy/cancel` fire-and-forget, silently discard late chunks for that `streamId` (spec: best-effort cancellation, late chunks acceptable).                                                            |
+| 4   | **Testing.** Automated unit + wire-format tests are the lasting safety net. One-time manual verification against real CITT.MCP is part of the implementation task's definition of done (see §9).                                                                                          |
+| 5   | **Adapter bypass** (revised 2026-07-07, supersedes "openai-adapters injection"). When `customFetch` is set, `BaseLLM` bypasses the openai-adapter entirely; all traffic uses the native Path 1 implementations. `packages/openai-adapters` stays untouched. Rationale and findings: §5.4. |
 
 ## 3. CITT.MCP Wire Protocol (relevant subset)
 
@@ -102,22 +102,28 @@ The OpenAI adapter passes it straight into the OpenAI SDK client:
 new OpenAI({ apiKey, baseURL, fetch: customFetch(config.requestOptions), ... });
 ```
 
-There is currently **no way to inject a custom fetch** into Path 2 — this
-is the reason for decision #5.
+There is no way to inject a custom fetch into Path 2 that covers all
+providers: code verification showed that the Gemini adapter's chat path
+does not go through `customFetch` at all (see findings in §5.4). This is
+why decision #5 was revised to bypass Path 2 for tunneled models.
 
 ### Key insight
 
-Intercepting at fetch level means **zero changes to provider classes**
-and zero new API semantics — the exact principle of the CITT spec
-("clients build standard HTTP requests"). Embeddings and rerank are not
+Intercepting at fetch level means **no code changes to provider request
+logic** (single exception: the Gemini key-header fix, §5.4) and zero new
+API semantics — the exact principle of the CITT spec ("clients build
+standard HTTP requests"). Note that with `customFetch` set, requests are
+built by the native Path 1 implementations, not the openai-adapter
+(§5.4) — for OpenAI models the runtime request path therefore differs
+from the non-tunneled adapter path. Embeddings and rerank are not
 special cases; they are just other paths (`/v1/embeddings`, `/rerank`)
 through the same tunnel, and non-streaming (the simpler code path).
 
 ## 5. Solution Design
 
 ```
-Provider class / openai-adapter          (unchanged, unaware of tunnel)
-        │ fetch(url, init)
+Provider class (native Path 1; adapter bypassed when customFetch is set)
+        │ fetch(url, init) via BaseLLM.fetch()
         ▼
 createMcpProxyFetch(connection, opts)    NEW: fetch semantics ↔ ProxyHttpParams
         │ { method, path, headers, body }
@@ -249,38 +255,55 @@ In `BaseLLM.fetch()`, substitute the inner `fetchwithRequestOptions` call
 with `this.customFetch` when set. Error mapping (`parseError`, status
 checks) and `withExponentialBackoff` remain wrapped around it unchanged.
 
-### 5.4 Injection Path 2: `packages/openai-adapters` (decision #5)
+### 5.4 Adapter bypass (decision #5, revised 2026-07-07)
 
-1. **`src/types.ts`:** add to `BasePlusConfig`:
+The original plan was to inject an optional `fetch` field into the
+adapter configs in `packages/openai-adapters`. Code verification revealed
+three findings that invalidate that approach:
 
-   ```typescript
-   fetch: z.custom<(url: RequestInfo | URL, init?: RequestInit) => Promise<Response>>().optional(),
-   ```
+1. **Gemini chat is not tunnelable via adapter injection.** The Gemini
+   adapter (`packages/openai-adapters/src/apis/Gemini.ts`) uses the
+   `@google/genai` SDK for chat/streaming — deliberately with the _native
+   global fetch_ (`withNativeFetch`, to avoid fetch pollution) and
+   **without `apiBase`**. The SDK accepts no custom fetch; `customFetch`
+   only reaches the adapter's `embed`. Core `Gemini` has
+   `useOpenAIAdapterFor: ["chat", "streamChat", ...]`, so discovered
+   Gemini chat models would run exactly into this non-tunnelable path.
+2. **Anthropic and Cohere never use the adapter.** Their core classes set
+   no `useOpenAIAdapterFor` — chat/embed/rerank run entirely over Path 1
+   (`this.fetch`). Adapter changes for them would be dead code for
+   discovered models. Of the CITT-relevant providers, only OpenAI and
+   Gemini use the adapter at all — and Gemini's adapter chat path is not
+   tunnelable (finding 1) — so adapter injection would only ever have
+   covered the OpenAI class (Azure is unreachable for discovered models).
+3. **Core Gemini sends the API key as a query parameter.** `_streamChat`
+   builds `models/{model}:streamGenerateContent?key={apiKey}`. CITT
+   extracts the proxy key from **headers only** (verified in
+   `ProxyRequest.cs` `ExtractUserProxyKey`: `x-api-key`, `api-key`,
+   `x-goog-api-key`, `Authorization: Bearer`) → 401 `MISSING_API_KEY`.
+   Worse, `ConstructTargetUri` forwards the query string upstream
+   unchanged — the proxy key would leak to Google.
 
-2. **`src/util.ts`:** `customFetch` gets an optional override parameter:
+**Solution (two changes, both in `core`):**
 
-   ```typescript
-   export function customFetch(
-     requestOptions: RequestOptions | undefined,
-     fetchOverride?: typeof patchedFetch,
-   ): typeof patchedFetch {
-     if (fetchOverride) return fetchOverride;
-     // ... existing behavior unchanged
-   }
-   ```
+1. **`customFetch` set ⇒ bypass the openai-adapter.** One condition in
+   `BaseLLM.shouldUseOpenAIAdapter()` (`core/llm/index.ts`): return
+   `false` when `this._llmOptions.customFetch` is set. All four providers
+   then use their complete native Path 1 implementations — a single
+   interception point, uniform behavior. The native OpenAI path is
+   complete (incl. tools) and is exactly the path `OpenAI.vitest.ts`
+   exercises today (adapter explicitly disabled there).
+2. **Gemini key fix (`core/llm/llms/Gemini.ts`):** send `x-goog-api-key`
+   header instead of the `?key=` query param in `streamChatGemini` and
+   `streamChatBison` (`_embed` already does this). Google officially
+   supports the header; the GoogleGenAI SDK and the Gemini adapter use it
+   too — upstream-friendly, and it closes a key-in-URL logging leak. This
+   is the only provider-class change, and it is correct independently of
+   the tunnel.
 
-3. **Adapter call sites:** change `customFetch(this.config.requestOptions)`
-   to `customFetch(this.config.requestOptions, this.config.fetch)`.
-   Required for the adapters behind CITT apiTypes: **OpenAI, Anthropic,
-   Gemini, Cohere, Azure**. Remaining adapters may be updated mechanically
-   in the same pass or left as-is (they are unreachable for discovered
-   models).
-
-4. **`core/llm/index.ts` `createOpenAiAdapter()`:** pass
-   `fetch: this._llmOptions.customFetch` into `constructLlmApi()`.
-
-This is an additive change to an in-repo package (`file:` dependency from
-`core`), built by the existing pipeline. Upstream merge risk: low.
+`packages/openai-adapters` is **not modified**. YAML-configured models
+never set `customFetch`, so the adapter path is completely unchanged for
+them.
 
 ### 5.5 Discovery wiring (`core/config/mcpProxyModelDiscovery.ts`)
 
@@ -339,7 +362,9 @@ headers as usual, and the tunnel forwards headers verbatim.
 
 ## 6. What Does NOT Change
 
-- Provider classes (`core/llm/llms/*.ts`) — zero changes
+- Provider classes (`core/llm/llms/*.ts`) — zero changes except the
+  Gemini key-header fix (§5.4)
+- `packages/openai-adapters` — zero changes (decision #5, revised)
 - SSE parsing (`packages/fetch/src/stream.ts`) — consumes the synthetic
   `Response` as-is
 - CITT.MCP server side — Feature B is a pure client implementation
@@ -348,37 +373,39 @@ headers as usual, and the tunnel forwards headers verbatim.
 
 ## 7. Implementation Plan
 
-### Phase 1: openai-adapters fetch injection
-
-`packages/openai-adapters`: `types.ts` (config field), `util.ts`
-(override param), adapter call sites (OpenAI, Anthropic, Gemini, Cohere,
-Azure). Independently testable, no behavior change when `fetch` unset.
-
-### Phase 2: BaseLLM customFetch
+### Phase 1: BaseLLM customFetch + adapter bypass + Gemini key fix — DONE (2026-07-07)
 
 `core/index.d.ts` (`LLMOptions.customFetch`), `core/llm/index.ts`
-(`fetch()` substitution + `createOpenAiAdapter()` pass-through),
-`core/llm/llms/index.ts` (`llmFromDescription` overrides param).
+(`fetch()` substitution + `shouldUseOpenAIAdapter()` bypass),
+`core/llm/llms/index.ts` (`llmFromDescription` overrides param),
+`core/llm/llms/Gemini.ts` (`x-goog-api-key` header instead of `?key=`).
+No behavior change when `customFetch` unset — except the Gemini header
+change, which is intentional and tunnel-independent (§5.4).
 
-### Phase 3: MCPConnection tunnel transport
+Implementation notes: `customFetch` is read via `this._llmOptions` (no
+class field). New test suite `core/llm/customFetch.vitest.ts` covers
+fetch substitution, adapter bypass (both directions), and the Gemini
+header/query-param assertions. The pre-existing Gemini expectation in
+`core/llm/llm-pre-fetch.vitest.ts` was updated (`headers` is now sent).
+
+### Phase 2: MCPConnection tunnel transport
 
 Notification handlers, stream registry, `proxyHttp()`,
 `cancelProxyStream()`, lifecycle cleanup in reconnect/disconnect.
 
-### Phase 4: Tunnel fetch + discovery wiring
+### Phase 3: Tunnel fetch + discovery wiring
 
 `mcpProxyFetch.ts` (new), `mcpProxyModelDiscovery.ts` (server id,
 `getConnection` dep, tunnel fetch per endpoint), `doLoadConfig.ts`
-(resolver).
+(resolver). Wire-format tests (§9) close out this phase.
 
 ## 8. Files to Modify
 
-- `packages/openai-adapters/src/types.ts` — Optional `fetch` on `BasePlusConfig`
-- `packages/openai-adapters/src/util.ts` — `customFetch` override parameter
-- `packages/openai-adapters/src/apis/{OpenAI,Anthropic,Gemini,Cohere,Azure}.ts` — Pass `config.fetch` to `customFetch`
 - `core/index.d.ts` — `LLMOptions.customFetch`
-- `core/llm/index.ts` — Use `customFetch` in `BaseLLM.fetch()`; forward to `constructLlmApi`
+- `core/llm/index.ts` — Use `customFetch` in `BaseLLM.fetch()`; bypass openai-adapter in `shouldUseOpenAIAdapter()` when `customFetch` is set
+- `core/llm/llms/Gemini.ts` — `x-goog-api-key` header instead of `?key=` query param (chat paths)
 - `core/llm/llms/index.ts` — `llmFromDescription` optional `overrides` param
+- `core/llm/customFetch.vitest.ts` — **NEW** — Phase 1 unit tests (fetch substitution, adapter bypass, Gemini headers)
 - `core/context/mcp/MCPConnection.ts` — Notification handlers, stream registry, `proxyHttp`, `cancelProxyStream`, lifecycle cleanup
 - `core/context/mcp/mcpProxyFetch.ts` — **NEW** — tunnel fetch factory + pure helpers
 - `core/context/mcp/mcpProxyFetch.vitest.ts` — **NEW** — unit tests
@@ -415,8 +442,12 @@ invoke `streamChat`/`embed`/`rerank`, assert the captured
 `ProxyHttpParams`: correct path, endpoint selector via standard routing
 (`model` field in the body for OpenAI/Anthropic/Cohere; model segment in
 the URL path for Gemini), `X-Citt-Endpoint` header **never** set, proxy
-key in auth header, body shape. This covers embeddings/rerank explicitly
-and catches the most realistic failure: wrong apiBase→path decomposition.
+key in an auth **header** (for Gemini: `x-goog-api-key`, and **no**
+`?key=` query param), body shape. Because `customFetch` is set, these
+tests run through the native Path 1 provider classes (adapter bypassed) —
+assert that too (`shouldUseOpenAIAdapter` returns false). This covers
+embeddings/rerank explicitly and catches the most realistic failures:
+wrong apiBase→path decomposition and key placement.
 
 **Discovery tests:** tunnel fetch attached per endpoint; endpoint skipped
 when connection unresolvable.
@@ -453,3 +484,40 @@ automated tests carry the weight.
 - **Feature A (implemented):** [endpoint-discovery.md](./endpoint-discovery.md)
 - **CITT.MCP protocol:** `C:/Users/Zuser/Documents/Rolf/VSC_Projekte/CITT-Solution/CITT/docs/specifications/citt.mcp-proxy-exposure.md`
 - **Client guide:** `C:/Users/Zuser/Documents/Rolf/VSC_Projekte/CITT-Solution/CITT/docs/developer-guides/mcp-llm-proxy-client-guide.md`
+
+---
+
+## Appendix A: Working Practice for Implementation Chats
+
+Context budget is the scarce resource. This spec is the **single source
+of truth** — each phase (§7) is implemented in a **fresh chat** that
+starts from this spec plus targeted file access. Anything that matters
+beyond the current chat belongs in this spec, not in chat history.
+
+Rules for the implementing assistant:
+
+1. **One fresh chat per phase.** Begin by reading this spec. Do not rely
+   on prior chat context; assume it is gone.
+2. **Delegate comprehension questions** ("does X use Y?", "how does this
+   class handle Z?") to `citt_ask_file` / `citt_ask_files` instead of
+   reading whole files inline. A sub-agent reads the file and returns a
+   condensed answer — the file content never enters the main context.
+3. **Read line ranges, not whole files** (`read_file_range`,
+   `citt_file_read` with `firstLine`/`lastLine`) once the location is
+   known. Full-file reads are the single largest context sink (e.g.
+   `MCPConnection.ts` ≈ 700 lines).
+4. **Keep grep patterns narrow.** Broad alternations pull in vendor and
+   build noise (`core/vendor`, `sync/src`) at up to 7.5k characters per
+   call. Prefer one specific pattern over three speculative ones.
+5. **Use `citt_run_file_editor` for well-defined edits** (renames,
+   find-replace, applying a precisely described change). It is a powerful
+   sub-agent (Claude Opus 4.5 based) that reads and edits the file
+   autonomously — the file stays out of the main context. Provide the
+   full file path and an unambiguous description of the change; review
+   via `view_diff` afterwards.
+6. **Update this spec when reality deviates from it** (as happened with
+   the §5.4 revision) — the next chat must be able to trust it blindly.
+
+Definition of done per phase: touched test suites green (`vitest`), spec
+updated if needed, commit with a message referencing this spec. Manual
+verification (§9) happens once, after the final phase.

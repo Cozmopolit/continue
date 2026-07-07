@@ -39,6 +39,7 @@ import { renderChatMessage } from "../util/messageContent.js";
 import { isOllamaInstalled } from "../util/ollamaHelper.js";
 import { withExponentialBackoff } from "../util/withExponentialBackoff.js";
 
+import { applyToolOverrides } from "../tools/applyToolOverrides.js";
 import {
   autodetectPromptTemplates,
   autodetectTemplateFunction,
@@ -66,7 +67,6 @@ import {
   toCompleteBody,
   toFimBody,
 } from "./openaiTypeConverters.js";
-import { applyToolOverrides } from "../tools/applyToolOverrides.js";
 
 export class LLMError extends Error {
   constructor(
@@ -450,11 +450,13 @@ export abstract class BaseLLM implements ILLM {
     // Custom Node.js fetch
     const customFetch = async (input: URL | RequestInfo, init: any) => {
       try {
-        const resp = await fetchwithRequestOptions(
-          new URL(input as any),
-          { ...init },
-          { ...this.requestOptions },
-        );
+        const resp = this._llmOptions.customFetch
+          ? await this._llmOptions.customFetch(new URL(input as any), init)
+          : await fetchwithRequestOptions(
+              new URL(input as any),
+              { ...init },
+              { ...this.requestOptions },
+            );
 
         // Error mapping to be more helpful
         if (!resp.ok) {
@@ -578,6 +580,13 @@ export abstract class BaseLLM implements ILLM {
   protected useOpenAIAdapterFor: (LlmApiRequestType | "*")[] = [];
 
   private shouldUseOpenAIAdapter(requestType: LlmApiRequestType) {
+    // When a custom transport is set (e.g. MCP stdio tunnel), bypass the
+    // openai-adapter entirely so all traffic flows through the native
+    // provider implementations via this.fetch(). See
+    // specifications/proxy-http-tunneling.md §5.4.
+    if (this._llmOptions.customFetch) {
+      return false;
+    }
     return (
       this.useOpenAIAdapterFor.includes(requestType) ||
       this.useOpenAIAdapterFor.includes("*")

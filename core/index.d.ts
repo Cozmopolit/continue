@@ -663,6 +663,12 @@ export interface LLMOptions {
   llmRequestHook?: (model: string, prompt: string) => any;
   apiKey?: string;
 
+  /** Overrides network transport (e.g. MCP stdio tunnel). Programmatic only — not configurable via YAML/JSON. */
+  customFetch?: (
+    url: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>;
+
   // continueProperties
   apiKeyLocation?: string;
   envSecretLocations?: Record<string, string>;
