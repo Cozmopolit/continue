@@ -1435,6 +1435,20 @@ export type InternalMcpOptions =
   | InternalSseMcpOptions
   | InternalWebsocketMcpOptions;
 
+// LLM endpoint discovered via an MCP server's proxy/endpoints method
+export interface ProxyEndpoint {
+  id: string;
+  name: string;
+  apiType: string;
+  model: string;
+  apiBase: string;
+  timeout?: number;
+}
+
+export interface ProxyCapabilities {
+  proxy: boolean;
+}
+
 export type MCPServerStatus = InternalMcpOptions & {
   status: MCPConnectionStatus;
   errors: string[];
@@ -1445,6 +1459,9 @@ export type MCPServerStatus = InternalMcpOptions & {
   resources: MCPResource[];
   resourceTemplates: MCPResourceTemplate[];
   sourceFile?: string;
+  proxyCapabilities?: ProxyCapabilities;
+  proxyEndpoints?: ProxyEndpoint[];
+  proxyKey?: string;
 };
 
 export interface ContinueUIConfig {

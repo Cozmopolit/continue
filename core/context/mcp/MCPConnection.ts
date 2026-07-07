@@ -15,6 +15,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { WebSocketClientTransport } from "@modelcontextprotocol/sdk/client/websocket.js";
 import { Agent as HttpsAgent } from "https";
+import { z } from "zod";
 import {
   IDE,
   InternalMcpOptions,
@@ -28,17 +29,44 @@ import {
   MCPResourceTemplate,
   MCPServerStatus,
   MCPTool,
+  ProxyCapabilities,
+  ProxyEndpoint,
 } from "../..";
 import { resolveRelativePathInDir } from "../../util/ideUtils";
 import { getEnvPathFromUserShell } from "../../util/shellPath";
 import { getOauthToken } from "./MCPOauth";
 
 // Timeout for initial connection to MCP server (connectivity check)
-const DEFAULT_MCP_CONNECTION_TIMEOUT = 20_000; // 20 seconds
+const DEFAULT_MCP_CONNECTION_TIMEOUT = 30_000; // 30 seconds
 
 // Timeout for MCP tool execution - much higher as tools can run complex workflows
 // This is exported for use in callTool.ts
 export const DEFAULT_MCP_TOOL_CALL_TIMEOUT = 900_000; // 15 minutes
+
+// Timeout for each individual proxy discovery RPC
+// (proxy/capabilities, proxy/endpoints, proxy/key)
+const PROXY_METHOD_TIMEOUT = 5_000; // 5 seconds
+
+const ProxyCapabilitiesSchema = z.object({
+  proxy: z.boolean(),
+});
+
+const ProxyEndpointSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  apiType: z.string(),
+  model: z.string(),
+  apiBase: z.string(),
+  timeout: z.number().optional(),
+});
+
+const ProxyEndpointsSchema = z.object({
+  endpoints: z.array(ProxyEndpointSchema),
+});
+
+const ProxyKeySchema = z.object({
+  key: z.string(),
+});
 
 // Commands that are batch scripts on Windows and need cmd.exe to execute
 const WINDOWS_BATCH_COMMANDS = [
@@ -76,6 +104,9 @@ class MCPConnection {
   public tools: MCPTool[] = [];
   public resources: MCPResource[] = [];
   public resourceTemplates: MCPResourceTemplate[] = [];
+  public proxyCapabilities?: ProxyCapabilities;
+  public proxyEndpoints?: ProxyEndpoint[];
+  public proxyKey?: string;
   private transport: Transport;
   private connectionPromise: Promise<unknown> | null = null;
   private stdioOutput: { stdout: string; stderr: string } = {
@@ -107,6 +138,9 @@ class MCPConnection {
     this.abortController.abort();
     await this.client.close();
     await this.transport.close();
+    this.proxyCapabilities = undefined;
+    this.proxyEndpoints = undefined;
+    this.proxyKey = undefined;
     this.status = disable ? "disabled" : "not-connected";
   }
 
@@ -121,7 +155,72 @@ class MCPConnection {
       tools: this.tools,
       status: this.status,
       isProtectedResource: this.isProtectedResource,
+      proxyCapabilities: this.proxyCapabilities,
+      proxyEndpoints: this.proxyEndpoints,
+      proxyKey: this.proxyKey,
     };
+  }
+
+  /**
+   * Generic JSON-RPC call to the MCP server for methods not covered by the
+   * SDK's typed helpers (e.g. CITT proxy discovery methods).
+   */
+  async callMethod<TSchema extends z.ZodTypeAny>(
+    method: string,
+    params: Record<string, unknown>,
+    resultSchema: TSchema,
+    options?: { signal?: AbortSignal; timeout?: number },
+  ): Promise<z.infer<TSchema>> {
+    return await this.client.request({ method, params }, resultSchema, {
+      signal: options?.signal,
+      timeout: options?.timeout,
+    });
+  }
+
+  /**
+   * Checks whether the server supports proxy-based endpoint discovery and,
+   * if so, fetches available endpoints and the user's proxy key.
+   *
+   * Runs synchronously during connect (before status = "connected") so that
+   * the data is available in status snapshots when the config reload is
+   * triggered. Errors are logged but never fail the connection - a failing
+   * proxy check just means no discovered models.
+   */
+  private async fetchProxyData(signal: AbortSignal): Promise<void> {
+    try {
+      const capabilities = await this.callMethod(
+        "proxy/capabilities",
+        {},
+        ProxyCapabilitiesSchema,
+        { signal, timeout: PROXY_METHOD_TIMEOUT },
+      );
+      this.proxyCapabilities = capabilities;
+
+      if (!capabilities.proxy) {
+        return;
+      }
+
+      const [{ endpoints }, { key }] = await Promise.all([
+        this.callMethod("proxy/endpoints", {}, ProxyEndpointsSchema, {
+          signal,
+          timeout: PROXY_METHOD_TIMEOUT,
+        }),
+        this.callMethod("proxy/key", {}, ProxyKeySchema, {
+          signal,
+          timeout: PROXY_METHOD_TIMEOUT,
+        }),
+      ]);
+      this.proxyEndpoints = endpoints;
+      this.proxyKey = key;
+    } catch (e) {
+      // Proxy support is optional - most servers won't implement these
+      // methods. Log and continue without discovered models.
+      console.warn(
+        `Proxy endpoint discovery not available for MCP server "${this.options.name}": ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
   }
 
   async connectClient(forceRefresh: boolean, externalSignal: AbortSignal) {
@@ -148,6 +247,9 @@ class MCPConnection {
     this.resourceTemplates = [];
     this.errors = [];
     this.infos = [];
+    this.proxyCapabilities = undefined;
+    this.proxyEndpoints = undefined;
+    this.proxyKey = undefined;
     this.stdioOutput = { stdout: "", stderr: "" };
 
     this.abortController.abort();
@@ -360,6 +462,12 @@ Org-level secrets can only be used for MCP by Background Agents (https://docs.co
                   this.errors.push(errorMessage);
                 }
               }
+
+              // Proxy endpoint discovery - must complete before the
+              // connection is reported as connected so that proxy data is
+              // available when the config reload is triggered (see
+              // fetchProxyData docs)
+              await this.fetchProxyData(timeoutController.signal);
 
               this.status = "connected";
             })(),

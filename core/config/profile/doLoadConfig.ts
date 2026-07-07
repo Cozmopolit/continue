@@ -25,14 +25,15 @@ import { getConfigDependentToolDefinitions } from "../../tools";
 import { encodeMCPToolUri } from "../../tools/callTool";
 import { getMCPToolName } from "../../tools/mcpToolName";
 import { GlobalContext } from "../../util/GlobalContext";
+import { IdeInfoService } from "../../util/IdeInfoService";
 import { getConfigJsonPath, getConfigYamlPath } from "../../util/paths";
 import { localPathOrUriToPath } from "../../util/pathToUri";
-import { IdeInfoService } from "../../util/IdeInfoService";
 import { TTS } from "../../util/tts";
 import { getWorkspaceContinueRuleDotFiles } from "../getWorkspaceContinueRuleDotFiles";
 import { loadContinueConfigFromJson } from "../load";
 import { CodebaseRulesCache } from "../markdown/loadCodebaseRules";
 import { loadMarkdownRules } from "../markdown/loadMarkdownRules";
+import { discoverProxyModels } from "../mcpProxyModelDiscovery";
 import { migrateJsonSharedConfig } from "../migrateSharedConfig";
 import { rectifySelectedModelsFromGlobalContext } from "../selectedModels";
 import { loadContinueConfigFromYaml } from "../yaml/loadYaml";
@@ -188,12 +189,34 @@ export default async function doLoadConfig(options: {
     }
   });
 
+  const mcpManager = MCPManagerSingleton.getInstance();
+  const mcpServerStatuses = mcpManager.getStatuses();
+
+  // Discover models from MCP servers with proxy support. Must run BEFORE
+  // model selection rectification, otherwise previously selected discovered
+  // models won't be restored.
+  const discoveredModels = await discoverProxyModels(mcpServerStatuses, {
+    readFile: ide.readFile.bind(ide),
+    // Discovered models have no templated system message,
+    // so URI resolution is never needed
+    getUriFromPath: async () => undefined,
+    uniqueId,
+    ideSettings,
+    llmLogger,
+  });
+  newConfig.modelsByRole.chat.push(...discoveredModels.chat);
+  // Discovered embeddings/rerankers are only used if not user-configured
+  if (newConfig.modelsByRole.embed.length === 0) {
+    newConfig.modelsByRole.embed.push(...discoveredModels.embed);
+  }
+  if (newConfig.modelsByRole.rerank.length === 0) {
+    newConfig.modelsByRole.rerank.push(...discoveredModels.rerank);
+  }
+
   // Rectify model selections for each role
   newConfig = rectifySelectedModelsFromGlobalContext(newConfig, profileId);
 
   // Add things from MCP servers
-  const mcpManager = MCPManagerSingleton.getInstance();
-  const mcpServerStatuses = mcpManager.getStatuses();
 
   const serializableStatuses = mcpServerStatuses.map((server) => {
     const { client, ...rest } = server;
