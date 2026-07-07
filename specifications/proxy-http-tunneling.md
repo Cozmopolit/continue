@@ -159,8 +159,16 @@ interface ProxyStreamEntry {
 private activeProxyStreams = new Map<string, ProxyStreamEntry>();
 ```
 
-Notifications for unknown or `Cancelled` streamIds are silently discarded
-(decision #3 — late chunks after cancel must not throw).
+Notifications for `Cancelled` streamIds are silently discarded
+(decision #3 — late chunks after cancel must not throw). Notifications for
+**unknown** streamIds are **buffered briefly** instead of discarded: SDK
+response resolution and notification dispatch both go through microtasks,
+so a chunk arriving in the same stdio batch as the `proxy/http` result can
+be dispatched before `proxyHttp()` registers the streamId. Buffered events
+are flushed on registration; leftovers are dropped by a TTL sweep (5 s).
+To keep late-after-cancel chunks out of that buffer, `Cancelled` entries
+stay in the registry until the terminal notification arrives (fallback:
+60 s TTL sweep).
 
 **`proxyHttp(params, options)`** sends `proxy/http` via the existing
 `callMethod()` and validates the result against a union schema:
@@ -388,10 +396,33 @@ fetch substitution, adapter bypass (both directions), and the Gemini
 header/query-param assertions. The pre-existing Gemini expectation in
 `core/llm/llm-pre-fetch.vitest.ts` was updated (`headers` is now sent).
 
-### Phase 2: MCPConnection tunnel transport
+### Phase 2: MCPConnection tunnel transport — DONE (2026-07-07)
 
 Notification handlers, stream registry, `proxyHttp()`,
 `cancelProxyStream()`, lifecycle cleanup in reconnect/disconnect.
+
+Implementation notes (`core/context/mcp/MCPConnection.ts`):
+
+- Exported types for Phase 3: `ProxyHttpParams`,
+  `ProxyHttpResponse` (discriminated union on `streaming: false | true`;
+  streaming variant carries `streamId` + `chunks: AsyncIterable<string>`),
+  `ProxyStreamState`.
+- Notification handlers are registered once in the constructor — the SDK
+  `Client` instance survives reconnects, so no re-registration is needed.
+- `proxyHttp` defaults the request timeout to
+  `DEFAULT_MCP_TOOL_CALL_TIMEOUT` (15 min) — closes the §10 SDK-60s risk.
+- `cancelProxyStream` terminates the local iterable with an error whose
+  `name === "AbortError"`, then sends `proxy/cancel` fire-and-forget.
+- Early-notification buffering for unknown streamIds (see §5.1) — a
+  deviation from the original "discard unknown" rule, required for
+  correctness under the microtask result/notification race.
+- The chunk iterable is single-consumer and registers the stream
+  synchronously inside `proxyHttp` (before the caller starts iterating).
+- Tests: 9 new cases in `core/context/mcp/MCPConnection.vitest.ts`
+  ("proxy HTTP tunnel" block) — dispatch by streamId, early-buffer flush,
+  mid-stream error, cancel semantics incl. late-chunk discard and
+  `proxy/cancel` wire assertion, disconnect/reconnect cleanup.
+  Notifications are injected via the SDK-private `_onnotification`.
 
 ### Phase 3: Tunnel fetch + discovery wiring
 
@@ -471,9 +502,9 @@ automated tests carry the weight.
   globally; `streamResponse()` already prefers the web-stream path for
   Node ≥ 20. Verify no consumer depends on node-fetch-specific `Response`
   internals for the tunneled models.
-- **MCP SDK request timeout vs. long non-streaming completions:** must set
-  per-request timeout in `callMethod` options (§5.1), otherwise the SDK
-  default (60s) kills long non-streaming requests.
+- **MCP SDK request timeout vs. long non-streaming completions:** resolved
+  in Phase 2 — `proxyHttp` defaults to `DEFAULT_MCP_TOOL_CALL_TIMEOUT`
+  (15 min) unless the caller passes an endpoint timeout.
 - **Concurrent streams:** CITT.MCP processes requests in parallel
   (`McpForceSequential` default off). If a deployment forces sequential
   mode, a streaming response would block other requests — server-side

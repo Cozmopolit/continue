@@ -6,7 +6,7 @@ import {
   InternalWebsocketMcpOptions,
 } from "../..";
 import * as ideUtils from "../../util/ideUtils";
-import MCPConnection from "./MCPConnection";
+import MCPConnection, { DEFAULT_MCP_TOOL_CALL_TIMEOUT } from "./MCPConnection";
 
 // Mock the shell path utility
 vi.mock("../../util/shellPath", () => ({
@@ -343,6 +343,282 @@ describe("MCPConnection", () => {
       expect(conn.errors[0]).toContain("Process output:");
       expect(conn.errors[0]).toContain("STDERR:");
       expect(conn.errors[0]).toContain("Custom error message from stderr");
+    });
+  });
+
+  describe("proxy HTTP tunnel", () => {
+    const options: InternalStdioMcpOptions = {
+      name: "test-mcp",
+      id: "test-id",
+      type: "stdio",
+      command: "test-cmd",
+      args: [],
+    };
+
+    const proxyHttpParams = {
+      method: "POST",
+      path: "/v1/chat/completions",
+      headers: { Authorization: "Bearer key" },
+      body: '{"model":"gpt-4o","stream":true}',
+    };
+
+    /**
+     * Notification dispatch goes through Promise.resolve().then(...) inside
+     * the SDK, so tests must flush microtasks after emitting.
+     */
+    const flushMicrotasks = async () => {
+      for (let i = 0; i < 10; i++) {
+        await Promise.resolve();
+      }
+    };
+
+    const emitNotification = async (
+      conn: MCPConnection,
+      method: string,
+      params: Record<string, unknown>,
+    ) => {
+      (conn.client as any)._onnotification({
+        jsonrpc: "2.0",
+        method,
+        params,
+      });
+      await flushMicrotasks();
+    };
+
+    /** Mocks Client.request for proxy/http (and proxy/cancel). */
+    const mockRequest = (proxyHttpResult: unknown) =>
+      vi
+        .spyOn(Client.prototype, "request")
+        .mockImplementation(async (req: any) => {
+          if (req.method === "proxy/http") {
+            return proxyHttpResult as any;
+          }
+          if (req.method === "proxy/cancel") {
+            return { cancelled: true } as any;
+          }
+          throw new Error(`Unexpected request: ${req.method}`);
+        });
+
+    const streamingResult = (streamId: string) => ({
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+      streaming: true,
+      streamId,
+    });
+
+    /** Starts consuming the chunks iterable; rejections are pre-caught. */
+    const consumeChunks = (chunks: AsyncIterable<string>) => {
+      const collected: string[] = [];
+      const done = (async () => {
+        for await (const chunk of chunks) {
+          collected.push(chunk);
+        }
+      })();
+      done.catch(() => {}); // avoid unhandled rejection noise
+      return { collected, done };
+    };
+
+    it("returns non-streaming responses whole, including HTTP errors", async () => {
+      const requestSpy = mockRequest({
+        status: 429,
+        headers: { "content-type": "application/json" },
+        body: '{"error":"rate limited"}',
+      });
+      const conn = new MCPConnection(options);
+
+      const resp = await conn.proxyHttp(proxyHttpParams);
+
+      expect(resp).toEqual({
+        streaming: false,
+        status: 429,
+        headers: { "content-type": "application/json" },
+        body: '{"error":"rate limited"}',
+      });
+      expect(requestSpy).toHaveBeenCalledWith(
+        { method: "proxy/http", params: proxyHttpParams },
+        expect.anything(),
+        { signal: undefined, timeout: DEFAULT_MCP_TOOL_CALL_TIMEOUT },
+      );
+    });
+
+    it("defaults missing headers and body on non-streaming responses", async () => {
+      mockRequest({ status: 204 });
+      const conn = new MCPConnection(options);
+
+      const resp = await conn.proxyHttp(proxyHttpParams);
+
+      expect(resp).toEqual({
+        streaming: false,
+        status: 204,
+        headers: {},
+        body: "",
+      });
+    });
+
+    it("throws when streaming=true comes without a streamId", async () => {
+      mockRequest({ status: 200, streaming: true });
+      const conn = new MCPConnection(options);
+
+      await expect(conn.proxyHttp(proxyHttpParams)).rejects.toThrow(
+        /without streamId/,
+      );
+    });
+
+    it("dispatches chunks by streamId and terminates on done", async () => {
+      mockRequest(streamingResult("s_1"));
+      const conn = new MCPConnection(options);
+
+      const resp = await conn.proxyHttp(proxyHttpParams);
+      expect(resp.streaming).toBe(true);
+      if (!resp.streaming) {
+        throw new Error("expected streaming response");
+      }
+      const { collected, done } = consumeChunks(resp.chunks);
+
+      await emitNotification(conn, "proxy/http/chunk", {
+        streamId: "s_1",
+        data: "data: one\n\n",
+      });
+      // Chunk for a different (unknown) stream must not leak in or throw
+      await emitNotification(conn, "proxy/http/chunk", {
+        streamId: "s_other",
+        data: "data: wrong\n\n",
+      });
+      await emitNotification(conn, "proxy/http/chunk", {
+        streamId: "s_1",
+        data: "data: two\n\n",
+      });
+      await emitNotification(conn, "proxy/http/done", { streamId: "s_1" });
+
+      await done;
+      expect(collected).toEqual(["data: one\n\n", "data: two\n\n"]);
+    });
+
+    it("flushes notifications that arrive before the stream is registered", async () => {
+      mockRequest(streamingResult("s_2"));
+      const conn = new MCPConnection(options);
+
+      // Race: chunk notification is dispatched before proxyHttp() has
+      // processed the JSON-RPC result and registered the stream.
+      await emitNotification(conn, "proxy/http/chunk", {
+        streamId: "s_2",
+        data: "data: early\n\n",
+      });
+
+      const resp = await conn.proxyHttp(proxyHttpParams);
+      if (!resp.streaming) {
+        throw new Error("expected streaming response");
+      }
+      const { collected, done } = consumeChunks(resp.chunks);
+
+      await emitNotification(conn, "proxy/http/chunk", {
+        streamId: "s_2",
+        data: "data: late\n\n",
+      });
+      await emitNotification(conn, "proxy/http/done", { streamId: "s_2" });
+
+      await done;
+      expect(collected).toEqual(["data: early\n\n", "data: late\n\n"]);
+    });
+
+    it("errors the iteration on proxy/http/error", async () => {
+      mockRequest(streamingResult("s_3"));
+      const conn = new MCPConnection(options);
+
+      const resp = await conn.proxyHttp(proxyHttpParams);
+      if (!resp.streaming) {
+        throw new Error("expected streaming response");
+      }
+      const { collected, done } = consumeChunks(resp.chunks);
+
+      await emitNotification(conn, "proxy/http/chunk", {
+        streamId: "s_3",
+        data: "data: partial\n\n",
+      });
+      await emitNotification(conn, "proxy/http/error", {
+        streamId: "s_3",
+        error: { code: "UPSTREAM_TIMEOUT", message: "provider timed out" },
+      });
+
+      await expect(done).rejects.toThrow(
+        "Proxy stream error UPSTREAM_TIMEOUT: provider timed out",
+      );
+      expect(collected).toEqual(["data: partial\n\n"]);
+    });
+
+    it("cancelProxyStream aborts locally, sends proxy/cancel, discards late chunks", async () => {
+      const requestSpy = mockRequest(streamingResult("s_4"));
+      const conn = new MCPConnection(options);
+
+      const resp = await conn.proxyHttp(proxyHttpParams);
+      if (!resp.streaming) {
+        throw new Error("expected streaming response");
+      }
+      const { collected, done } = consumeChunks(resp.chunks);
+
+      await emitNotification(conn, "proxy/http/chunk", {
+        streamId: "s_4",
+        data: "data: before-cancel\n\n",
+      });
+
+      conn.cancelProxyStream("s_4");
+
+      await expect(done).rejects.toMatchObject({ name: "AbortError" });
+      expect(collected).toEqual(["data: before-cancel\n\n"]);
+      expect(requestSpy).toHaveBeenCalledWith(
+        { method: "proxy/cancel", params: { streamId: "s_4" } },
+        expect.anything(),
+        expect.anything(),
+      );
+
+      // Late chunks and the terminal notification are silently discarded
+      await emitNotification(conn, "proxy/http/chunk", {
+        streamId: "s_4",
+        data: "data: late\n\n",
+      });
+      await emitNotification(conn, "proxy/http/done", { streamId: "s_4" });
+      expect(collected).toEqual(["data: before-cancel\n\n"]);
+
+      // Cancelling again or cancelling unknown streams is a no-op
+      conn.cancelProxyStream("s_4");
+      conn.cancelProxyStream("does-not-exist");
+    });
+
+    it("disconnect errors out active streams", async () => {
+      mockRequest(streamingResult("s_5"));
+      const conn = new MCPConnection(options);
+      vi.spyOn(Client.prototype, "close").mockResolvedValue(undefined);
+      (conn as any).transport = { close: vi.fn().mockResolvedValue(undefined) };
+
+      const resp = await conn.proxyHttp(proxyHttpParams);
+      if (!resp.streaming) {
+        throw new Error("expected streaming response");
+      }
+      const { done } = consumeChunks(resp.chunks);
+
+      await conn.disconnect();
+
+      await expect(done).rejects.toThrow("MCP connection closed");
+    });
+
+    it("reconnect errors out active streams", async () => {
+      mockRequest(streamingResult("s_6"));
+      const conn = new MCPConnection(options);
+      vi.spyOn(Client.prototype, "connect").mockRejectedValue(
+        new Error("connect failed"),
+      );
+
+      const resp = await conn.proxyHttp(proxyHttpParams);
+      if (!resp.streaming) {
+        throw new Error("expected streaming response");
+      }
+      const { done } = consumeChunks(resp.chunks);
+
+      await conn
+        .connectClient(true, new AbortController().signal)
+        .catch(() => {});
+
+      await expect(done).rejects.toThrow("MCP connection closed");
     });
   });
 

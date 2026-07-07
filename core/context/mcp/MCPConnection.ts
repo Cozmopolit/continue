@@ -68,6 +68,106 @@ const ProxyKeySchema = z.object({
   key: z.string(),
 });
 
+// ---------- CITT proxy HTTP tunnel (proxy/http) ----------
+// See specifications/proxy-http-tunneling.md (Phase 2).
+
+// Grace period for buffering notifications that arrive before the JSON-RPC
+// result of `proxy/http` has been processed by the caller. Response
+// resolution and notification dispatch both go through microtasks, so a
+// chunk in the same stdio batch as the result can be dispatched first.
+const PROXY_EARLY_EVENT_TTL_MS = 5_000;
+// Max buffered early events per stream (safety bound, never hit in practice).
+const PROXY_EARLY_EVENT_LIMIT = 1_000;
+// How long a cancelled stream keeps its registry entry so that late chunks
+// are recognized and discarded instead of being buffered as "early" events.
+const PROXY_CANCELLED_ENTRY_TTL_MS = 60_000;
+
+const ProxyHttpResultSchema = z.object({
+  status: z.number(),
+  headers: z.record(z.string()).optional(),
+  body: z.string().optional(), // non-streaming
+  streaming: z.boolean().optional(), // streaming
+  streamId: z.string().optional(),
+});
+
+const ProxyCancelResultSchema = z.object({
+  cancelled: z.boolean(),
+  reason: z.string().optional(),
+});
+
+const ProxyHttpChunkNotificationSchema = z.object({
+  method: z.literal("proxy/http/chunk"),
+  params: z.object({
+    streamId: z.string(),
+    data: z.string(),
+  }),
+});
+
+const ProxyHttpDoneNotificationSchema = z.object({
+  method: z.literal("proxy/http/done"),
+  params: z.object({
+    streamId: z.string(),
+  }),
+});
+
+const ProxyHttpErrorNotificationSchema = z.object({
+  method: z.literal("proxy/http/error"),
+  params: z.object({
+    streamId: z.string(),
+    error: z
+      .object({
+        code: z.union([z.string(), z.number()]).optional(),
+        message: z.string().optional(),
+      })
+      .optional(),
+  }),
+});
+
+export interface ProxyHttpParams {
+  method: string;
+  path: string; // incl. query string, e.g. "/v1/chat/completions"
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+export interface ProxyHttpNonStreamingResponse {
+  streaming: false;
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+
+export interface ProxyHttpStreamingResponse {
+  streaming: true;
+  status: number;
+  headers: Record<string, string>;
+  streamId: string;
+  /** Raw SSE chunks as sent by the server. Single consumer only. */
+  chunks: AsyncIterable<string>;
+}
+
+export type ProxyHttpResponse =
+  | ProxyHttpNonStreamingResponse
+  | ProxyHttpStreamingResponse;
+
+export enum ProxyStreamState {
+  Active = "active",
+  Cancelled = "cancelled",
+}
+
+type ProxyStreamEvent =
+  | { kind: "chunk"; data: string }
+  | { kind: "done" }
+  | { kind: "error"; error: Error };
+
+interface ProxyStreamEntry {
+  state: ProxyStreamState;
+  cancelledAt?: number;
+  onChunk: (data: string) => void;
+  onDone: () => void;
+  onError: (error: Error) => void;
+}
+
 // Commands that are batch scripts on Windows and need cmd.exe to execute
 const WINDOWS_BATCH_COMMANDS = [
   "npx",
@@ -113,6 +213,11 @@ class MCPConnection {
     stdout: "",
     stderr: "",
   };
+  private activeProxyStreams = new Map<string, ProxyStreamEntry>();
+  private earlyProxyEvents = new Map<
+    string,
+    { at: number; events: ProxyStreamEvent[] }
+  >();
 
   constructor(
     public options: InternalMcpOptions,
@@ -132,10 +237,15 @@ class MCPConnection {
     );
 
     this.abortController = new AbortController();
+
+    // The Client instance lives across reconnects, so handlers registered
+    // here stay valid for the lifetime of this connection object.
+    this.registerProxyNotificationHandlers();
   }
 
   async disconnect(disable = false) {
     this.abortController.abort();
+    this.failActiveProxyStreams("MCP connection closed");
     await this.client.close();
     await this.transport.close();
     this.proxyCapabilities = undefined;
@@ -175,6 +285,273 @@ class MCPConnection {
       signal: options?.signal,
       timeout: options?.timeout,
     });
+  }
+
+  /**
+   * Sends an HTTP request through the CITT proxy tunnel (`proxy/http`).
+   *
+   * Non-streaming responses are returned whole. Streaming responses expose
+   * the raw SSE chunks as an async iterable fed by `proxy/http/chunk`
+   * notifications; it terminates on `proxy/http/done` and throws on
+   * `proxy/http/error`.
+   *
+   * HTTP errors (4xx/5xx) come back as results with that status - they are
+   * returned, not thrown. Only protocol-level JSON-RPC errors throw.
+   */
+  async proxyHttp(
+    params: ProxyHttpParams,
+    options?: { signal?: AbortSignal; timeout?: number },
+  ): Promise<ProxyHttpResponse> {
+    const result = await this.callMethod(
+      "proxy/http",
+      { ...params },
+      ProxyHttpResultSchema,
+      {
+        signal: options?.signal,
+        // Non-streaming chat completions can take minutes; the SDK default
+        // (60s) is far too low. Streaming requests resolve quickly with the
+        // stream-start result, so a generous timeout is harmless there.
+        timeout: options?.timeout ?? DEFAULT_MCP_TOOL_CALL_TIMEOUT,
+      },
+    );
+
+    if (result.streaming) {
+      if (!result.streamId) {
+        throw new Error("proxy/http returned streaming=true without streamId");
+      }
+      return {
+        streaming: true,
+        status: result.status,
+        headers: result.headers ?? {},
+        streamId: result.streamId,
+        chunks: this.createProxyStreamIterable(result.streamId),
+      };
+    }
+
+    return {
+      streaming: false,
+      status: result.status,
+      headers: result.headers ?? {},
+      body: result.body ?? "",
+    };
+  }
+
+  /**
+   * Best-effort cancellation of an active proxy stream (decision #3 of the
+   * tunneling spec): the local iterable is terminated immediately with an
+   * AbortError, `proxy/cancel` is sent fire-and-forget, and late chunks for
+   * this streamId are silently discarded.
+   */
+  cancelProxyStream(streamId: string): void {
+    const entry = this.activeProxyStreams.get(streamId);
+    if (!entry || entry.state === ProxyStreamState.Cancelled) {
+      return;
+    }
+    entry.state = ProxyStreamState.Cancelled;
+    entry.cancelledAt = Date.now();
+
+    const abortError = new Error(`Proxy stream ${streamId} cancelled`);
+    abortError.name = "AbortError";
+    entry.onError(abortError);
+
+    this.callMethod("proxy/cancel", { streamId }, ProxyCancelResultSchema, {
+      timeout: PROXY_METHOD_TIMEOUT,
+    }).catch((e) => {
+      console.warn(
+        `proxy/cancel for stream ${streamId} failed: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    });
+  }
+
+  private registerProxyNotificationHandlers(): void {
+    this.client.setNotificationHandler(
+      ProxyHttpChunkNotificationSchema,
+      (notification) => {
+        this.handleProxyStreamEvent(notification.params.streamId, {
+          kind: "chunk",
+          data: notification.params.data,
+        });
+      },
+    );
+    this.client.setNotificationHandler(
+      ProxyHttpDoneNotificationSchema,
+      (notification) => {
+        this.handleProxyStreamEvent(notification.params.streamId, {
+          kind: "done",
+        });
+      },
+    );
+    this.client.setNotificationHandler(
+      ProxyHttpErrorNotificationSchema,
+      (notification) => {
+        const code = notification.params.error?.code;
+        const message =
+          notification.params.error?.message ?? "unknown proxy stream error";
+        this.handleProxyStreamEvent(notification.params.streamId, {
+          kind: "error",
+          error: new Error(
+            code !== undefined
+              ? `Proxy stream error ${code}: ${message}`
+              : `Proxy stream error: ${message}`,
+          ),
+        });
+      },
+    );
+  }
+
+  private handleProxyStreamEvent(
+    streamId: string,
+    event: ProxyStreamEvent,
+  ): void {
+    this.sweepProxyState();
+
+    const entry = this.activeProxyStreams.get(streamId);
+    if (!entry) {
+      // Unknown streamId: either a notification that raced ahead of the
+      // proxy/http result (buffered and flushed by registerProxyStream) or
+      // a stray late notification (discarded by the TTL sweep).
+      this.bufferEarlyProxyEvent(streamId, event);
+      return;
+    }
+
+    if (entry.state === ProxyStreamState.Cancelled) {
+      // Decision #3: late chunks after cancel are silently discarded. The
+      // terminal notification releases the registry entry.
+      if (event.kind !== "chunk") {
+        this.activeProxyStreams.delete(streamId);
+      }
+      return;
+    }
+
+    switch (event.kind) {
+      case "chunk":
+        entry.onChunk(event.data);
+        break;
+      case "done":
+        this.activeProxyStreams.delete(streamId);
+        entry.onDone();
+        break;
+      case "error":
+        this.activeProxyStreams.delete(streamId);
+        entry.onError(event.error);
+        break;
+    }
+  }
+
+  private registerProxyStream(
+    streamId: string,
+    callbacks: Pick<ProxyStreamEntry, "onChunk" | "onDone" | "onError">,
+  ): void {
+    this.activeProxyStreams.set(streamId, {
+      state: ProxyStreamState.Active,
+      ...callbacks,
+    });
+
+    // Flush notifications that arrived before the proxy/http result was
+    // processed (response resolution and notification dispatch both go
+    // through microtasks, so ordering is not guaranteed).
+    const buffered = this.earlyProxyEvents.get(streamId);
+    if (buffered) {
+      this.earlyProxyEvents.delete(streamId);
+      for (const event of buffered.events) {
+        this.handleProxyStreamEvent(streamId, event);
+        if (event.kind !== "chunk") {
+          break; // terminal event - nothing may follow
+        }
+      }
+    }
+  }
+
+  private createProxyStreamIterable(streamId: string): AsyncIterable<string> {
+    const queue: ProxyStreamEvent[] = [];
+    let wake: (() => void) | undefined;
+    const push = (event: ProxyStreamEvent) => {
+      queue.push(event);
+      wake?.();
+      wake = undefined;
+    };
+
+    // Register synchronously so chunks arriving before the consumer starts
+    // iterating are queued rather than treated as early/unknown events.
+    this.registerProxyStream(streamId, {
+      onChunk: (data) => push({ kind: "chunk", data }),
+      onDone: () => push({ kind: "done" }),
+      onError: (error) => push({ kind: "error", error }),
+    });
+
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        while (true) {
+          while (queue.length === 0) {
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+          }
+          const event = queue.shift();
+          if (!event) {
+            continue;
+          }
+          switch (event.kind) {
+            case "chunk":
+              yield event.data;
+              break;
+            case "done":
+              return;
+            case "error":
+              throw event.error;
+          }
+        }
+      },
+    };
+  }
+
+  private bufferEarlyProxyEvent(
+    streamId: string,
+    event: ProxyStreamEvent,
+  ): void {
+    let buffered = this.earlyProxyEvents.get(streamId);
+    if (!buffered) {
+      buffered = { at: Date.now(), events: [] };
+      this.earlyProxyEvents.set(streamId, buffered);
+    }
+    if (buffered.events.length < PROXY_EARLY_EVENT_LIMIT) {
+      buffered.events.push(event);
+    }
+  }
+
+  private sweepProxyState(): void {
+    const now = Date.now();
+    for (const [streamId, buffered] of this.earlyProxyEvents) {
+      if (now - buffered.at > PROXY_EARLY_EVENT_TTL_MS) {
+        this.earlyProxyEvents.delete(streamId);
+      }
+    }
+    for (const [streamId, entry] of this.activeProxyStreams) {
+      if (
+        entry.state === ProxyStreamState.Cancelled &&
+        entry.cancelledAt !== undefined &&
+        now - entry.cancelledAt > PROXY_CANCELLED_ENTRY_TTL_MS
+      ) {
+        this.activeProxyStreams.delete(streamId);
+      }
+    }
+  }
+
+  /**
+   * Lifecycle cleanup (decision #2): errors out every active stream and
+   * clears the registry. Called on disconnect and on reconnect reset.
+   */
+  private failActiveProxyStreams(reason: string): void {
+    const entries = [...this.activeProxyStreams.values()];
+    this.activeProxyStreams.clear();
+    this.earlyProxyEvents.clear();
+    for (const entry of entries) {
+      if (entry.state === ProxyStreamState.Active) {
+        entry.onError(new Error(reason));
+      }
+    }
   }
 
   /**
@@ -251,6 +628,7 @@ class MCPConnection {
     this.proxyEndpoints = undefined;
     this.proxyKey = undefined;
     this.stdioOutput = { stdout: "", stderr: "" };
+    this.failActiveProxyStreams("MCP connection closed");
 
     this.abortController.abort();
     this.abortController = new AbortController();
