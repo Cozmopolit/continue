@@ -281,7 +281,11 @@ class MCPConnection {
     resultSchema: TSchema,
     options?: { signal?: AbortSignal; timeout?: number },
   ): Promise<z.infer<TSchema>> {
-    return await this.client.request({ method, params }, resultSchema, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // Type assertion via `any` to avoid "Type instantiation is excessively
+    // deep" error with MCP SDK 1.29+ complex generic inference. The Zod
+    // schema validates the result at runtime; the cast is safe.
+    return await this.client.request({ method, params }, resultSchema as any, {
       signal: options?.signal,
       timeout: options?.timeout,
     });
@@ -366,26 +370,36 @@ class MCPConnection {
   }
 
   private registerProxyNotificationHandlers(): void {
+    // Type casts to avoid "Type instantiation is excessively deep" error
+    // with MCP SDK 1.29+ complex generic inference. The schemas are correct;
+    // we're just helping TypeScript avoid deep inference chains.
+    type ChunkNotification = z.infer<typeof ProxyHttpChunkNotificationSchema>;
+    type DoneNotification = z.infer<typeof ProxyHttpDoneNotificationSchema>;
+    type ErrorNotification = z.infer<typeof ProxyHttpErrorNotificationSchema>;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.client.setNotificationHandler(
-      ProxyHttpChunkNotificationSchema,
-      (notification) => {
+      ProxyHttpChunkNotificationSchema as any,
+      (notification: ChunkNotification) => {
         this.handleProxyStreamEvent(notification.params.streamId, {
           kind: "chunk",
           data: notification.params.data,
         });
       },
     );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.client.setNotificationHandler(
-      ProxyHttpDoneNotificationSchema,
-      (notification) => {
+      ProxyHttpDoneNotificationSchema as any,
+      (notification: DoneNotification) => {
         this.handleProxyStreamEvent(notification.params.streamId, {
           kind: "done",
         });
       },
     );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.client.setNotificationHandler(
-      ProxyHttpErrorNotificationSchema,
-      (notification) => {
+      ProxyHttpErrorNotificationSchema as any,
+      (notification: ErrorNotification) => {
         const code = notification.params.error?.code;
         const message =
           notification.params.error?.message ?? "unknown proxy stream error";

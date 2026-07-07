@@ -217,8 +217,10 @@ function createMcpProxyFetch(
 Behavior:
 
 1. **Request translation:** `path` = `url.pathname + url.search` (query
-   string preserved — Gemini uses `?alt=sse` etc.). Headers taken from
-   `init` verbatim. Body passed through as string.
+   string preserved when present; note Continue's Gemini client uses
+   `:streamGenerateContent` **without** `alt=sse` — raw JSON-array
+   streaming). Headers taken from `init` verbatim. Body passed through
+   as string.
 2. **Non-streaming:** build a standard `Response` from
    `{status, headers, body}` (global/undici `Response` — `streamSse`,
    `resp.ok`, `resp.text()` all work with it). HTTP errors (4xx/5xx)
@@ -424,11 +426,44 @@ Implementation notes (`core/context/mcp/MCPConnection.ts`):
   `proxy/cancel` wire assertion, disconnect/reconnect cleanup.
   Notifications are injected via the SDK-private `_onnotification`.
 
-### Phase 3: Tunnel fetch + discovery wiring
+### Phase 3: Tunnel fetch + discovery wiring — DONE (2026-07-07)
 
 `mcpProxyFetch.ts` (new), `mcpProxyModelDiscovery.ts` (server id,
 `getConnection` dep, tunnel fetch per endpoint), `doLoadConfig.ts`
 (resolver). Wire-format tests (§9) close out this phase.
+
+Implementation notes:
+
+- `core/context/mcp/mcpProxyFetch.ts` exports `createMcpProxyFetch`,
+  the pure helpers `buildProxyHttpParams` / `responseFromProxyResult`,
+  and `McpProxyTransport` — a structural subset of `MCPConnection`
+  (`proxyHttp` + `cancelProxyStream`) used as the dependency type in
+  discovery and tests.
+- Endpoint `timeout` (seconds) is converted to the JSON-RPC request
+  timeout (ms) inside the fetch; an already-aborted signal rejects with
+  `AbortError` before anything is sent.
+- Request headers pass through the `Headers` class and arrive
+  lowercase-named at the proxy (HTTP-semantically equivalent; .NET
+  header handling is case-insensitive).
+- Streaming bodies are wrapped in a web `ReadableStream`; the generator's
+  `finally` sends a trailing `cancelProxyStream` (no-op after normal
+  completion) so early consumer cancellation (`body.cancel()`) stops the
+  server-side stream.
+- Null-body statuses (204/205/304) map to `body: null` — the `Response`
+  constructor would throw otherwise.
+- Wire-format reality check: Continue's Gemini client streams the raw
+  JSON-array format of `:streamGenerateContent` — **no** `alt=sse` query
+  param (§9's original expectation was wrong; test asserts the actual
+  format). The tunnel forwards chunks format-agnostically either way.
+- Tests: `core/context/mcp/mcpProxyFetch.vitest.ts` (25 cases: param
+  translation, non-streaming/null-body responses, streaming incl. abort,
+  mid-stream error, early cancel, timeout conversion) and wire-format +
+  `discoverProxyModels` cases in `core/config/mcpProxyModelDiscovery.vitest.ts`
+  (all five apiTypes end-to-end through a fake transport). Both suites
+  restore the native (undici) `Response` in a `beforeAll` — the shared
+  vitest setup swaps in node-fetch's `Response`, which cannot carry a web
+  `ReadableStream` body (see §10 risk, confirmed benign in production:
+  the extension host uses the native class).
 
 ## 8. Files to Modify
 

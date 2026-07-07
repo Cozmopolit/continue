@@ -11,6 +11,9 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = $PSScriptRoot
 $VsixPath = "$RepoRoot\extensions\vscode\build\continue-*.vsix"
 
+# Increase Node.js heap size to prevent OOM during GUI build
+$env:NODE_OPTIONS = "--max-old-space-size=8192"
+
 function Write-Step($message) { Write-Host "=> $message" -ForegroundColor Cyan }
 function Write-OK($message) { Write-Host "   $message" -ForegroundColor Green }
 function Write-Err($message) { Write-Host "   $message" -ForegroundColor Red }

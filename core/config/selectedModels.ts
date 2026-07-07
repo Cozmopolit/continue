@@ -33,21 +33,28 @@ export function rectifySelectedModelsFromGlobalContext(
   for (const role of roles) {
     let newModel: ILLM | null = null;
     const currentSelection = currentForProfile[role] ?? null;
+    const availableModels = continueConfig.modelsByRole[role];
 
     if (currentSelection) {
-      const match = continueConfig.modelsByRole[role].find(
-        (m) => m.title === currentSelection,
-      );
+      const match = availableModels.find((m) => m.title === currentSelection);
       if (match) {
         newModel = match;
       }
     }
 
-    if (!newModel && continueConfig.modelsByRole[role].length > 0) {
-      newModel = continueConfig.modelsByRole[role][0];
+    // Only fallback to first available if we have models AND no persisted selection
+    // This prevents losing selection when models haven't been discovered yet (e.g., MCP startup race)
+    if (!newModel && availableModels.length > 0) {
+      newModel = availableModels[0];
     }
 
-    if (!(currentSelection === (newModel?.title ?? null))) {
+    // Don't mark as fellBack if we simply have no models available yet
+    // This preserves the persisted selection for when models become available
+    const shouldUpdateSelection = availableModels.length > 0;
+    if (
+      shouldUpdateSelection &&
+      currentSelection !== (newModel?.title ?? null)
+    ) {
       fellBack = true;
     }
 
@@ -59,7 +66,11 @@ export function rectifySelectedModelsFromGlobalContext(
       continue;
     }
 
-    configCopy.selectedModelByRole[role] = newModel;
+    // Only update selection if we have a model or models were available
+    // When no models are available (e.g., pre-MCP-discovery), preserve existing selection
+    if (newModel || availableModels.length > 0) {
+      configCopy.selectedModelByRole[role] = newModel;
+    }
   }
 
   // In the case shared config wasn't respected,

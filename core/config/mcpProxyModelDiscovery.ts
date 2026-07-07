@@ -5,6 +5,10 @@ import {
   MCPServerStatus,
   ProxyEndpoint,
 } from "..";
+import {
+  createMcpProxyFetch,
+  McpProxyTransport,
+} from "../context/mcp/mcpProxyFetch";
 import { BaseLLM } from "../llm";
 import { llmFromDescription } from "../llm/llms";
 
@@ -54,10 +58,17 @@ export function proxyEndpointToModelDescription(
   }
 
   return {
-    title: `[${serverName}] ${endpoint.name}`,
+    // Use endpoint.id in title so users can distinguish providers
+    // (e.g., azure-claude-opus vs anthropic-claude-opus vs openrouter-claude-opus)
+    // U+FFFF prefix: invisible noncharacter that localeCompare() sorts after
+    // all real letters, so discovered models appear after manually configured
+    // ones in the GUI's alphabetically sorted model picker.
+    title: `\uFFFF[${serverName}] ${endpoint.id}`,
     provider: mapping.provider,
     underlyingProviderName: mapping.provider,
-    model: endpoint.model,
+    // Use endpoint.id (not endpoint.model) so the CITT proxy can resolve
+    // the target endpoint from the request body's "model" field.
+    model: endpoint.id,
     apiBase: endpoint.apiBase,
     apiKey: proxyKey,
     ...(endpoint.timeout !== undefined && {
@@ -67,15 +78,25 @@ export function proxyEndpointToModelDescription(
 }
 
 /**
- * Extracts (server name, endpoint, key) triples from MCP server statuses
- * that advertise proxy support and have complete proxy data.
+ * Extracts (server id, server name, endpoint, key) tuples from MCP server
+ * statuses that advertise proxy support and have complete proxy data.
  */
 export function collectProxyEndpoints(
   serverStatuses: Pick<
     MCPServerStatus,
-    "name" | "status" | "proxyCapabilities" | "proxyEndpoints" | "proxyKey"
+    | "id"
+    | "name"
+    | "status"
+    | "proxyCapabilities"
+    | "proxyEndpoints"
+    | "proxyKey"
   >[],
-): { serverName: string; endpoint: ProxyEndpoint; proxyKey: string }[] {
+): {
+  serverId: string;
+  serverName: string;
+  endpoint: ProxyEndpoint;
+  proxyKey: string;
+}[] {
   return serverStatuses
     .filter(
       (server) =>
@@ -86,6 +107,7 @@ export function collectProxyEndpoints(
     )
     .flatMap((server) =>
       server.proxyEndpoints!.map((endpoint) => ({
+        serverId: server.id,
         serverName: server.name,
         endpoint,
         proxyKey: server.proxyKey!,
@@ -99,6 +121,12 @@ export interface ProxyModelDiscoveryDeps {
   uniqueId: string;
   ideSettings: IdeSettings;
   llmLogger: ILLMLogger;
+  /**
+   * Resolves the MCP connection whose stdio tunnel carries the traffic of
+   * a discovered model. Returns undefined when the server disconnected in
+   * the meantime — the endpoint is then skipped (no tunnel, no model).
+   */
+  getConnection: (serverId: string) => McpProxyTransport | undefined;
 }
 
 /**
@@ -118,9 +146,12 @@ export async function discoverProxyModels(
     rerank: [],
   };
 
-  for (const { serverName, endpoint, proxyKey } of collectProxyEndpoints(
-    serverStatuses,
-  )) {
+  for (const {
+    serverId,
+    serverName,
+    endpoint,
+    proxyKey,
+  } of collectProxyEndpoints(serverStatuses)) {
     const role = getRoleForApiType(endpoint.apiType);
     const desc = proxyEndpointToModelDescription(
       serverName,
@@ -131,6 +162,18 @@ export async function discoverProxyModels(
       continue;
     }
 
+    // Discovered models are tunnel-only (decision #1 of the tunneling
+    // spec, see specifications/proxy-http-tunneling.md) — without a live
+    // connection there is no transport, so the endpoint is skipped.
+    const connection = deps.getConnection(serverId);
+    if (!connection) {
+      continue;
+    }
+    const tunnelFetch = createMcpProxyFetch(connection, {
+      timeout: endpoint.timeout,
+      endpointId: endpoint.id,
+    });
+
     try {
       const llm = await llmFromDescription(
         desc,
@@ -139,6 +182,8 @@ export async function discoverProxyModels(
         deps.uniqueId,
         deps.ideSettings,
         deps.llmLogger,
+        undefined,
+        { customFetch: tunnelFetch },
       );
       if (llm) {
         result[role].push(llm);

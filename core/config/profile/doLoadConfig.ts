@@ -203,15 +203,13 @@ export default async function doLoadConfig(options: {
     uniqueId,
     ideSettings,
     llmLogger,
+    // Discovered models tunnel all HTTP traffic through the MCP
+    // connection's proxy/http method (proxy-http-tunneling spec).
+    getConnection: (serverId) => mcpManager.getConnection(serverId),
   });
   newConfig.modelsByRole.chat.push(...discoveredModels.chat);
-  // Discovered embeddings/rerankers are only used if not user-configured
-  if (newConfig.modelsByRole.embed.length === 0) {
-    newConfig.modelsByRole.embed.push(...discoveredModels.embed);
-  }
-  if (newConfig.modelsByRole.rerank.length === 0) {
-    newConfig.modelsByRole.rerank.push(...discoveredModels.rerank);
-  }
+  newConfig.modelsByRole.embed.push(...discoveredModels.embed);
+  newConfig.modelsByRole.rerank.push(...discoveredModels.rerank);
 
   // Rectify model selections for each role
   newConfig = rectifySelectedModelsFromGlobalContext(newConfig, profileId);

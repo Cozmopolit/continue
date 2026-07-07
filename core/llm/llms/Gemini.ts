@@ -400,7 +400,6 @@ class Gemini extends BaseLLM {
           throw new Error(data.error.message);
         }
 
-        // In case of max tokens reached, gemini will sometimes return content with no parts, even though that doesn't match the API spec
         const contentParts = data?.candidates?.[0]?.content?.parts;
         if (contentParts) {
           const textParts: MessagePart[] = [];
@@ -430,7 +429,6 @@ class Gemini extends BaseLLM {
                 }),
               });
             } else {
-              // Note: function responses shouldn't be streamed, images not supported
               console.warn("Unsupported gemini part type received", part);
             }
           }
@@ -446,7 +444,6 @@ class Gemini extends BaseLLM {
             yield assistantMessage;
           }
         } else {
-          // Handle the case where the expected data structure is not found
           console.warn("Unexpected response format:", data);
         }
       }
