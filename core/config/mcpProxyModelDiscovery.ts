@@ -57,6 +57,15 @@ export function proxyEndpointToModelDescription(
     return undefined;
   }
 
+  // Ensure apiBase ends with trailing slash. Without it, `new URL("path", apiBase)`
+  // replaces the last path segment instead of appending:
+  //   new URL("embed", "https://host/v2")  → "https://host/embed"  (WRONG)
+  //   new URL("embed", "https://host/v2/") → "https://host/v2/embed" (correct)
+  // This affects Cohere embed/rerank and other providers that construct URLs this way.
+  const apiBase = endpoint.apiBase.endsWith("/")
+    ? endpoint.apiBase
+    : `${endpoint.apiBase}/`;
+
   return {
     // Use endpoint.id in title so users can distinguish providers
     // (e.g., azure-claude-opus vs anthropic-claude-opus vs openrouter-claude-opus)
@@ -69,7 +78,7 @@ export function proxyEndpointToModelDescription(
     // Use endpoint.id (not endpoint.model) so the CITT proxy can resolve
     // the target endpoint from the request body's "model" field.
     model: endpoint.id,
-    apiBase: endpoint.apiBase,
+    apiBase,
     apiKey: proxyKey,
     ...(endpoint.timeout !== undefined && {
       requestOptions: { timeout: endpoint.timeout },

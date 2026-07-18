@@ -111,7 +111,8 @@ describe("proxyEndpointToModelDescription", () => {
       underlyingProviderName: "openai",
       // model is endpoint.id (not endpoint.model) for CITT proxy resolution
       model: "azure-gpt-4o",
-      apiBase: "https://citt-central-sweden.openai.azure.com/v1",
+      // Trailing slash ensures new URL("path", apiBase) appends instead of replaces
+      apiBase: "https://citt-central-sweden.openai.azure.com/v1/",
       apiKey: "citt_upk_test-key",
       requestOptions: { timeout: 60 },
     });
