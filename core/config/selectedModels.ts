@@ -66,9 +66,11 @@ export function rectifySelectedModelsFromGlobalContext(
       continue;
     }
 
-    // Only update selection if we have a model or models were available
-    // When no models are available (e.g., pre-MCP-discovery), preserve existing selection
-    if (newModel || availableModels.length > 0) {
+    // Only update selection if we found a matching model.
+    // When availableModels is empty (pre-MCP-discovery), we don't touch the selection
+    // so it remains whatever it was (possibly from a previous config load).
+    // When availableModels has items but no match found, we still set the first one as fallback.
+    if (newModel) {
       configCopy.selectedModelByRole[role] = newModel;
     }
   }
