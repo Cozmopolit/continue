@@ -22,6 +22,9 @@ function Invoke-Quietly($scriptBlock) {
     if ($Verbose) {
         & $scriptBlock
     } else {
+        # EAP lokal auf "Continue": stderr-Warnungen (z.B. Browserslist) von
+        # nativen Kommandos werden sonst wegen 2>&1 zu NativeCommandError
+        $ErrorActionPreference = "Continue"
         & $scriptBlock 2>&1 | Out-Null
     }
 }
@@ -69,7 +72,7 @@ Write-Host "`nVSIX: $($VsixFile.Name) (built in $([math]::Round($stopwatch.Elaps
 # Step 4: Install Extension (optional)
 if (-not $SkipInstall) {
     Write-Step "Installing..."
-    code --install-extension $VsixFile.FullName --force 2>&1 | Out-Null
+    Invoke-Quietly { code --install-extension $VsixFile.FullName --force }
     if ($LASTEXITCODE -ne 0) { 
         Write-Err "Installation failed"
         exit 1
