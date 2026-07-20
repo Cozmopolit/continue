@@ -42,6 +42,30 @@ import {
 } from "..";
 import { stripImages } from "../util/messageContent";
 
+/**
+ * Find the corresponding thinking message for an assistant message.
+ * Searches backwards, skipping tool/assistant messages (which are part of the
+ * same turn, e.g. when tool results intervene between thinking and the final
+ * assistant response). Stops at user/system messages, which mark a turn
+ * boundary: an assistant message directly after them has no prior thinking.
+ */
+export function findCorrespondingThinking(
+  messages: ChatMessage[],
+  assistantIndex: number,
+): ThinkingChatMessage | undefined {
+  for (let i = assistantIndex - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === "thinking") {
+      return msg;
+    }
+    if (msg.role === "user" || msg.role === "system") {
+      return undefined; // Turn boundary - no thinking for this assistant message
+    }
+    // Skip tool/assistant messages - they belong to the same turn
+  }
+  return undefined;
+}
+
 function appendReasoningFieldsIfSupported(
   msg: ChatCompletionAssistantMessageParam & {
     reasoning?: string;
@@ -64,13 +88,14 @@ function appendReasoningFieldsIfSupported(
 
   const hasThinkingContent = prevMessage && prevMessage.role === "thinking";
 
-  // DeepSeek Reasoner requires reasoning_content on every assistant message,
-  // even when no thinking message precedes it (e.g. resumed sessions).
-  // Default to empty string to avoid 400 "Missing reasoning_content field".
+  // DeepSeek Reasoner and Kimi require reasoning_content on every assistant
+  // message, even when no thinking message precedes it (e.g. resumed sessions).
+  // Fall back to a single space: Kimi rejects an empty string as "missing"
+  // for assistant tool call messages when thinking is enabled.
   if (includeReasoningContent) {
     msg.reasoning_content = hasThinkingContent
       ? stripImages(prevMessage.content)
-      : "";
+      : " ";
   }
 
   if (!hasThinkingContent) return;
@@ -218,9 +243,18 @@ export function toChatBody(
 ): ChatCompletionCreateParams {
   const params: ChatCompletionCreateParams = {
     messages: messages
-      .map((m, index) =>
-        toChatMessage(m, options, messages[index - 1], providerFlags),
-      )
+      .map((m, index) => {
+        // For assistant messages, find the corresponding thinking message via
+        // backward search - it may not be the direct predecessor when tool
+        // messages intervene (thinking -> assistant+tool_calls -> tool -> assistant).
+        const prevForReasoning =
+          m.role === "assistant"
+            ? (findCorrespondingThinking(messages, index) ??
+              messages[index - 1])
+            : messages[index - 1];
+
+        return toChatMessage(m, options, prevForReasoning, providerFlags);
+      })
       .filter((m) => m !== null) as ChatCompletionMessageParam[],
     model: options.model,
     max_tokens: options.maxTokens,

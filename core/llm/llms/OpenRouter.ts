@@ -31,6 +31,20 @@ class OpenRouter extends OpenAI {
         },
       },
     });
+
+    // Kimi & DeepSeek require preserved thinking: reasoning_content from previous
+    // assistant turns must be sent back in the chat history (Kimi K3 rejects
+    // requests without it). OpenRouter accepts reasoning_content as a full alias
+    // for reasoning and forwards it to Moonshot/DeepSeek.
+    // Set it EXCLUSIVELY (disable reasoning/reasoning_details) so long thinking
+    // blocks are not sent multiple times per historical assistant message.
+    // See: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
+    const model = this.model?.toLowerCase() ?? "";
+    if (model.includes("kimi") || model.includes("deepseek")) {
+      this.supportsReasoningContentField = true;
+      this.supportsReasoningField = false;
+      this.supportsReasoningDetailsField = false;
+    }
   }
 
   private isAnthropicModel(model?: string): boolean {
