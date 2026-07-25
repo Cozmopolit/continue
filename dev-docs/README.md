@@ -1,8 +1,8 @@
 # dev-docs — interne Dokumentation (Continue-Fork)
 
 Interne Prozess- und Entwicklungs-Dokumentation des Forks. Nicht zu verwechseln
-mit `docs/` — das ist die upstream Mintlify-Produktdokumentation und bleibt
-unangetastet.
+mit `docs/` — das ist die Mintlify-**Produktdoku** (Endnutzer-Doku der
+Extension); `dev-docs/` ist die interne Prozess-Doku.
 
 ## Wo liegt was
 

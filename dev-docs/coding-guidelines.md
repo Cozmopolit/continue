@@ -4,28 +4,35 @@ Dauerhafte Konventionen für Arbeit an diesem Repo. Ergänzt den Workflow in
 `specifications/_IMPLEMENTATION.md` — dort steht das Phasenmodell, hier die
 Spielregeln. Zielgruppe: Entwickler und Coding Agents.
 
-## 1. Fork-Strategie: Upstream-Hygiene
+## 1. Fork-Strategie: kein Upstream
 
-Dieses Repo ist ein **Fork von continuedev/continue**; upstream Merges finden
-statt und sind Handarbeit. Alles Folgende dient dazu, sie billig zu halten:
+**Continue ist eingestellt** — v2.1.0 ist die finale Version (2026 per
+Acqui-Hire von Cursor übernommen, Repo wird nicht mehr gepflegt). Dieses Repo
+forkt eine **finale Version — es gibt keinen upstream**, wir forken frei
+nach Belieben.
 
-- **Chirurgische Diffs**: so wenig upstream Code anfassen wie möglich. Keine
-  Reorgs, keine Umbenennungen, kein Reformatieren upstream Dateien.
-  (lint-staged/prettier formatiert nur gestagte Dateien — niemals repo-weit
-  formatieren.)
-- **Fork-Features additiv und opt-in**: neue Fähigkeiten als Erweiterung,
-  idealerweise hinter Flag/Env-Var — gelebte Muster:
+Konsequenzen:
+
+- **Alles darf geändert werden** — keine Rücksicht auf künftige Merges nötig.
+  Trotzdem keine gratuiten repo-weiten Umformatierungen/Reorgs: sie vergiften
+  History und Blame (lint-staged/prettier formatiert ohnehin nur gestagte
+  Dateien).
+- **Wartungslast gehört jetzt uns**: Dependencies, Toolchain- und
+  VS-Code-API-Änderungen landen bei niemand anderem. Neue Dependencies nur
+  nach Absprache — jede ist zukünftige Solo-Wartungslast (siehe
+  `technical-debts/continue-fork-long-term-maintenance.md`).
+- **Opt-in-Flags bleiben gutes Muster** — nicht mehr aus Merge-Rücksicht,
+  sondern als Kill-Switch im Corporate-Betrieb. Gelebte Muster:
   `CONTINUE_STRICT_STREAM_TERMINATION` (stream termination guard),
   `experimental.promptLogs` (opt-in prompt logging).
+- **`docs/` ist die Produktdoku** (Mintlify-Site, gehört jetzt uns) —
+  produktwirksame Änderungen (neue Env-Vars, Features) dürfen dort
+  dokumentiert werden. Interne Prozess-Doku bleibt in `dev-docs/`.
+- **GitHub CI ist deaktiviert** — der Qualitäts-Gate ist die lokale
+  Test-Baseline (`how-tos/test-baseline.md`) via Runner.
 - **Abweichungs-Kommentare erklären das Warum** und referenzieren das
   zugehörige Doc in `dev-docs/` **per Dateiname** (`stream-forensics.md`),
   nie per Pfad.
-- **`docs/` ist upstream** (Mintlify-Produktdoku) — interne Doku ausschließlich
-  in `dev-docs/`.
-- **GitHub CI ist im Fork deaktiviert** — nicht reaktivieren. Der Gate ist die
-  lokale Test-Baseline (`how-tos/test-baseline.md`) via Runner.
-- **Neue Dependencies nur nach Absprache** — sie erschweren Upstream-Merges
-  und die Corporate-Freigabe.
 
 ## 2. Code-Stil
 

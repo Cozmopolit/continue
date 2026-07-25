@@ -4,6 +4,10 @@ Du arbeitest am **Fork von Continue** (Coding Assistant für VS Code/JetBrains),
 angepasst für Corporate-Use hinter dem CITT MCP-Tunnel. Monorepo (npm):
 `core/`, `gui/`, `packages/*`, `extensions/{vscode,cli}`, `binary/`.
 
+**Wichtigster Kontext: Continue ist eingestellt** — v2.1.0 ist die finale
+Version (Acqui-Hire durch Cursor, 2026). Es gibt keinen upstream; dieses Repo
+ist die einzige Weiterentwicklung und wird frei geforkt.
+
 ## Hard Rules
 
 1. **Keine Test-Planung vor Abschluss der Implementierung** — Tests sind die
@@ -18,9 +22,9 @@ angepasst für Corporate-Use hinter dem CITT MCP-Tunnel. Monorepo (npm):
 4. **Commit-Messages BOM-frei** (Verfahren:
    `dev-docs/how-tos/environment-gotchas.md`); lint-staged/prettier formatiert
    gestagte Dateien beim Commit nach.
-5. **Upstream-Hygiene**: chirurgische Diffs, kein Reformatieren upstream Codes,
-   Fork-Features additiv/opt-in. `docs/` ist upstream (Mintlify) — interne
-   Doku ausschließlich in `dev-docs/`.
+5. **Kein Upstream — freies Forken**, aber keine gratuiten repo-weiten
+   Umformatierungen (History/Blame). `docs/` = Produktdoku (Mintlify);
+   interne Doku ausschließlich in `dev-docs/`.
 6. **Push ist selten und Absicht** (1–3×/Tag, „Ende der Schicht") — nicht
    nach einzelnen Commits vorschlagen. Vor Push: voller Runner-Lauf, nur bei
    Grün (`dev-docs/coding-guidelines.md` §3).
