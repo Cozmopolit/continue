@@ -3,6 +3,7 @@ import * as followRedirects from "follow-redirects";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { BodyInit, RequestInit, Response } from "node-fetch";
+import { maskProxyOrigin, registerFetchDiagnostics } from "./diagnostics.js";
 import { getAgentOptions } from "./getAgentOptions.js";
 import patchedFetch from "./node-fetch-patch.js";
 import { getProxy, shouldBypassProxy } from "./util.js";
@@ -170,6 +171,16 @@ export async function fetchwithRequestOptions(
       body: finalBody,
       headers: headers,
       agent: agent,
+    });
+
+    // Attach network diagnostics for stream-level forensics (see
+    // streamSse / PrematureStreamEndError)
+    registerFetchDiagnostics(resp, {
+      url: `${url.protocol}//${url.host}${url.pathname}`,
+      proxyUsed: !!proxy && !shouldBypass,
+      proxyOrigin: proxy && !shouldBypass ? maskProxyOrigin(proxy) : undefined,
+      bypassedProxy: !!proxy && shouldBypass,
+      at: new Date().toISOString(),
     });
 
     // Verbose logging for debugging - log response details

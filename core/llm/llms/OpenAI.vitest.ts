@@ -1,3 +1,4 @@
+import { Readable } from "stream";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ILLM } from "../../index.js";
 import OpenAI from "./OpenAI.js";
@@ -16,36 +17,48 @@ interface LlmTestCase {
   mockStream?: any[];
 }
 
-function createMockStream(mockStream: any[]) {
+/**
+ * The shared vitest setup replaces globalThis.Response with node-fetch's
+ * implementation, which cannot carry a web ReadableStream body — bytes never
+ * reach the consumer. We therefore return a minimal Response-like object
+ * whose body is a Node Readable (works with streamSse via
+ * ReadableStream.from), so the stream content is really consumed.
+ * Real OpenAI-compatible servers always terminate with [DONE].
+ */
+function createMockSSEResponse(mockStream: any[]): Response {
   const encoder = new TextEncoder();
-  return new ReadableStream({
-    start(controller) {
-      for (const chunk of mockStream) {
-        controller.enqueue(
-          encoder.encode(
-            `data: ${
-              typeof chunk === "string" ? chunk : JSON.stringify(chunk)
-            }\n\n`,
-          ),
-        );
-      }
-      controller.close();
+  const chunks: Buffer[] = [];
+  for (const chunk of mockStream) {
+    chunks.push(
+      Buffer.from(
+        encoder.encode(
+          `data: ${
+            typeof chunk === "string" ? chunk : JSON.stringify(chunk)
+          }\n\n`,
+        ),
+      ),
+    );
+  }
+  chunks.push(Buffer.from(encoder.encode("data: [DONE]\n\n")));
+
+  return {
+    status: 200,
+    headers: {
+      forEach: (cb: (value: string, key: string) => void) =>
+        cb("text/event-stream", "content-type"),
+      get: (key: string) =>
+        key.toLowerCase() === "content-type" ? "text/event-stream" : null,
     },
-  });
+    body: Readable.from(chunks),
+    text: async () => "",
+  } as unknown as Response;
 }
 
 function setupMockFetch(mockResponse?: any, mockStream?: any[]) {
   const mockFetch = vi.fn();
 
   if (mockStream) {
-    const stream = createMockStream(mockStream);
-    mockFetch.mockResolvedValue(
-      new Response(stream, {
-        headers: {
-          "Content-Type": "text/event-stream",
-        },
-      }),
-    );
+    mockFetch.mockResolvedValue(createMockSSEResponse(mockStream));
   } else {
     mockFetch.mockResolvedValue(
       new Response(JSON.stringify(mockResponse), {

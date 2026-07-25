@@ -505,7 +505,11 @@ class OpenAI extends BaseLLM {
       signal,
     });
 
-    for await (const value of streamSse(response)) {
+    for await (const value of streamSse(response, {
+      signal,
+      expectTerminationSignal: true,
+      context: `openai legacy completions (${this.apiBase})`,
+    })) {
       if (value.choices?.[0]?.text && value.finish_reason !== "eos") {
         yield value.choices[0].text;
       }
@@ -559,7 +563,11 @@ class OpenAI extends BaseLLM {
       return;
     }
 
-    for await (const value of streamSse(response)) {
+    for await (const value of streamSse(response, {
+      signal,
+      expectTerminationSignal: true,
+      context: `openai chat completions (${this.apiBase})`,
+    })) {
       const chunk = fromChatCompletionChunk(value);
       if (chunk) {
         yield chunk;

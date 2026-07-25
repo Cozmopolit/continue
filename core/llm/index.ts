@@ -1,5 +1,8 @@
 import { ModelRole } from "@continuedev/config-yaml";
-import { fetchwithRequestOptions } from "@continuedev/fetch";
+import {
+  fetchwithRequestOptions,
+  isPrematureStreamEndError,
+} from "@continuedev/fetch";
 import { findLlmInfo } from "@continuedev/llm-info";
 import {
   BaseLlmApi,
@@ -54,6 +57,7 @@ import {
   DEFAULT_MAX_TOKENS,
   LLMConfigurationStatuses,
 } from "./constants.js";
+import { captureStreamFailureForensics } from "./streamForensics.js";
 import {
   compileChatMessages,
   countTokens,
@@ -593,6 +597,38 @@ export abstract class BaseLLM implements ILLM {
     );
   }
 
+  /**
+   * For premature stream terminations (connection closed without
+   * [DONE]/finish_reason — typically a corporate middlebox killing
+   * long-lived SSE), captures network forensics (TLS certificate chain
+   * probe + structured JSONL log) and enriches the error message so the
+   * user sees actionable diagnostics. Never throws.
+   */
+  private async enrichStreamErrorWithForensics(
+    e: unknown,
+    completionOptions: CompletionOptions,
+    requestType: string,
+  ): Promise<void> {
+    if (!isPrematureStreamEndError(e)) {
+      return;
+    }
+    try {
+      const { enrichedMessage } = await captureStreamFailureForensics({
+        provider: this.providerName,
+        model: completionOptions.model,
+        apiBase: this.apiBase,
+        requestType,
+        error: e,
+        requestOptions: this.requestOptions,
+      });
+      if (enrichedMessage) {
+        (e as Error).message = enrichedMessage;
+      }
+    } catch {
+      // Forensics must never break error handling
+    }
+  }
+
   async *streamFim(
     prefix: string,
     suffix: string,
@@ -801,6 +837,12 @@ export abstract class BaseLLM implements ILLM {
         undefined,
       );
     } catch (e) {
+      await this.enrichStreamErrorWithForensics(
+        e,
+        completionOptions,
+        "streamComplete",
+      );
+
       Logger.error(e as Error, {
         context: "llm_stream_complete",
         model: completionOptions.model,
@@ -1294,6 +1336,12 @@ export abstract class BaseLLM implements ILLM {
         usage,
       );
     } catch (e) {
+      await this.enrichStreamErrorWithForensics(
+        e,
+        completionOptions,
+        "streamChat",
+      );
+
       Logger.error(e as Error, {
         context: "llm_stream_chat",
         model: completionOptions.model,

@@ -18,6 +18,7 @@ import type {
 import { z } from "zod";
 import { OpenAIConfigSchema } from "../types.js";
 import { customFetch } from "../util.js";
+import { guardChatCompletionStream } from "../util/streamTermination.js";
 import {
   BaseLlmApi,
   CreateRerankResponse,
@@ -160,7 +161,12 @@ export class OpenAIApi implements BaseLlmApi {
       },
     );
     let lastChunkWithUsage: ChatCompletionChunk | undefined;
-    for await (const result of response) {
+    for await (const result of guardChatCompletionStream(response, {
+      apiBase: this.apiBase,
+      model: body.model,
+      signal,
+      context: `openai-adapter chat.completions (${this.apiBase})`,
+    })) {
       // Check if this chunk contains usage information
       if (result.usage) {
         // Store it to emit after all content chunks
@@ -192,7 +198,12 @@ export class OpenAIApi implements BaseLlmApi {
       this.modifyCompletionBody(body),
       { signal },
     );
-    for await (const result of response) {
+    for await (const result of guardChatCompletionStream(response, {
+      apiBase: this.apiBase,
+      model: body.model,
+      signal,
+      context: `openai-adapter completions (${this.apiBase})`,
+    })) {
       yield result;
     }
   }

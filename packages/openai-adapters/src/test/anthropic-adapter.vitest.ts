@@ -148,6 +148,7 @@ describe("Anthropic Adapter Tests", () => {
             text: " world",
           },
         },
+        { type: "message_stop" },
       ],
     });
   });
@@ -213,6 +214,7 @@ describe("Anthropic Adapter Tests", () => {
             text: "Hello",
           },
         },
+        { type: "message_stop" },
       ],
     });
   });

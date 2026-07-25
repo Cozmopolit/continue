@@ -289,6 +289,19 @@ export const createAdapterTests = (testConfig: AdapterTestConfig) => {
               },
             ],
           },
+          {
+            id: "test-id",
+            object: "chat.completion.chunk",
+            created: 1234567890,
+            model: "gpt-4",
+            choices: [
+              {
+                index: 0,
+                delta: {},
+                finish_reason: "stop",
+              },
+            ],
+          },
         ],
       });
     });
