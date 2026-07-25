@@ -57,7 +57,11 @@ function displayDiff(diff: DiffLine[]) {
 
 async function expectDiff(file: string) {
   const testFilePath = path.join(__dirname, "test-examples", file + ".diff");
-  const testFileContents = fs.readFileSync(testFilePath, "utf-8");
+  // Normalize line endings: on Windows the .diff fixtures may be checked out
+  // with CRLF (autocrlf), which would break the "\n---\n" split below.
+  const testFileContents = fs
+    .readFileSync(testFilePath, "utf-8")
+    .replace(/\r\n/g, "\n");
   const [oldText, newText, expectedDiff] = testFileContents
     .split("\n---\n")
     .map((s) => s.replace(/^\n+/, "").trimEnd());

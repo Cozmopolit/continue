@@ -57,7 +57,12 @@ async function expectDiff(file: string) {
     "test-examples",
     file + ".diff",
   );
-  const testFileContents = fs.readFileSync(testFilePath, "utf-8");
+  // Normalize line endings: the .diff fixtures may be checked out with CRLF
+  // (Windows autocrlf) or even committed with CRLF, which would break the
+  // "\n---\n" split below.
+  const testFileContents = fs
+    .readFileSync(testFilePath, "utf-8")
+    .replace(/\r\n/g, "\n");
   const [oldFile, newFile, expectedDiff] = testFileContents
     .split("\n---\n")
     .map((s) => s.replace(/^\n+/, "").trimEnd());

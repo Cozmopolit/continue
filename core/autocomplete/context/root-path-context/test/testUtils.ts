@@ -5,6 +5,7 @@ import { expect, vi } from "vitest";
 import Parser from "web-tree-sitter";
 import { Position } from "../../../..";
 import { testIde } from "../../../../test/fixtures";
+import { localPathOrUriToPath } from "../../../../util/pathToUri";
 import { getAst, getTreePathAtCursor } from "../../../util/ast";
 import { ImportDefinitionsService } from "../../ImportDefinitionsService";
 import { RootPathContextService } from "../RootPathContextService";
@@ -53,7 +54,11 @@ export async function testRootPathContext(
     "test",
     folderName,
   );
-  const workspaceDir = (await ide.getWorkspaceDirs())[0];
+  // getWorkspaceDirs() returns file:// URIs (see testDir.ts) — convert to a
+  // local path, otherwise path.join() produces garbage on Windows
+  // ("file:\C:\..." is treated as a drive-relative path and resolved
+  // against cwd) and creates literal "file:" directories on POSIX.
+  const workspaceDir = localPathOrUriToPath((await ide.getWorkspaceDirs())[0]);
   const testFolderPath = path.join(workspaceDir, folderName);
   fs.cpSync(folderPath, testFolderPath, {
     recursive: true,

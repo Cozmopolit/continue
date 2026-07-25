@@ -198,7 +198,23 @@ describe("walkDir functions", () => {
     it("should skip symlinks", async () => {
       const filePath = path.join(TEST_DIR_PATH, "real.ts");
       addToTestDir([["real.ts", "content"]]);
-      fs.symlinkSync(filePath, path.join(TEST_DIR_PATH, "symlink.ts"), "file");
+      try {
+        fs.symlinkSync(
+          filePath,
+          path.join(TEST_DIR_PATH, "symlink.ts"),
+          "file",
+        );
+      } catch (e: any) {
+        // Creating symlinks on Windows requires Developer Mode or admin
+        // privileges; skip gracefully where unavailable
+        if (e?.code === "EPERM" || e?.code === "EACCES") {
+          console.warn(
+            "Skipping symlink test: cannot create symlinks on this system",
+          );
+          return;
+        }
+        throw e;
+      }
 
       const files = await walkDirs(testIde);
 

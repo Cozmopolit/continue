@@ -365,6 +365,24 @@ function createRecordingTransport(
 
 async function* emptySseStream(): AsyncGenerator<string> {}
 
+// OpenAI-native streaming response with protocol-correct termination.
+// streamSse (packages/fetch, stream forensics) treats a stream that closes
+// without a [DONE] sentinel as a premature end and throws
+// PrematureStreamEndError — so the empty mock stream only works for
+// provider paths that don't go through the instrumented streamSse.
+async function* terminatingSseStream(): AsyncGenerator<string> {
+  yield 'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"azure-gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n';
+  yield "data: [DONE]\n\n";
+}
+
+function terminatingStreamingResponse(): ProxyHttpResponse {
+  return {
+    ...emptyStreamingResponse(),
+    streamId: "s_wire_terminating",
+    chunks: terminatingSseStream(),
+  };
+}
+
 function emptyStreamingResponse(): ProxyHttpResponse {
   return {
     streaming: true,
@@ -433,7 +451,7 @@ describe("discoverProxyModels", () => {
   });
 
   test("discovered model sends its traffic through the tunnel, not the network", async () => {
-    const transport = createRecordingTransport(emptyStreamingResponse);
+    const transport = createRecordingTransport(terminatingStreamingResponse);
     const models = await discoverProxyModels(
       [statusWithEndpoint(createEndpoint())],
       createDeps(() => transport),
@@ -450,7 +468,7 @@ describe("discoverProxyModels", () => {
 
 describe("wire format through the tunnel fetch", () => {
   test("OpenAI-compatible chat request", async () => {
-    const transport = createRecordingTransport(emptyStreamingResponse);
+    const transport = createRecordingTransport(terminatingStreamingResponse);
     const models = await discoverProxyModels(
       [statusWithEndpoint(createEndpoint())],
       createDeps(() => transport),

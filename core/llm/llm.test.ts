@@ -211,23 +211,44 @@ describe("LLM", () => {
     return;
   }
 
+  // Live API tests call real provider endpoints. Each provider is skipped
+  // when its API key is not configured (env or core/.env via dotenv), so
+  // local runs without credentials stay green. When no keys are set at all,
+  // register a placeholder test because Jest fails on suites with zero tests.
+  const providerKeyEnvVars = [
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "MISTRAL_API_KEY",
+    "GEMINI_API_KEY",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_FOUNDRY_CODESTRAL_API_KEY",
+  ];
+  if (!providerKeyEnvVars.some((key) => !!process.env[key])) {
+    test("Skipping live LLM API tests (no provider API keys set)", () => {
+      console.log(
+        "Set provider API keys (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY, MISTRAL_API_KEY) via env or core/.env to enable live LLM API tests",
+      );
+    });
+    return;
+  }
+
   testLLM(
     new Anthropic({
       model: "claude-sonnet-4-0",
       apiKey: process.env.ANTHROPIC_API_KEY,
     }),
-    { skip: false, testToolCall: true },
+    { skip: !process.env.ANTHROPIC_API_KEY, testToolCall: true },
   );
   testLLM(new OpenAI({ apiKey: process.env.OPENAI_API_KEY, model: "gpt-4o" }), {
-    skip: false,
+    skip: !process.env.OPENAI_API_KEY,
     testToolCall: true,
   });
   testLLM(
     new OpenAI({ apiKey: process.env.OPENAI_API_KEY, model: "o3-mini" }),
-    { skip: false, timeout: 60000 },
+    { skip: !process.env.OPENAI_API_KEY, timeout: 60000 },
   );
   testLLM(new OpenAI({ apiKey: process.env.OPENAI_API_KEY, model: "o1" }), {
-    skip: false,
+    skip: !process.env.OPENAI_API_KEY,
     timeout: 60000,
   });
   testLLM(
@@ -242,7 +263,12 @@ describe("LLM", () => {
       apiKey: process.env.MISTRAL_API_KEY,
       model: "codestral-latest",
     }),
-    { testFim: true, skip: false, testToolCall: true, timeout: 60000 },
+    {
+      testFim: true,
+      skip: !process.env.MISTRAL_API_KEY,
+      testToolCall: true,
+      timeout: 60000,
+    },
   );
   testLLM(
     new Azure({

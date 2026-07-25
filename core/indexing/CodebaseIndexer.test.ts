@@ -600,6 +600,12 @@ describe("CodebaseIndexer", () => {
               embed: {
                 model: "test-model",
                 provider: "test-provider",
+                // ILLM identity fields are required: without them
+                // embedModelsAreEqual() treats this mock as "no embed
+                // model" and handleConfigUpdate never triggers a reindex
+                title: "test-embed-model",
+                underlyingProviderName: "test-provider",
+                maxEmbeddingChunkSize: 512,
               },
             },
           } as unknown as ContinueConfig,
@@ -623,6 +629,12 @@ describe("CodebaseIndexer", () => {
             embed: {
               model: "test-model",
               provider: "test-provider",
+              // ILLM identity fields are required: without them
+              // embedModelsAreEqual() treats this mock as "no embed
+              // model" and handleConfigUpdate never triggers a reindex
+              title: "test-embed-model",
+              underlyingProviderName: "test-provider",
+              maxEmbeddingChunkSize: 512,
             },
           },
         } as unknown as ContinueConfig;
@@ -661,6 +673,12 @@ describe("CodebaseIndexer", () => {
               embed: {
                 model: "test-model",
                 provider: "test-provider",
+                // ILLM identity fields are required: without them
+                // embedModelsAreEqual() treats this mock as "no embed
+                // model" and handleConfigUpdate never triggers a reindex
+                title: "test-embed-model",
+                underlyingProviderName: "test-provider",
+                maxEmbeddingChunkSize: 512,
               },
             },
           } as unknown as ContinueConfig,

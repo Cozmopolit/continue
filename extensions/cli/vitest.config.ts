@@ -21,6 +21,13 @@ export default defineConfig({
     },
     testTimeout: 30000,
     hookTimeout: 30000,
+    // Many tests assert on styled terminal output (chalk/gradient-string).
+    // A globally set FORCE_COLOR (e.g. on Windows dev machines) enables ANSI
+    // colors in non-TTY test runs and breaks those substring assertions —
+    // force colors off for deterministic results.
+    env: {
+      FORCE_COLOR: "0",
+    },
   },
   resolve: {
     alias: {

@@ -39,6 +39,29 @@ function createTempDir(): string {
 }
 
 /**
+ * Locate an OpenSSL binary: on PATH, or the one bundled with Git for Windows.
+ * Returns undefined when no OpenSSL is available (the certificate e2e tests
+ * are skipped in that case).
+ */
+function findOpenSSLCommand(): string | undefined {
+  try {
+    execSync("openssl version", { stdio: "pipe" });
+    return "openssl";
+  } catch {
+    // not on PATH
+  }
+  if (process.platform === "win32") {
+    const gitBundled = "C:\\Program Files\\Git\\usr\\bin\\openssl.exe";
+    if (fs.existsSync(gitBundled)) {
+      return `"${gitBundled}"`;
+    }
+  }
+  return undefined;
+}
+
+const openSSLCommand = findOpenSSLCommand();
+
+/**
  * Generate a self-signed certificate for testing
  */
 async function generateCertificate(
@@ -46,13 +69,20 @@ async function generateCertificate(
   name: string,
   options: { cn: string; san: string[]; org: string },
 ): Promise<{ certPath: string; keyPath: string; caCertPath: string }> {
+  if (!openSSLCommand) {
+    throw new Error(
+      "OpenSSL is required to generate test certificates (not found on PATH or bundled with Git for Windows)",
+    );
+  }
   const certPath = path.join(tempDir, `${name}.crt`);
   const keyPath = path.join(tempDir, `${name}.key`);
   const caCertPath = path.join(tempDir, `${name}-ca.crt`);
 
   try {
     // Generate a private key
-    execSync(`openssl genrsa -out "${keyPath}" 2048`, { stdio: "pipe" });
+    execSync(`${openSSLCommand} genrsa -out "${keyPath}" 2048`, {
+      stdio: "pipe",
+    });
 
     // Create config file for certificate
     const configPath = path.join(tempDir, `${name}.conf`);
@@ -89,7 +119,7 @@ ${altNames}
 
     // Generate a self-signed certificate
     execSync(
-      `openssl req -new -x509 -key "${keyPath}" -out "${certPath}" -days 365 -config "${configPath}" -extensions v3_req`,
+      `${openSSLCommand} req -new -x509 -key "${keyPath}" -out "${certPath}" -days 365 -config "${configPath}" -extensions v3_req`,
       { stdio: "pipe" },
     );
 
@@ -98,24 +128,12 @@ ${altNames}
 
     return { certPath, keyPath, caCertPath };
   } catch (error) {
-    // Fallback: create minimal test certificates if OpenSSL not available
-    const key = `-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC7VJTUt9Us8cKB
-wEiOfniel+2jNcJjYUiUoq5YbVKk+xqt4bOMh5DNFJ3LnU1OaUHyG5sHlgNyKA==
------END PRIVATE KEY-----`;
-
-    const cert = `-----BEGIN CERTIFICATE-----
-MIICljCCAX4CCQCKnW9qX7TlxzANBgkqhkiG9w0BAQsFADANMQswCQYDVQQGEwJV
-UzAeFw0yNDAxMDEwMDAwMDBaFw0yNTAxMDEwMDAwMDBaMA0xCzAJBgNVBAYTAlVT
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1L7VLPHCQD1OvF4p
-4td9ozXCY2FIlKKuWG1SpPsareGzjIeQzRSdy51NTmlB8hubB5YDcigN8=
------END CERTIFICATE-----`;
-
-    fs.writeFileSync(keyPath, key);
-    fs.writeFileSync(certPath, cert);
-    fs.writeFileSync(caCertPath, cert);
-
-    return { certPath, keyPath, caCertPath };
+    // No point falling back to hardcoded certificates here: they must carry
+    // SANs matching the test server hostname and a corresponding private key
+    // to start a TLS server — surface the OpenSSL failure directly instead.
+    throw new Error(
+      `Failed to generate test certificate with OpenSSL: ${error}`,
+    );
   }
 }
 
@@ -341,165 +359,170 @@ describe("fetchwithRequestOptions E2E tests", () => {
     });
   });
 
-  describe("Certificate handling - Enterprise scenarios", () => {
-    test("should REJECT self-signed certificates when SSL verification is enabled", async () => {
-      const tempDir = createTempDir();
-      const serverCerts = await generateCertificate(tempDir, "server", {
-        cn: "localhost",
-        san: ["localhost", "127.0.0.1"],
-        org: "Test",
+  // Requires OpenSSL (on PATH or bundled with Git for Windows) to generate
+  // test certificates — skipped where unavailable.
+  describe.skipIf(!openSSLCommand)(
+    "Certificate handling - Enterprise scenarios",
+    () => {
+      test("should REJECT self-signed certificates when SSL verification is enabled", async () => {
+        const tempDir = createTempDir();
+        const serverCerts = await generateCertificate(tempDir, "server", {
+          cn: "localhost",
+          san: ["localhost", "127.0.0.1"],
+          org: "Test",
+        });
+
+        await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
+
+        // This simulates the customer's "unable to get local issuer certificate" error
+        await expect(
+          fetchwithRequestOptions(
+            `https://localhost:${HTTPS_PORT}/secure`,
+            {},
+            { verifySsl: true }, // No custom CA provided
+          ),
+        ).rejects.toThrow(); // Should fail with certificate error
       });
 
-      await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
+      test("should ACCEPT self-signed certificates when SSL verification is disabled", async () => {
+        const tempDir = createTempDir();
+        const serverCerts = await generateCertificate(tempDir, "server", {
+          cn: "localhost",
+          san: ["localhost", "127.0.0.1"],
+          org: "Test",
+        });
 
-      // This simulates the customer's "unable to get local issuer certificate" error
-      await expect(
-        fetchwithRequestOptions(
+        await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
+
+        const response = await fetchwithRequestOptions(
           `https://localhost:${HTTPS_PORT}/secure`,
           {},
-          { verifySsl: true }, // No custom CA provided
-        ),
-      ).rejects.toThrow(); // Should fail with certificate error
-    });
+          { verifySsl: false },
+        );
 
-    test("should ACCEPT self-signed certificates when SSL verification is disabled", async () => {
-      const tempDir = createTempDir();
-      const serverCerts = await generateCertificate(tempDir, "server", {
-        cn: "localhost",
-        san: ["localhost", "127.0.0.1"],
-        org: "Test",
+        expect(response.status).toBe(200);
+        const data = (await response.json()) as {
+          message: string;
+          secure: boolean;
+        };
+        expect(data.secure).toBe(true);
       });
 
-      await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
+      test("should ACCEPT self-signed certificates with custom CA bundle", async () => {
+        const tempDir = createTempDir();
+        const serverCerts = await generateCertificate(tempDir, "server", {
+          cn: "localhost",
+          san: ["localhost", "127.0.0.1"],
+          org: "Test",
+        });
 
-      const response = await fetchwithRequestOptions(
-        `https://localhost:${HTTPS_PORT}/secure`,
-        {},
-        { verifySsl: false },
-      );
+        await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
 
-      expect(response.status).toBe(200);
-      const data = (await response.json()) as {
-        message: string;
-        secure: boolean;
-      };
-      expect(data.secure).toBe(true);
-    });
-
-    test("should ACCEPT self-signed certificates with custom CA bundle", async () => {
-      const tempDir = createTempDir();
-      const serverCerts = await generateCertificate(tempDir, "server", {
-        cn: "localhost",
-        san: ["localhost", "127.0.0.1"],
-        org: "Test",
-      });
-
-      await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
-
-      const response = await fetchwithRequestOptions(
-        `https://localhost:${HTTPS_PORT}/secure`,
-        {},
-        {
-          caBundlePath: serverCerts.caCertPath, // Our self-signed cert as CA
-          verifySsl: true,
-        },
-      );
-
-      expect(response.status).toBe(200);
-      const data = (await response.json()) as {
-        message: string;
-        secure: boolean;
-      };
-      expect(data.secure).toBe(true);
-    });
-
-    test("should REJECT certificates when provided WRONG CA bundle", async () => {
-      const tempDir = createTempDir();
-      const serverCerts = await generateCertificate(tempDir, "server", {
-        cn: "localhost",
-        san: ["localhost", "127.0.0.1"],
-        org: "Test",
-      });
-
-      // Generate a different certificate as the "wrong" CA
-      const wrongCaCerts = await generateCertificate(tempDir, "wrong-ca", {
-        cn: "wrong-ca",
-        san: ["wrong-ca"],
-        org: "Wrong CA",
-      });
-
-      await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
-
-      // This should fail because the wrong CA can't validate our server certificate
-      await expect(
-        fetchwithRequestOptions(
+        const response = await fetchwithRequestOptions(
           `https://localhost:${HTTPS_PORT}/secure`,
           {},
           {
-            caBundlePath: wrongCaCerts.caCertPath,
+            caBundlePath: serverCerts.caCertPath, // Our self-signed cert as CA
             verifySsl: true,
           },
-        ),
-      ).rejects.toThrow(); // Should fail with certificate validation error
-    });
+        );
 
-    test("should REJECT certificates when CA bundle file is corrupted", async () => {
-      const tempDir = createTempDir();
-      const serverCerts = await generateCertificate(tempDir, "server", {
-        cn: "localhost",
-        san: ["localhost", "127.0.0.1"],
-        org: "Test",
+        expect(response.status).toBe(200);
+        const data = (await response.json()) as {
+          message: string;
+          secure: boolean;
+        };
+        expect(data.secure).toBe(true);
       });
 
-      // Create a corrupted/invalid certificate file
-      const corruptedCaPath = path.join(tempDir, "corrupted-ca.pem");
-      const corruptedContent = `-----BEGIN CERTIFICATE-----
+      test("should REJECT certificates when provided WRONG CA bundle", async () => {
+        const tempDir = createTempDir();
+        const serverCerts = await generateCertificate(tempDir, "server", {
+          cn: "localhost",
+          san: ["localhost", "127.0.0.1"],
+          org: "Test",
+        });
+
+        // Generate a different certificate as the "wrong" CA
+        const wrongCaCerts = await generateCertificate(tempDir, "wrong-ca", {
+          cn: "wrong-ca",
+          san: ["wrong-ca"],
+          org: "Wrong CA",
+        });
+
+        await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
+
+        // This should fail because the wrong CA can't validate our server certificate
+        await expect(
+          fetchwithRequestOptions(
+            `https://localhost:${HTTPS_PORT}/secure`,
+            {},
+            {
+              caBundlePath: wrongCaCerts.caCertPath,
+              verifySsl: true,
+            },
+          ),
+        ).rejects.toThrow(); // Should fail with certificate validation error
+      });
+
+      test("should REJECT certificates when CA bundle file is corrupted", async () => {
+        const tempDir = createTempDir();
+        const serverCerts = await generateCertificate(tempDir, "server", {
+          cn: "localhost",
+          san: ["localhost", "127.0.0.1"],
+          org: "Test",
+        });
+
+        // Create a corrupted/invalid certificate file
+        const corruptedCaPath = path.join(tempDir, "corrupted-ca.pem");
+        const corruptedContent = `-----BEGIN CERTIFICATE-----
 This is not a valid certificate content
 Just some random text that looks like a cert
 -----END CERTIFICATE-----`;
 
-      fs.writeFileSync(corruptedCaPath, corruptedContent);
+        fs.writeFileSync(corruptedCaPath, corruptedContent);
 
-      await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
+        await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
 
-      // This should fail because the corrupted CA file can't be parsed
-      await expect(
-        fetchwithRequestOptions(
-          `https://localhost:${HTTPS_PORT}/secure`,
-          {},
-          {
-            caBundlePath: corruptedCaPath,
-            verifySsl: true,
-          },
-        ),
-      ).rejects.toThrow(); // Should fail with certificate parsing or validation error
-    });
-
-    test("should REJECT certificates when CA bundle file does not exist", async () => {
-      const tempDir = createTempDir();
-      const serverCerts = await generateCertificate(tempDir, "server", {
-        cn: "localhost",
-        san: ["localhost", "127.0.0.1"],
-        org: "Test",
+        // This should fail because the corrupted CA file can't be parsed
+        await expect(
+          fetchwithRequestOptions(
+            `https://localhost:${HTTPS_PORT}/secure`,
+            {},
+            {
+              caBundlePath: corruptedCaPath,
+              verifySsl: true,
+            },
+          ),
+        ).rejects.toThrow(); // Should fail with certificate parsing or validation error
       });
 
-      const nonExistentCaPath = path.join(tempDir, "does-not-exist.pem");
+      test("should REJECT certificates when CA bundle file does not exist", async () => {
+        const tempDir = createTempDir();
+        const serverCerts = await generateCertificate(tempDir, "server", {
+          cn: "localhost",
+          san: ["localhost", "127.0.0.1"],
+          org: "Test",
+        });
 
-      await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
+        const nonExistentCaPath = path.join(tempDir, "does-not-exist.pem");
 
-      // This should handle the missing file gracefully but still fail cert validation
-      await expect(
-        fetchwithRequestOptions(
-          `https://localhost:${HTTPS_PORT}/secure`,
-          {},
-          {
-            caBundlePath: nonExistentCaPath,
-            verifySsl: true,
-          },
-        ),
-      ).rejects.toThrow(); // Should fail with certificate validation error
-    });
-  });
+        await startHttpsServer(serverCerts.certPath, serverCerts.keyPath);
+
+        // This should handle the missing file gracefully but still fail cert validation
+        await expect(
+          fetchwithRequestOptions(
+            `https://localhost:${HTTPS_PORT}/secure`,
+            {},
+            {
+              caBundlePath: nonExistentCaPath,
+              verifySsl: true,
+            },
+          ),
+        ).rejects.toThrow(); // Should fail with certificate validation error
+      });
+    },
+  );
 
   describe("Error handling", () => {
     test("should handle network errors gracefully", async () => {
