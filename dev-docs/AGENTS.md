@@ -33,18 +33,41 @@ Weiterarbeiten ohne CITT.
 5. **Kein Upstream — freies Forken**, aber keine gratuiten repo-weiten
    Umformatierungen (History/Blame). `docs/` = Produktdoku (Mintlify);
    interne Doku ausschließlich in `dev-docs/`.
-6. **Push ist selten und Absicht** (1–3×/Tag, „Ende der Schicht") — nicht
+6. **Kein Commit ohne explizites Go des Users** — Commit-Punkte gerne
+   vorschlagen, aber niemals eigenständig committen.
+7. **Push ist selten und Absicht** (1–3×/Tag, „Ende der Schicht") — nicht
    nach einzelnen Commits vorschlagen. Vor Push: voller Runner-Lauf, nur bei
    Grün (`dev-docs/coding-guidelines.md` §3).
 
 ## Vorgehensweise
 
-- **Agentic CITT-Tools nutzen** (`ask_files`, `ask_file`, `run_file_editor`):
-  Recherche und Datei-Lektüre passieren im Sub-Agent — nur Frage und Antwort
-  landen im eigenen Kontext (Kontext-Hygiene). Breite Code-Fragen an
-  `ask_files` delegieren statt selbst Dateien zu lesen; mechanische Edits
-  über mehrere Stellen/Dateien an `run_file_editor` (braucht vollständige
-  Pfade + klare Änderungsbeschreibung).
+- **Agentic CITT-Tools gezielt einsetzen** — Kontext-Hygiene: nur Frage und
+  Antwort landen im eigenen Kontext, nicht die Recherche. Die Tools stecken
+  hinter unterschiedlich starken Modellen — richtig dosiert:
+
+  - **`ask_file`** (schnelles Modell, single-turn, eine Datei): der Default
+    für Fragen zu einer bekannten Datei. Schnell, billig, deterministisch —
+    großzügig einsetzen.
+  - **`ask_files`** (Flash-Klasse, viele Dateien): für **breite Extraktion**,
+    nicht für tiefe Analyse („alle Signaturen in Verzeichnis X", „wo wird Y
+    überall verwendet"). Lohnt erst ab mehreren Dateien; bei 1–2 bekannten
+    Dateien ist direktes Lesen billiger. Der Sub-Agent startet **bei Null**
+    (kennt AGENTS.md und diesen Chat nicht) und braucht Minuten + viele
+    Tokens → Aufgabe **vollständig self-contained** formulieren; Architektur-/
+    Analysefragen nicht delegieren (überfordert das kleine Modell bzw. ist
+    unverhältnismäßig teuer).
+  - **`run_file_editor`** (Opus-4.5-Klasse): Edits aller Art — von
+    mechanischen Umbenennungen bis zu komplexeren Umbauten über mehrere
+    Stellen/Dateien. Vollständige Pfade + klare Änderungsbeschreibung
+    liefern.
+
+  Praxis-Regeln für `ask_files` (aus Auswertung der AskFiles-Logs): **Pfad so
+  eng wie möglich** (Subdirectory, nicht Repo-Root); **keine Serien** von
+  Deep-Dives auf demselben breiten Scope — jede Frage startet bei Null, also
+  einmal breit extrahieren („welche Dateien sind für X relevant"), dann die
+  identifizierten Dateien selbst lesen; **Existenz-/Suchfragen** („gibt es
+  ein Tool für X", „wo steht der ConnectionString") an `file_search`/grep
+  statt ask_files.
 
 ## Must-Reads (je nach Aufgabe, in dieser Reihenfolge)
 

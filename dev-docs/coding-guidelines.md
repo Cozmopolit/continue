@@ -63,9 +63,10 @@ Damit das nicht in jedem Chat neu verhandelt wird:
 - **Bündeln statt Micro-Commits**: verwandte Kleinigkeiten (z.B. mehrere
   Doku-Anpassungen) gesammelt in einem Commit, nicht jede Einzeländerung
   einzeln committen.
-- **Commit-Freiheit**: jederzeit committen, wenn es sich richtig anfühlt —
-  auch zwischen Implementierungsphasen. Granularität nach Bauchgefühl und
-  Feature-Größe.
+- **Kein Commit ohne explizites Go des Users** — das gilt verbindlich auch
+  für Agents: Commit-Punkte gerne vorschlagen, aber niemals eigenständig
+  committen. Die Commit-Freiheit (jederzeit, auch zwischen Phasen;
+  Granularität nach Bauchgefühl und Feature-Größe) liegt beim User.
 - **Messages kompakt**: kurzer Subject (Prefixe wie bisher: `feat(…):`,
   `fix:`, `test:`, `docs:`, `chore:`), Body nur wenn er echten Kontext
   liefert. BOM-frei (siehe `how-tos/environment-gotchas.md`).

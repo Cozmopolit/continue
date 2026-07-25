@@ -69,6 +69,6 @@ Ziel: Verifizieren, dass die Spec wie geschrieben gegen den echten Code umsetzba
 
 - **Feature-Commit** nach Abschluss von Phase 2/3 (vollständige Verhaltensänderung), **Tests als getrennter Commit** nach Phase 4.
 - Kleinigkeiten und Spec-Updates reiten in beliebigen Commits mit — Spec-Pflege ist Dauerzustand.
-- Jederzeit committen, wenn es sich richtig anfühlt (z.B. zwischen Phasen) — Granularität nach Bauchgefühl und Feature-Größe. Messages kompakt halten.
+- **Kein Commit ohne explizites Go des Users** — der Agent schlägt Commit-Punkte vor (typisch: Feature-Commit nach Phase 2/3, Test-Commit nach Phase 4), committet aber niemals eigenständig. Messages kompakt halten.
 - Commit-Message **BOM-frei** schreiben (Verfahren: `how-tos/environment-gotchas.md`); lint-staged/prettier formatiert gestagte Dateien beim Commit nach — kurz gegenprüfen.
 - **Push ist selten** (1–3×/Tag, typischerweise „am Ende der Schicht") — Details: `../coding-guidelines.md` §3. Nicht nach einzelnen Commits zum Push raten; vor dem Push idealerweise voller Runner-Lauf, nur bei Grün.
