@@ -4,6 +4,8 @@ Status: **2026-07-25** — vollständige Baseline über alle lauffähigen Suites
 Ziel: Nie wieder "überraschende" pre-existing Test-Failures bei Feature-Arbeit.
 Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen werden.
 
+> **Zum Ausführen:** `npm run test:all` — siehe [running-tests.md](running-tests.md).
+
 > Hinweis: Die GitHub-Workflows sind im Fork deaktiviert; es gibt keine CI-Referenz.
 > Diese Baseline (Windows-Dev-Machine) ist die einzige Referenz.
 
@@ -49,9 +51,11 @@ Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen we
    Globaler Abschalter bleibt `IGNORE_API_KEY_TESTS=true`.
    Achtung: Mit gesetzten Keys gehen die Requests **wirklich raus** (OpenAI 401 etc.).
 
-6. **Timing-sensitiv unter Parallel-Last**: `core/config/yaml/LocalPlatformClient.vitest.ts`
-   (10s-Timeouts) flake-te, als gleichzeitig die CLI-Suite lief; solo grün.
-   → Volle `core`-Vitest- und `extensions/cli`-Läufe **nicht gleichzeitig** starten.
+6. **Timing-sensitiv**: `core/config/yaml/LocalPlatformClient.vitest.ts` re-importiert
+   in seinen Hooks den Fixtures-Modulgraphen pro Test kalt (`vi.resetModules()`) —
+   kann das 10s-`hookTimeout` überschreiten → Datei hat jetzt 30s-`test`/`hookTimeout`
+   via `vi.setConfig`. Grundsätzlich: volle Suiten **nicht parallel** laufen lassen
+   (der Runner in `scripts/run-all-tests.mjs` ist deshalb sequentiell).
 
 7. **Jest-ESM-Overhead**: `core`-Jest-Files brauchen ~10-20s pro File
    (`--experimental-vm-modules`), `maxWorkers: 1` ist konfiguriert (in-band).

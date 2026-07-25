@@ -13,6 +13,11 @@ import { LocalPlatformClient } from "./LocalPlatformClient";
 
 vi.mock("../../util/paths", { spy: true });
 
+// Hooks in this file re-import the fixtures module graph for every test
+// (beforeEach dynamic import + afterEach vi.resetModules) — cold reloads
+// can exceed the default 10s hookTimeout on loaded machines.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 describe("LocalPlatformClient", () => {
   const testFQSN: FQSN = {
     packageSlugs: [
