@@ -1722,6 +1722,15 @@ export interface ExperimentalConfig {
    * gather context for the model where necessary.
    */
   enableStaticContextualization?: boolean;
+
+  /**
+   * Opt-in prompt logging (see specifications/prompt-logging-opt-in.md).
+   * If enabled, each assistant history item stores the fully rendered
+   * prompt(s) of its LLM calls (`promptLogs`) and chat interactions are
+   * logged to devdata. Off by default: prompt logging grows session files
+   * quadratically (every stored prompt contains the entire conversation).
+   */
+  promptLogging?: boolean;
 }
 
 export interface AnalyticsConfig {

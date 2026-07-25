@@ -77,6 +77,12 @@ export function getRootStateWithClaude(): RootState {
       ...state.config,
       config: {
         ...state.config.config,
+        // Enable opt-in prompt logging so promptLog dispatches are produced
+        // (specifications/prompt-logging-opt-in.md)
+        experimental: {
+          ...state.config.config.experimental,
+          promptLogging: true,
+        },
         selectedModelByRole: {
           ...state.config.config.selectedModelByRole,
           chat: mockClaudeModel,
@@ -209,6 +215,14 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
+        type: "symbols/updateFromContextItems/fulfilled",
+        meta: expect.objectContaining({
+          arg: [],
+          requestStatus: "fulfilled",
+        }),
+        payload: undefined,
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           index: 1,
@@ -230,14 +244,6 @@ describe("streamResponseThunk", () => {
       {
         type: "session/setContextPercentage",
         payload: { percentage: 0.8 },
-      },
-      {
-        type: "symbols/updateFromContextItems/fulfilled",
-        meta: expect.objectContaining({
-          arg: [],
-          requestStatus: "fulfilled",
-        }),
-        payload: undefined,
       },
       {
         type: "session/streamUpdate",
@@ -357,11 +363,12 @@ describe("streamResponseThunk", () => {
     ]);
 
     // Verify IDE messenger calls
+    // System message now includes env block with workspace_root and platform
     expect(requestSpy).toHaveBeenCalledWith("llm/compileChat", {
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant.",
+          content: expect.stringContaining("You are a helpful assistant."),
         },
         {
           role: "user",
@@ -596,12 +603,12 @@ describe("streamResponseThunk", () => {
       "symbols/updateFromContextItems/pending",
       "session/updateHistoryItemAtIndex",
       "chat/streamNormalInput/pending",
+      "symbols/updateFromContextItems/fulfilled",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
       "session/setIsPruned",
       "session/setContextPercentage",
-      "symbols/updateFromContextItems/fulfilled",
       "session/streamUpdate",
       "session/streamUpdate",
       "session/addPromptCompletionPair",
@@ -713,11 +720,12 @@ describe("streamResponseThunk", () => {
     });
 
     // Verify IDE messenger calls
+    // System message now includes env block with workspace_root and platform
     expect(requestSpy).toHaveBeenCalledWith("llm/compileChat", {
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant.",
+          content: expect.stringContaining("You are a helpful assistant."),
         },
         {
           role: "user",
@@ -1010,6 +1018,15 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
+        type: "symbols/updateFromContextItems/fulfilled",
+        meta: {
+          arg: [],
+          requestId: expect.any(String),
+          requestStatus: "fulfilled",
+        },
+        payload: undefined,
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           appliedRules: [],
@@ -1031,15 +1048,6 @@ describe("streamResponseThunk", () => {
       {
         type: "session/setContextPercentage",
         payload: { percentage: 0.8 },
-      },
-      {
-        type: "symbols/updateFromContextItems/fulfilled",
-        meta: {
-          arg: [],
-          requestId: expect.any(String),
-          requestStatus: "fulfilled",
-        },
-        payload: undefined,
       },
       {
         type: "session/streamUpdate",
@@ -1179,11 +1187,12 @@ describe("streamResponseThunk", () => {
     ]);
 
     // Verify IDE messenger calls
+    // System message now includes env block with workspace_root and platform
     expect(requestSpy).toHaveBeenCalledWith("llm/compileChat", {
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant.",
+          content: expect.stringContaining("You are a helpful assistant."),
         },
         {
           role: "user",
@@ -1269,5 +1278,62 @@ describe("streamResponseThunk", () => {
         title: "Session summary",
       },
     });
+  });
+
+  it("should not store prompt logs when prompt logging is disabled (default)", async () => {
+    // Opt-in flag off (specifications/prompt-logging-opt-in.md): remove the
+    // experimental override that getRootStateWithClaude adds for other tests
+    const initialState = getRootStateWithClaude();
+    delete initialState.config.config.experimental;
+    initialState.session.history = [
+      {
+        message: { id: "1", role: "user", content: "Hello" },
+        contextItems: [],
+      },
+    ];
+    initialState.session.id = "session-123";
+    const mockStore = createMockStore(initialState);
+    const mockIdeMessenger = mockStore.mockIdeMessenger;
+
+    mockIdeMessenger.responses["llm/compileChat"] = {
+      compiledChatMessages: [{ role: "user", content: "Hello" }],
+      didPrune: false,
+      contextPercentage: 0.8,
+    };
+
+    async function* mockStreamGenerator(): AsyncGenerator<
+      AssistantChatMessage[],
+      PromptLog
+    > {
+      yield [{ role: "assistant", content: "First chunk" }];
+      return {
+        prompt: "Hello",
+        completion: "Hi there!",
+        modelProvider: "anthropic",
+        modelTitle: "Claude 3.5 Sonnet",
+      };
+    }
+    mockIdeMessenger.llmStreamChat = vi
+      .fn()
+      .mockReturnValue(mockStreamGenerator());
+
+    await mockStore.dispatch(
+      streamResponseThunk({
+        editorState: mockEditorState,
+        modifiers: mockModifiers,
+      }) as any,
+    );
+
+    const actionTypes = mockStore
+      .getActions()
+      .map((action: any) => action.type);
+
+    // No prompt logs stored, but the reasoning-end side effect is kept
+    expect(actionTypes).not.toContain("session/addPromptCompletionPair");
+    expect(actionTypes).toContain("session/endActiveReasoning");
+    // Stream completed normally
+    expect(actionTypes).toContain("session/streamUpdate");
+    expect(actionTypes).toContain("session/setInactive");
+    expect(actionTypes).toContain("chat/streamNormalInput/fulfilled");
   });
 });

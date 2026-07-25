@@ -8,6 +8,7 @@ import { selectSelectedChatModel } from "../slices/configSlice";
 import {
   abortStream,
   addPromptCompletionPair,
+  endActiveReasoning,
   errorToolCall,
   setActive,
   setAppliedRulesAtIndex,
@@ -252,31 +253,39 @@ export const streamNormalInput = createAsyncThunk<
 
       // Attach prompt log and end thinking for reasoning models
       if (next.done && next.value) {
-        dispatch(addPromptCompletionPair([next.value]));
+        // Prompt logging is opt-in (specifications/prompt-logging-opt-in.md):
+        // each PromptLog stores the fully rendered prompt, which grows session
+        // state/files quadratically in agent loops. When disabled, only the
+        // reasoning-end side effect is kept.
+        if (state.config.config.experimental?.promptLogging === true) {
+          dispatch(addPromptCompletionPair([next.value]));
 
-        try {
-          extra.ideMessenger.post("devdata/log", {
-            name: "chatInteraction",
-            data: {
-              prompt: next.value.prompt,
-              completion: next.value.completion,
-              modelProvider: selectedChatModel.underlyingProviderName,
-              modelName: selectedChatModel.title,
-              modelTitle: selectedChatModel.title,
-              sessionId: state.session.id,
-              ...(!!activeTools.length && {
-                tools: activeTools.map((tool) => tool.function.name),
-              }),
-              ...(appliedRules.length > 0 && {
-                rules: appliedRules.map((rule) => ({
-                  id: getRuleId(rule),
-                  slug: rule.slug,
-                })),
-              }),
-            },
-          });
-        } catch (e) {
-          console.error("Failed to send dev data interaction log", e);
+          try {
+            extra.ideMessenger.post("devdata/log", {
+              name: "chatInteraction",
+              data: {
+                prompt: next.value.prompt,
+                completion: next.value.completion,
+                modelProvider: selectedChatModel.underlyingProviderName,
+                modelName: selectedChatModel.title,
+                modelTitle: selectedChatModel.title,
+                sessionId: state.session.id,
+                ...(!!activeTools.length && {
+                  tools: activeTools.map((tool) => tool.function.name),
+                }),
+                ...(appliedRules.length > 0 && {
+                  rules: appliedRules.map((rule) => ({
+                    id: getRuleId(rule),
+                    slug: rule.slug,
+                  })),
+                }),
+              },
+            });
+          } catch (e) {
+            console.error("Failed to send dev data interaction log", e);
+          }
+        } else {
+          dispatch(endActiveReasoning());
         }
       }
     } catch (e) {

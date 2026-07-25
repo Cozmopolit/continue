@@ -531,3 +531,87 @@ describe("sessionSlice setContextPercentage", () => {
     expect(newState.contextTokens).toBeUndefined();
   });
 });
+
+describe("sessionSlice endActiveReasoning", () => {
+  const createStateWithReasoning = (reasoning?: {
+    active: boolean;
+    text: string;
+    startAt: number;
+    endAt?: number;
+  }) => ({
+    lastSessionId: undefined,
+    allSessionMetadata: [],
+    history: [
+      {
+        message: { id: "1", role: "assistant", content: "partial answer" },
+        contextItems: [],
+        reasoning,
+      },
+    ] as ChatHistoryItemWithMessageId[],
+    isStreaming: true,
+    title: "Test Session",
+    id: "test-session-id",
+    streamAborter: new AbortController(),
+    symbols: {},
+    mode: "chat" as const,
+    isInEdit: false,
+    codeBlockApplyStates: {
+      states: [],
+      curIndex: 0,
+    },
+    newestToolbarPreviewForInput: {},
+    isSessionMetadataLoading: false,
+    compactionLoading: {},
+  });
+
+  it("should end active reasoning and stamp endAt", () => {
+    const before = Date.now();
+    const newState = sessionSlice.reducer(
+      createStateWithReasoning({
+        active: true,
+        text: "thinking",
+        startAt: before - 1000,
+      }),
+      { type: "session/endActiveReasoning" },
+    );
+
+    expect(newState.history[0].reasoning?.active).toBe(false);
+    expect(newState.history[0].reasoning?.endAt).toBeGreaterThanOrEqual(before);
+  });
+
+  it("should not attach promptLogs", () => {
+    const newState = sessionSlice.reducer(
+      createStateWithReasoning({ active: true, text: "thinking", startAt: 1 }),
+      { type: "session/endActiveReasoning" },
+    );
+
+    expect(newState.history[0].promptLogs).toBeUndefined();
+  });
+
+  it("should be a no-op when reasoning is not active", () => {
+    const reasoning = { active: false, text: "done", startAt: 1, endAt: 2 };
+    const newState = sessionSlice.reducer(createStateWithReasoning(reasoning), {
+      type: "session/endActiveReasoning",
+    });
+
+    expect(newState.history[0].reasoning).toEqual(reasoning);
+  });
+
+  it("should handle missing reasoning and empty history gracefully", () => {
+    expect(() =>
+      sessionSlice.reducer(createStateWithReasoning(undefined), {
+        type: "session/endActiveReasoning",
+      }),
+    ).not.toThrow();
+
+    const emptyHistory = {
+      ...createStateWithReasoning(undefined),
+      history: [] as ChatHistoryItemWithMessageId[],
+    };
+    expect(() =>
+      sessionSlice.reducer(emptyHistory, {
+        type: "session/endActiveReasoning",
+      }),
+    ).not.toThrow();
+  });
+});

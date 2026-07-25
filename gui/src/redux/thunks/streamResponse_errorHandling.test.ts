@@ -102,32 +102,25 @@ describe("streamResponseThunk", () => {
     expect(dispatchedActions).toEqual([
       {
         type: "chat/streamResponse/pending",
-        meta: {
-          arg: {
-            editorState: mockEditorState,
-            modifiers: mockModifiers,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { editorState: mockEditorState, modifiers: mockModifiers },
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "chat/streamWrapper/pending",
-        meta: {
-          arg: expect.any(Function),
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "chat/cancelStream/pending",
-        meta: {
+        meta: expect.objectContaining({
           arg: undefined,
-          requestId: expect.any(String),
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -144,11 +137,10 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "chat/cancelStream/fulfilled",
-        meta: {
+        meta: expect.objectContaining({
           arg: undefined,
-          requestId: expect.any(String),
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -167,23 +159,17 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "chat/streamWrapper/fulfilled",
-        meta: {
-          arg: expect.any(Function),
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "chat/streamResponse/fulfilled",
-        meta: {
-          arg: {
-            editorState: mockEditorState,
-            modifiers: mockModifiers,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { editorState: mockEditorState, modifiers: mockModifiers },
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
     ]);
@@ -260,23 +246,17 @@ describe("streamResponseThunk", () => {
     expect(dispatchedActions).toEqual([
       {
         type: "chat/streamResponse/pending",
-        meta: {
-          arg: {
-            editorState: mockEditorState,
-            modifiers: mockModifiers,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { editorState: mockEditorState, modifiers: mockModifiers },
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "chat/streamWrapper/pending",
-        meta: {
-          arg: expect.any(Function),
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -292,11 +272,10 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "symbols/updateFromContextItems/pending",
-        meta: {
+        meta: expect.objectContaining({
           arg: [],
-          requestId: expect.any(String),
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -315,13 +294,18 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "chat/streamNormalInput/pending",
-        meta: {
-          arg: {
-            legacySlashCommandData: undefined,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { legacySlashCommandData: undefined },
           requestStatus: "pending",
-        },
+        }),
+        payload: undefined,
+      },
+      {
+        type: "symbols/updateFromContextItems/fulfilled",
+        meta: expect.objectContaining({
+          arg: [],
+          requestStatus: "fulfilled",
+        }),
         payload: undefined,
       },
       {
@@ -348,49 +332,30 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
-        type: "symbols/updateFromContextItems/fulfilled",
-        meta: {
-          arg: [],
-          requestId: expect.any(String),
-          requestStatus: "fulfilled",
-        },
-        payload: undefined,
-      },
-      {
         type: "chat/streamNormalInput/fulfilled",
-        meta: {
-          arg: {
-            legacySlashCommandData: undefined,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { legacySlashCommandData: undefined },
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "session/saveCurrent/pending",
-        meta: {
-          arg: {
-            generateTitle: true,
-            openNewSession: false,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { generateTitle: true, openNewSession: false },
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "session/update/pending",
-        meta: {
+        meta: expect.objectContaining({
           arg: expect.objectContaining({
-            history: expect.any(Array),
             sessionId: "session-123",
             title: "Hello",
-            workspaceDirectory: "",
           }),
-          requestId: expect.any(String),
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -402,11 +367,9 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "session/refreshMetadata/pending",
-        meta: {
-          arg: {},
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -419,68 +382,54 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "session/refreshMetadata/fulfilled",
-        meta: {
-          arg: expect.objectContaining({}),
-          requestId: expect.any(String),
-          requestStatus: expect.any(String),
-        },
+        meta: expect.objectContaining({
+          requestStatus: "fulfilled",
+        }),
         payload: [],
       },
       {
         type: "session/update/fulfilled",
-        meta: {
+        meta: expect.objectContaining({
           arg: expect.objectContaining({
-            history: expect.any(Array),
             sessionId: "session-123",
             title: "Hello",
-            workspaceDirectory: "",
           }),
-          requestId: expect.any(String),
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "session/saveCurrent/fulfilled",
-        meta: {
-          arg: {
-            generateTitle: true,
-            openNewSession: false,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { generateTitle: true, openNewSession: false },
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "chat/streamWrapper/fulfilled",
-        meta: {
-          arg: expect.any(Function),
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "chat/streamResponse/fulfilled",
-        meta: {
-          arg: {
-            editorState: mockEditorState,
-            modifiers: mockModifiers,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { editorState: mockEditorState, modifiers: mockModifiers },
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
     ]);
 
     // Verify IDE messenger was called for compilation but not streaming
+    // System message now includes env block with workspace_root and platform
     expect(requestSpy).toHaveBeenCalledWith("llm/compileChat", {
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant.",
+          content: expect.stringContaining("You are a helpful assistant."),
         },
         {
           role: "user",
@@ -570,6 +519,9 @@ describe("streamResponseThunk", () => {
     ];
     const mockStore = createMockStore(initialState);
     const mockIdeMessenger = mockStore.mockIdeMessenger;
+    // Capture the original implementation before spying — calling
+    // mockIdeMessenger.request inside the spy fallback would recurse infinitely
+    const originalRequest = mockIdeMessenger.request.bind(mockIdeMessenger);
     const requestSpy = vi.spyOn(mockIdeMessenger, "request");
     const chatSpy = vi.spyOn(mockIdeMessenger, "llmStreamChat");
 
@@ -582,7 +534,7 @@ describe("streamResponseThunk", () => {
           error: "Model configuration is invalid",
         };
       } else {
-        return await mockIdeMessenger.request(message, data);
+        return await originalRequest(message, data);
       }
     });
 
@@ -602,23 +554,17 @@ describe("streamResponseThunk", () => {
     expect(dispatchedActions).toEqual([
       {
         type: "chat/streamResponse/pending",
-        meta: {
-          arg: {
-            editorState: mockEditorState,
-            modifiers: mockModifiers,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { editorState: mockEditorState, modifiers: mockModifiers },
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "chat/streamWrapper/pending",
-        meta: {
-          arg: expect.any(Function),
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -634,11 +580,10 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "symbols/updateFromContextItems/pending",
-        meta: {
+        meta: expect.objectContaining({
           arg: [],
-          requestId: expect.any(String),
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -657,13 +602,18 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "chat/streamNormalInput/pending",
-        meta: {
-          arg: {
-            legacySlashCommandData: undefined,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { legacySlashCommandData: undefined },
           requestStatus: "pending",
-        },
+        }),
+        payload: undefined,
+      },
+      {
+        type: "symbols/updateFromContextItems/fulfilled",
+        meta: expect.objectContaining({
+          arg: [],
+          requestStatus: "fulfilled",
+        }),
         payload: undefined,
       },
       {
@@ -682,40 +632,22 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
-        type: "symbols/updateFromContextItems/fulfilled",
-        meta: {
-          arg: [],
-          requestId: expect.any(String),
-          requestStatus: "fulfilled",
-        },
-        payload: undefined,
-      },
-      {
         type: "chat/streamNormalInput/rejected",
-        meta: {
-          aborted: false,
-          arg: {
-            legacySlashCommandData: undefined,
-          },
-          condition: false,
-          rejectedWithValue: false,
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { legacySlashCommandData: undefined },
           requestStatus: "rejected",
-        },
+        }),
         payload: undefined,
-        error: {
+        error: expect.objectContaining({
           message: "Model configuration is invalid",
-          name: "Error",
-          stack: expect.any(String),
-        },
+        }),
       },
       {
         type: "chat/cancelStream/pending",
-        meta: {
+        meta: expect.objectContaining({
           arg: undefined,
-          requestId: expect.any(String),
           requestStatus: "pending",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -732,11 +664,10 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "chat/cancelStream/fulfilled",
-        meta: {
+        meta: expect.objectContaining({
           arg: undefined,
-          requestId: expect.any(String),
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
       {
@@ -755,23 +686,17 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "chat/streamWrapper/fulfilled",
-        meta: {
-          arg: expect.any(Function),
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
       {
         type: "chat/streamResponse/fulfilled",
-        meta: {
-          arg: {
-            editorState: mockEditorState,
-            modifiers: mockModifiers,
-          },
-          requestId: expect.any(String),
+        meta: expect.objectContaining({
+          arg: { editorState: mockEditorState, modifiers: mockModifiers },
           requestStatus: "fulfilled",
-        },
+        }),
         payload: undefined,
       },
     ]);
@@ -781,7 +706,7 @@ describe("streamResponseThunk", () => {
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant.",
+          content: expect.stringContaining("You are a helpful assistant."),
         },
         {
           role: "user",

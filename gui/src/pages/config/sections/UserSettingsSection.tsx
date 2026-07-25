@@ -59,6 +59,7 @@ export function UserSettingsSection() {
     config.experimental?.useCurrentFileAsContext ?? false;
   const enableExperimentalTools =
     config.experimental?.enableExperimentalTools ?? false;
+  const promptLogging = config.experimental?.promptLogging ?? false;
   const onlyUseSystemMessageTools =
     config.experimental?.onlyUseSystemMessageTools ?? false;
   const codebaseToolCallingOnly =
@@ -255,6 +256,13 @@ export function UserSettingsSection() {
                     onChange={(value) =>
                       handleUpdate({ enableExperimentalTools: value })
                     }
+                  />
+                  <UserSetting
+                    type="toggle"
+                    title="Enable prompt logging"
+                    description=" stores the fully rendered prompt of every LLM call in the session (promptLogs) and logs chat interactions to devdata. Off by default — only enable for debugging, as it grows session files quadratically."
+                    value={promptLogging}
+                    onChange={(value) => handleUpdate({ promptLogging: value })}
                   />
                   <UserSetting
                     type="toggle"

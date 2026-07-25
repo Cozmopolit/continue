@@ -258,12 +258,12 @@ describe("streamResponseThunk - tool calls", () => {
       "symbols/updateFromContextItems/pending",
       "session/updateHistoryItemAtIndex",
       "chat/streamNormalInput/pending",
+      "symbols/updateFromContextItems/fulfilled",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
       "session/setIsPruned",
       "session/setContextPercentage",
-      "symbols/updateFromContextItems/fulfilled",
       "session/streamUpdate",
       "session/streamUpdate",
       "session/addPromptCompletionPair",
@@ -375,11 +375,12 @@ describe("streamResponseThunk - tool calls", () => {
     });
 
     // Verify IDE messenger calls
+    // System message now includes env block with workspace_root and platform
     expect(requestSpy).toHaveBeenCalledWith("llm/compileChat", {
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant.",
+          content: expect.stringContaining("You are a helpful assistant."),
         },
         {
           role: "user",
@@ -715,6 +716,15 @@ describe("streamResponseThunk - tool calls", () => {
         payload: undefined,
       },
       {
+        type: "symbols/updateFromContextItems/fulfilled",
+        meta: {
+          arg: [],
+          requestId: expect.any(String),
+          requestStatus: "fulfilled",
+        },
+        payload: undefined,
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           appliedRules: [],
@@ -736,15 +746,6 @@ describe("streamResponseThunk - tool calls", () => {
       {
         type: "session/setContextPercentage",
         payload: { percentage: 0.9 },
-      },
-      {
-        type: "symbols/updateFromContextItems/fulfilled",
-        meta: {
-          arg: [],
-          requestId: expect.any(String),
-          requestStatus: "fulfilled",
-        },
-        payload: undefined,
       },
       {
         type: "session/streamUpdate",
@@ -916,11 +917,12 @@ describe("streamResponseThunk - tool calls", () => {
     ]);
 
     // Verify IDE messenger calls - compilation should happen, streaming should happen
+    // System message now includes env block with workspace_root and platform
     expect(requestSpy).toHaveBeenCalledWith("llm/compileChat", {
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant.",
+          content: expect.stringContaining("You are a helpful assistant."),
         },
         {
           role: "user",
@@ -1269,6 +1271,15 @@ describe("streamResponseThunk - tool calls", () => {
         payload: undefined,
       },
       {
+        type: "symbols/updateFromContextItems/fulfilled",
+        meta: {
+          arg: [],
+          requestId: expect.any(String),
+          requestStatus: "fulfilled",
+        },
+        payload: undefined,
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           appliedRules: [],
@@ -1290,15 +1301,6 @@ describe("streamResponseThunk - tool calls", () => {
       {
         type: "session/setContextPercentage",
         payload: { percentage: 0.85 },
-      },
-      {
-        type: "symbols/updateFromContextItems/fulfilled",
-        meta: {
-          arg: [],
-          requestId: expect.any(String),
-          requestStatus: "fulfilled",
-        },
-        payload: undefined,
       },
       {
         type: "session/streamUpdate",

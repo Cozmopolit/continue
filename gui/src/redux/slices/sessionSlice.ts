@@ -270,6 +270,16 @@ export const sessionSlice = createSlice({
         lastMessage.reasoning.endAt = Date.now();
       }
     },
+    // Ends active reasoning without storing prompt logs. Dispatched when
+    // prompt logging is disabled (specifications/prompt-logging-opt-in.md)
+    // so reasoning models still terminate their thinking state on completion.
+    endActiveReasoning: (state) => {
+      const lastMessage = state.history[state.history.length - 1];
+      if (lastMessage?.reasoning?.active) {
+        lastMessage.reasoning.active = false;
+        lastMessage.reasoning.endAt = Date.now();
+      }
+    },
     setActive: (state) => {
       state.isStreaming = true;
     },
@@ -1080,6 +1090,7 @@ export const {
   updateSessionTitle,
   addHighlightedCode,
   addPromptCompletionPair,
+  endActiveReasoning,
   setActive,
   submitEditorAndInitAtIndex,
   truncateHistoryToMessage,

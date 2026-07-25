@@ -7,7 +7,6 @@ import { ChatHistoryItem } from "core";
 import { renderChatMessage } from "core/util/messageContent";
 import { useAppSelector } from "../../redux/hooks";
 import { useCompactConversation } from "../../util/compactConversation";
-import { FeedbackButtons } from "../FeedbackButtons";
 import { CopyIconButton } from "../gui/CopyIconButton";
 import HeaderButtonWithToolTip from "../gui/HeaderButtonWithToolTip";
 
@@ -94,8 +93,6 @@ export default function ResponseActions({
         clipboardIconClassName="h-3.5 w-3.5 text-description-muted"
         checkIconClassName="h-3.5 w-3.5 text-success"
       />
-
-      <FeedbackButtons item={item} />
     </div>
   );
 }
