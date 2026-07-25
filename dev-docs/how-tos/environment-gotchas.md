@@ -19,6 +19,10 @@ Gesammelte Fallstricke, die wiederholt Zeit gekostet haben. Referenziert von
   → lieber .NET `WriteAllText`.
 - **lint-staged/prettier läuft bei jedem Commit** und formatiert gestagte
   Dateien (`*.{js,jsx,ts,tsx,json,css,md}`) nach — Diff danach kurz prüfen.
+- Selten landet Konsolen-Müll (z.B. `StruStr`-Bytes) während des
+  lint-staged-Laufs in Working-Tree-Dateien → `git status` nach dem Commit
+  prüfen; betroffene Datei mit `git restore <file>` zurücksetzen (der Commit
+  selbst war bislang immer sauber).
 - autocrlf: CRLF in Test-Fixtures beachten; Symlinks brauchen Entwicklerprivileg.
 
 ## Package-Junctions (wichtigster Repo-Fallstrick)

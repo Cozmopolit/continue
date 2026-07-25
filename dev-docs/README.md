@@ -15,8 +15,12 @@ unangetastet.
 | `history/specifications/` | Archiv: implementierte Specs                                                                              |
 | `history/incidents/`      | Archiv: abgeschlossene Incident-Reports                                                                   |
 
-Namenskonvention: durchgehend kebab-case. `_PREFIX`-Dateien sind Meta-Dokumente
-(Templates, Playbook) — kein Feature-Inhalt.
+Dateien im Root: `AGENTS.md` (Bootstrap für Coding Agents — hier starten) und
+`coding-guidelines.md` (dauerhafte Konventionen inkl. Commit-/Push-Policy).
+
+Namenskonvention: durchgehend kebab-case (Ausnahmen: etablierte Uppercase-Namen
+wie README.md/AGENTS.md). `_PREFIX`-Dateien sind Meta-Dokumente (Templates,
+Playbook) — kein Feature-Inhalt.
 
 ## Lifecycle
 

@@ -65,7 +65,10 @@ Ziel: Verifizieren, dass die Spec wie geschrieben gegen den echten Code umsetzba
 - **Verifikation**: gezielte Suites laufen lassen; bei Änderungen an Kern-Paketen (`packages/fetch`, `packages/openai-adapters`, `core`) Regression über den Runner: `node scripts/run-all-tests.mjs --only …` (Details: `how-tos/running-tests.md`; lange Läufe im Hintergrund + Polling).
 - **Baseline-Abgleich** gegen `how-tos/test-baseline.md`: dokumentierte pre-existing Failures sind ok, neue sind es nicht.
 
-### Commit
+### Commits
 
-- Implementierung + Tests typischerweise **ein Commit** (Repo-Konvention: Feature inklusive Tests).
-- Commit-Message **BOM-frei** schreiben (Verfahren: `how-tos/environment-gotchas.md`). lint-staged/prettier formatiert gestagte Dateien beim Commit nach — kurz gegenprüfen.
+- **Feature-Commit** nach Abschluss von Phase 2/3 (vollständige Verhaltensänderung), **Tests als getrennter Commit** nach Phase 4.
+- Kleinigkeiten und Spec-Updates reiten in beliebigen Commits mit — Spec-Pflege ist Dauerzustand.
+- Jederzeit committen, wenn es sich richtig anfühlt (z.B. zwischen Phasen) — Granularität nach Bauchgefühl und Feature-Größe. Messages kompakt halten.
+- Commit-Message **BOM-frei** schreiben (Verfahren: `how-tos/environment-gotchas.md`); lint-staged/prettier formatiert gestagte Dateien beim Commit nach — kurz gegenprüfen.
+- **Push ist selten** (1–3×/Tag, typischerweise „am Ende der Schicht") — Details: `../coding-guidelines.md` §3. Nicht nach einzelnen Commits zum Push raten; vor dem Push idealerweise voller Runner-Lauf, nur bei Grün.
