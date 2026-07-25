@@ -186,6 +186,8 @@ export function buildAdapterStreamForensics(
       stats.finishReasons.length > 0
         ? `finish_reason=${stats.finishReasons.join(",")}`
         : undefined,
+    requestId: stats.requestId,
+    providerModel: stats.model,
     startedAt: new Date(startedAtMs).toISOString(),
     durationMs: now - startedAtMs,
     lastChunkAgeMs:

@@ -52,6 +52,18 @@ export interface StreamForensics {
   /** proxy diagnostics captured by fetchwithRequestOptions */
   proxyUsed?: boolean;
   proxyOrigin?: string;
+  /**
+   * Provider-issued request/generation id captured from stream chunks
+   * (e.g. OpenRouter "gen-…") — the correlation key for provider-side
+   * support inquiries. Only populated on paths that see parsed chunks
+   * (openai-adapters SDK guard).
+   */
+  requestId?: string;
+  /**
+   * Model reported by the provider in stream chunks. May differ from the
+   * requested model (provider-side routing, e.g. OpenRouter).
+   */
+  providerModel?: string;
   /** free-form context, e.g. "openai-adapter chat.completions" */
   context?: string;
 }
@@ -195,6 +207,15 @@ export function formatPrematureStreamEndMessage(f: StreamForensics): string {
   }
   lines.push(`Stream forensics: ${stats.join(", ")}.`);
 
+  if (f.requestId) {
+    lines.push(
+      `Provider request id: ${f.requestId} (quote this when reporting the abort to the provider).`,
+    );
+  }
+  if (f.providerModel) {
+    lines.push(`Provider-reported model: ${f.providerModel}.`);
+  }
+
   if (f.leftoverBuffer) {
     lines.push(
       `Unterminated tail (connection cut mid-frame): "${f.leftoverBuffer}"`,
@@ -213,7 +234,7 @@ export function formatPrematureStreamEndMessage(f: StreamForensics): string {
     lines.push(`Proxy used for this request: ${f.proxyOrigin}`);
   }
   lines.push(
-    "This is typically caused by a network middlebox (corporate proxy, firewall, VPN, TLS inspection, antivirus web filter) terminating long-lived streaming connections.",
+    "Possible causes: a network middlebox (corporate proxy, firewall, VPN, TLS inspection, antivirus web filter) terminating long-lived streaming connections, or a provider-side abort (the API provider or its upstream closed the stream mid-generation, e.g. overload, upstream error, generation timeout).",
   );
   return lines.join("\n");
 }

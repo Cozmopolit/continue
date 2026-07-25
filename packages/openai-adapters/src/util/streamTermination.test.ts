@@ -201,10 +201,14 @@ describe("guardChatCompletionStream", () => {
     expect(err.forensics.sawCompletionSignal).toBe(false);
     expect(err.forensics.charsReceived).toBe(19 + 19);
     expect(err.forensics.doneSentinelObservable).toBe(false);
+    expect(err.forensics.requestId).toBe("gen-1");
+    expect(err.forensics.providerModel).toBe("moonshotai/kimi-k3");
     // SDK-level message must not claim that no [DONE] was seen
     expect(err.message).toContain("no finish_reason was received");
     expect(err.message).not.toContain("no [DONE] sentinel, no finish_reason");
+    expect(err.message).toContain("Provider request id: gen-1");
     expect(err.message).toContain("middlebox");
+    expect(err.message).toContain("provider-side abort");
   });
 
   test("does not throw for missing finish_reason on unknown hosts", async () => {
@@ -288,6 +292,8 @@ describe("buildAdapterStreamForensics", () => {
     expect(forensics.sawCompletionSignal).toBe(true);
     expect(forensics.completionSignal).toBe("finish_reason=stop");
     expect(forensics.context).toBe("test-context");
+    expect(forensics.requestId).toBe("gen-1");
+    expect(forensics.providerModel).toBe("moonshotai/kimi-k3");
     expect(forensics.durationMs).toBeGreaterThanOrEqual(1500);
     expect(forensics.doneSentinelObservable).toBe(false);
   });

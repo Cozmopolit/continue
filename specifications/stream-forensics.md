@@ -80,6 +80,13 @@ which treats a cleanly closed connection as a completed stream. The new
 - zero chunks → always throws (never a valid completion),
 - chunks but **no `finish_reason`** → throws when enforcement is active.
 
+The guard also carries the provider-issued correlation ids into the
+forensics record: `requestId` (e.g. the OpenRouter `gen-…` generation id —
+quote it when reporting an abort to the provider; OpenRouter exposes
+per-generation details via `/api/v1/generation?id=…`) and `providerModel`
+(the model reported in the chunks, which may differ from the requested
+model after provider-side routing). Both are included in the error message.
+
 Enforcement defaults to well-known OpenAI-compatible hosts that always send
 `finish_reason` + `[DONE]` (openrouter.ai, api.openai.com, openai.azure.com,
 api.deepseek.com, api.moonshot._, api.x.ai, api.groq.com, api.cerebras.ai,
@@ -98,6 +105,20 @@ In `BaseLLM.streamChat` / `streamComplete` catch blocks
    (usually `%USERPROFILE%\.continue\logs\stream-forensics.jsonl`).
 3. Enrich the error message shown in the GUI error dialog (which has a
    copy-to-clipboard button) with the probe results and the log path.
+
+The base message (`formatPrematureStreamEndMessage`) deliberately names both
+candidate causes (middlebox, provider-side abort) without asserting one —
+at throw time there is no evidence yet. After the probe,
+`buildStreamAbortAssessment()` appends an evidence-based `Assessment:` line
+to the enriched message:
+
+- interception vendor in the chain → middlebox almost certainly the cause,
+- `authorized=true`, public CA, no proxy → **provider-side abort** most
+  likely (resubmit usually succeeds; check provider status if it repeats),
+- `proxyUsed=true` but clean chain → tunneling proxy remains a suspect,
+- `authorized=false` without known vendor → unrecognized interception,
+- probe failed → network interference is itself evidence,
+- no probe (no apiBase) → cause undecided.
 
 Autocomplete/FIM (`streamFim`) is deliberately excluded to avoid log spam.
 
@@ -128,7 +149,9 @@ Autocomplete/FIM (`streamFim`) is deliberately excluded to avoid log spam.
       "via": "1.1 proxy.corp"
     },
     "proxyUsed": true,
-    "proxyOrigin": "http://proxy.corp:8080"
+    "proxyOrigin": "http://proxy.corp:8080",
+    "requestId": "gen-1a2b3c4d",
+    "providerModel": "moonshotai/kimi-k3"
   },
   "tlsProbe": {
     "ok": true,
@@ -148,14 +171,22 @@ Autocomplete/FIM (`streamFim`) is deliberately excluded to avoid log spam.
 
 ## 4. Interpreting the evidence
 
-| Evidence                                                       | Meaning                                                                                                         |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `leftoverBuffer` non-empty (unterminated JSON)                 | connection cut **mid-frame** — classic middlebox kill                                                           |
-| `suspectedInterception` / corporate issuer in `tlsProbe.chain` | TLS inspection in path → almost certainly the cause                                                             |
-| `responseHeaders.via` / vendor in `server` header              | explicit proxy in path                                                                                          |
-| `commentLines > 0` before cut                                  | provider keepalives arrived; the middlebox killed the connection despite traffic (rules out pure idle timeouts) |
-| `lastChunkAgeMs` large before cut                              | connection died while waiting for data (reasoning pause)                                                        |
-| probe fails / times out                                        | network interference even for a plain handshake                                                                 |
+| Evidence                                                         | Meaning                                                                                                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `leftoverBuffer` non-empty (unterminated JSON)                   | connection cut **mid-frame** — classic middlebox kill                                                                                |
+| `suspectedInterception` / corporate issuer in `tlsProbe.chain`   | TLS inspection in path → almost certainly the cause                                                                                  |
+| `responseHeaders.via` / vendor in `server` header                | explicit proxy in path                                                                                                               |
+| `commentLines > 0` before cut                                    | provider keepalives arrived; the middlebox killed the connection despite traffic (rules out pure idle timeouts)                      |
+| `lastChunkAgeMs` large before cut                                | connection died while waiting for data (reasoning pause)                                                                             |
+| probe fails / times out                                          | network interference even for a plain handshake                                                                                      |
+| `authorized=true`, public CA chain, no vendor, `proxyUsed=false` | no interception in path → **provider-side abort** most likely (correlate via `requestId`, e.g. OpenRouter `/api/v1/generation?id=…`) |
+
+`requestId` / `providerModel` are only populated on the openai-adapter path
+(the SDK guard sees parsed chunks); on the `streamSse` path
+`lastDataLineSnippet` is the fallback for identifying the cut position.
+Note that `commentLines` is always 0 on the adapter path (SSE comments are
+not observable through the SDK) — the keepalive row above only applies to
+the `streamSse` path.
 
 Privacy note: `lastDataLineSnippet` may contain small fragments of model
 output. The log never contains request payloads or API keys. It stays on the

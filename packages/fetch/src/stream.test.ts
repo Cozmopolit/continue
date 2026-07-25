@@ -319,14 +319,34 @@ describe("formatPrematureStreamEndMessage", () => {
     lastChunkAgeMs: 200,
   };
 
-  test("renders stats, keepalives and middlebox hint", () => {
+  test("renders stats, keepalives and balanced cause hint", () => {
     const msg = formatPrematureStreamEndMessage(base);
     expect(msg).toContain("37 data events");
     expect(msg).toContain("12834 chars");
     expect(msg).toContain("4.2s duration");
     expect(msg).toContain("0.2s before close");
     expect(msg).toContain("3 keepalive/comment lines");
+    // balanced: both causes named, neither asserted
+    expect(msg).toContain("Possible causes");
     expect(msg).toContain("middlebox");
+    expect(msg).toContain("provider-side abort");
+    expect(msg).not.toContain("typically caused");
+  });
+
+  test("renders provider request id and provider-reported model", () => {
+    const msg = formatPrematureStreamEndMessage({
+      ...base,
+      requestId: "gen-abc123",
+      providerModel: "moonshotai/kimi-k3",
+    });
+    expect(msg).toContain("Provider request id: gen-abc123");
+    expect(msg).toContain("Provider-reported model: moonshotai/kimi-k3");
+  });
+
+  test("omits provider id lines when not captured", () => {
+    const msg = formatPrematureStreamEndMessage(base);
+    expect(msg).not.toContain("Provider request id");
+    expect(msg).not.toContain("Provider-reported model");
   });
 
   test("renders leftover buffer and headers", () => {

@@ -23,6 +23,7 @@ import {
 import {
   appendStreamForensicsRecord,
   buildEnrichedErrorMessage,
+  buildStreamAbortAssessment,
   buildStreamFailureForensicsRecord,
   buildTlsProbeSummary,
   captureStreamFailureForensics,
@@ -145,6 +146,61 @@ describe("buildTlsProbeSummary", () => {
   });
 });
 
+describe("buildStreamAbortAssessment", () => {
+  it("stays undecided when no probe is available", () => {
+    const assessment = buildStreamAbortAssessment(undefined);
+    expect(assessment).toContain("no TLS probe available");
+    expect(assessment).toContain("both possible");
+  });
+
+  it("treats a failed probe as evidence of network interference", () => {
+    const assessment = buildStreamAbortAssessment({
+      ok: false,
+      host: "openrouter.ai",
+      port: 443,
+      durationMs: 8000,
+      error: "TLS probe timed out after 8000ms",
+    });
+    expect(assessment).toContain("TLS probe failed");
+    expect(assessment).toContain("network interference");
+  });
+
+  it("blames the middlebox when interception vendors are detected", () => {
+    const assessment = buildStreamAbortAssessment(interceptedProbe);
+    expect(assessment).toContain("TLS interception detected");
+    expect(assessment).toContain("middlebox");
+    expect(assessment).not.toContain("provider-side");
+  });
+
+  it("flags an untrusted certificate as likely unrecognized interception", () => {
+    const assessment = buildStreamAbortAssessment({
+      ...cleanProbe,
+      authorized: false,
+      authorizationError: "self signed certificate in certificate chain",
+    });
+    expect(assessment).toContain("NOT trusted");
+    expect(assessment).toContain("unrecognized middlebox");
+  });
+
+  it("keeps a tunneling proxy as a suspect when the chain is clean", () => {
+    const assessment = buildStreamAbortAssessment({
+      ...cleanProbe,
+      proxyUsed: true,
+      proxyOrigin: "http://proxy.corp:8080",
+    });
+    expect(assessment).toContain("through a proxy");
+    expect(assessment).toContain("provider-side abort");
+  });
+
+  it("names a provider-side abort as most likely when the path is clean", () => {
+    const assessment = buildStreamAbortAssessment(cleanProbe);
+    expect(assessment).toContain("no TLS interception and no proxy");
+    expect(assessment).toContain("provider-side abort");
+    expect(assessment).toContain("Resubmitting usually succeeds");
+    expect(assessment).not.toContain("INTERCEPTION DETECTED");
+  });
+});
+
 describe("buildEnrichedErrorMessage", () => {
   it("combines original message, probe summary and log path", () => {
     const msg = buildEnrichedErrorMessage(
@@ -155,7 +211,20 @@ describe("buildEnrichedErrorMessage", () => {
     expect(msg).toContain("original error");
     expect(msg).toContain("--- Network forensics ---");
     expect(msg).toContain("TLS INTERCEPTION DETECTED");
+    expect(msg).toContain("Assessment: TLS interception detected");
     expect(msg).toContain("/tmp/stream-forensics.jsonl");
+  });
+
+  it("leads with a provider-side assessment when the probe is clean", () => {
+    // the 2026-07-25 OpenRouter incident shape: clean public chain, no proxy
+    const msg = buildEnrichedErrorMessage(
+      "original error",
+      cleanProbe,
+      "/tmp/stream-forensics.jsonl",
+    );
+    expect(msg).toContain("Assessment: no TLS interception and no proxy");
+    expect(msg).toContain("provider-side abort");
+    expect(msg).toContain("Resubmitting usually succeeds");
   });
 
   it("handles missing probe", () => {
@@ -165,6 +234,7 @@ describe("buildEnrichedErrorMessage", () => {
       "/tmp/log.jsonl",
     );
     expect(msg).toContain("no apiBase");
+    expect(msg).toContain("Assessment: no TLS probe available");
   });
 });
 

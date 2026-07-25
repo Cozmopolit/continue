@@ -135,6 +135,55 @@ export function buildTlsProbeSummary(probe: TlsProbeResult): string {
   return lines.join("\n");
 }
 
+/**
+ * Pure: evidence-based causal assessment for a premature stream end,
+ * derived from the TLS probe outcome. The base error message
+ * (formatPrematureStreamEndMessage) deliberately stays neutral — at throw
+ * time both a middlebox and a provider-side abort are possible. Only after
+ * the probe can we weigh the causes, which is what this assessment does.
+ */
+export function buildStreamAbortAssessment(
+  probe: TlsProbeResult | undefined,
+): string {
+  if (!probe) {
+    return (
+      "Assessment: no TLS probe available — the cause cannot be narrowed down " +
+      "(network middlebox and provider-side abort are both possible)."
+    );
+  }
+  if (!probe.ok) {
+    return (
+      "Assessment: the TLS probe failed right after the stream abort — this is itself " +
+      "evidence of network interference (middlebox or connectivity problem)."
+    );
+  }
+  if (probe.suspectedInterception && probe.suspectedInterception.length > 0) {
+    return (
+      "Assessment: TLS interception detected (see above) — the middlebox is very " +
+      "likely terminating these streaming connections."
+    );
+  }
+  if (probe.authorized !== true) {
+    return (
+      "Assessment: the presented certificate is NOT trusted by a public CA — likely " +
+      "TLS interception by an unrecognized middlebox. Check the certificate chain above."
+    );
+  }
+  if (probe.proxyUsed) {
+    return (
+      "Assessment: no TLS interception detected, but the connection went through a " +
+      "proxy — the proxy may still be terminating long-lived streaming connections. " +
+      "Otherwise a provider-side abort is the likely cause."
+    );
+  }
+  return (
+    "Assessment: no TLS interception and no proxy in the path — most likely a " +
+    "provider-side abort: the API provider (or its upstream) closed the stream " +
+    "mid-generation (overload, upstream error, generation timeout). Resubmitting " +
+    "usually succeeds; if the problem repeats, check the provider's status page."
+  );
+}
+
 /** Pure: enriches the original error message with probe results + log path. */
 export function buildEnrichedErrorMessage(
   originalMessage: string,
@@ -147,6 +196,7 @@ export function buildEnrichedErrorMessage(
   } else {
     parts.push("(TLS probe not available — no apiBase configured.)");
   }
+  parts.push("", buildStreamAbortAssessment(probe));
   parts.push("", `Full forensics record appended to: ${logPath}`);
   return parts.join("\n");
 }
