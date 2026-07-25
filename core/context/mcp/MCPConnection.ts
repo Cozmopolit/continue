@@ -69,7 +69,7 @@ const ProxyKeySchema = z.object({
 });
 
 // ---------- CITT proxy HTTP tunnel (proxy/http) ----------
-// See specifications/proxy-http-tunneling.md (Phase 2).
+// See proxy-http-tunneling.md (Phase 2).
 
 // Grace period for buffering notifications that arrive before the JSON-RPC
 // result of `proxy/http` has been processed by the caller. Response

@@ -587,7 +587,7 @@ export abstract class BaseLLM implements ILLM {
     // When a custom transport is set (e.g. MCP stdio tunnel), bypass the
     // openai-adapter entirely so all traffic flows through the native
     // provider implementations via this.fetch(). See
-    // specifications/proxy-http-tunneling.md §5.4.
+    // proxy-http-tunneling.md §5.4.
     if (this._llmOptions.customFetch) {
       return false;
     }

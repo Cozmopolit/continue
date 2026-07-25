@@ -9,12 +9,12 @@
  *   node scripts/run-all-tests.mjs --timeout 30 # per-suite timeout in minutes
  *
  * Why sequential: some suites have timing-sensitive tests that flake under
- * parallel load (see specifications/test-baseline.md, gotcha #6).
+ * parallel load (see test-baseline.md, gotcha #6).
  *
  * Output: per-suite logs + report.json in os.tmpdir()/continue-test-report.
  * Exit code 0 when every executed suite passes (skips don't fail the gate).
  *
- * Details: specifications/running-tests.md
+ * Details: running-tests.md
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -184,7 +184,7 @@ function runSuite(suite, logFile, timeoutMin) {
         CI: "true",
         NO_COLOR: "1",
         // A globally set FORCE_COLOR breaks substring assertions on styled
-        // terminal output (see specifications/test-baseline.md, gotcha #1)
+        // terminal output (see test-baseline.md, gotcha #1)
         FORCE_COLOR: "0",
       },
       windowsHide: true,

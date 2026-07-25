@@ -253,7 +253,7 @@ export const streamNormalInput = createAsyncThunk<
 
       // Attach prompt log and end thinking for reasoning models
       if (next.done && next.value) {
-        // Prompt logging is opt-in (specifications/prompt-logging-opt-in.md):
+        // Prompt logging is opt-in (prompt-logging-opt-in.md):
         // each PromptLog stores the fully rendered prompt, which grows session
         // state/files quadratically in agent loops. When disabled, only the
         // reasoning-end side effect is kept.

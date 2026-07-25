@@ -1136,7 +1136,7 @@ declare global {
     modelContextProtocolServers?: MCPOptions[];
 
     /**
-     * Opt-in prompt logging (see specifications/prompt-logging-opt-in.md).
+     * Opt-in prompt logging (see prompt-logging-opt-in.md).
      * When enabled, assistant history items store the fully rendered prompts
      * (\`promptLogs\`) and chat interactions are logged to devdata.
      */

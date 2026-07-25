@@ -33,7 +33,7 @@ This document tracks issues discovered during testing that need to be addressed.
 ## Issue #4: Gemini Streaming via CITT Fails (JSON Array not detected as streaming)
 
 **Status:** 🔴 OPEN — Fix required in CITT, not Continue  
-**Details:** See `specifications/citt-gemini-streaming-issue.md`
+**Details:** See `citt-gemini-streaming-issue.md` (in `dev-docs/technical-debts/`)
 
 ---
 

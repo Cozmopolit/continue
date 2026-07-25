@@ -242,15 +242,10 @@ outdated registry copy (v1.9.0) and was replaced with a junction to
 
 ## 7. Known limitations / follow-ups
 
-- **No automatic retry/resume** on premature end (deliberate — retries of
-  long reasoning generations are expensive; resubmit via the error dialog).
-  Candidate follow-up: optional bounded retry for `PrematureStreamEndError`.
-- **No idle watchdog**: if a middlebox holds the connection open without
-  forwarding anything, the stream hangs instead of failing. Candidate:
-  configurable `requestOptions.streamIdleTimeoutSeconds` aborting the
-  request when no bytes (incl. comments) arrive.
 - Providers that legitimately end SSE without `[DONE]`/`finish_reason` would
   now surface an error instead of a silent completion; mitigate per call
   (`expectTerminationSignal: false`) or globally
   (`CONTINUE_STRICT_STREAM_TERMINATION=0` for the adapter guard).
-- `streamFim` (autocomplete) is not instrumented.
+- Deferred follow-ups (bounded retry/resume, idle watchdog, `streamFim`
+  instrumentation) were extracted to
+  [design-proposals/stream-forensics-hardening.md](../../design-proposals/stream-forensics-hardening.md).

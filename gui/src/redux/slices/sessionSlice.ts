@@ -271,7 +271,7 @@ export const sessionSlice = createSlice({
       }
     },
     // Ends active reasoning without storing prompt logs. Dispatched when
-    // prompt logging is disabled (specifications/prompt-logging-opt-in.md)
+    // prompt logging is disabled (prompt-logging-opt-in.md)
     // so reasoning models still terminate their thinking state on completion.
     endActiveReasoning: (state) => {
       const lastMessage = state.history[state.history.length - 1];

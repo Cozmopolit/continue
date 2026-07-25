@@ -172,7 +172,7 @@ export async function discoverProxyModels(
     }
 
     // Discovered models are tunnel-only (decision #1 of the tunneling
-    // spec, see specifications/proxy-http-tunneling.md) — without a live
+    // spec, see proxy-http-tunneling.md) — without a live
     // connection there is no transport, so the endpoint is skipped.
     const connection = deps.getConnection(serverId);
     if (!connection) {

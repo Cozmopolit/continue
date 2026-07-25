@@ -1,6 +1,6 @@
 # Feature B: Chat Completions via MCP HTTP Tunnel
 
-**Status:** Draft (revised: decision #5 replaced by adapter bypass, see §5.4)
+**Status:** Implemented (status corrected 2026-07-25 at archival; decision #5 replaced by adapter bypass, see §5.4)
 **Last Updated:** 2026-07-07
 
 ## 1. Objective

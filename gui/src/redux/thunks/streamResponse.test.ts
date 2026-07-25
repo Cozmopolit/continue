@@ -78,7 +78,7 @@ export function getRootStateWithClaude(): RootState {
       config: {
         ...state.config.config,
         // Enable opt-in prompt logging so promptLog dispatches are produced
-        // (specifications/prompt-logging-opt-in.md)
+        // (prompt-logging-opt-in.md)
         experimental: {
           ...state.config.config.experimental,
           promptLogging: true,
@@ -1281,7 +1281,7 @@ describe("streamResponseThunk", () => {
   });
 
   it("should not store prompt logs when prompt logging is disabled (default)", async () => {
-    // Opt-in flag off (specifications/prompt-logging-opt-in.md): remove the
+    // Opt-in flag off (prompt-logging-opt-in.md): remove the
     // experimental override that getRootStateWithClaude adds for other tests
     const initialState = getRootStateWithClaude();
     delete initialState.config.config.experimental;
