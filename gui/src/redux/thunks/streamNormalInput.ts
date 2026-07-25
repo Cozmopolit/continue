@@ -200,11 +200,23 @@ export const streamNormalInput = createAsyncThunk<
       }
     }
 
-    const { compiledChatMessages, didPrune, contextPercentage } =
-      precompiledRes.content;
+    const {
+      compiledChatMessages,
+      didPrune,
+      contextPercentage,
+      inputTokens,
+      availableTokens,
+    } = precompiledRes.content;
 
     dispatch(setIsPruned(didPrune));
-    dispatch(setContextPercentage(contextPercentage));
+    dispatch(
+      setContextPercentage({
+        percentage: contextPercentage,
+        ...(inputTokens !== undefined && availableTokens !== undefined
+          ? { inputTokens, availableTokens }
+          : {}),
+      }),
+    );
 
     const start = Date.now();
     const streamAborter = state.session.streamAborter;

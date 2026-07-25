@@ -9,6 +9,7 @@ const ContextStatus = () => {
   const contextPercentage = useAppSelector(
     (state) => state.session.contextPercentage,
   );
+  const contextTokens = useAppSelector((state) => state.session.contextTokens);
   const selectedChatModel = useAppSelector(
     (state) => state.config.config.selectedModelByRole.chat?.model,
   );
@@ -30,7 +31,7 @@ const ContextStatus = () => {
   }, [history.length, selectedChatModel]);
 
   const compactConversation = useCompactConversation();
-  if (!isPruned && percent < 60) {
+  if (!isPruned && (contextPercentage ?? 0) <= 0) {
     return null;
   }
 
@@ -54,7 +55,9 @@ const ContextStatus = () => {
         content={
           <div className="flex flex-col gap-0 text-left text-xs">
             <span className="inline-block">
-              {`${percent}% of context filled.`}
+              {contextTokens
+                ? `${percent}% (${contextTokens.inputTokens.toLocaleString()}/${contextTokens.availableTokens.toLocaleString()})`
+                : `${percent}%`}
             </span>
             {isPruned && (
               <span className="inline-block">

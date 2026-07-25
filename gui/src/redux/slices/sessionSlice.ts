@@ -221,6 +221,7 @@ type SessionState = {
   hasReasoningEnabled?: boolean;
   isPruned?: boolean;
   contextPercentage?: number;
+  contextTokens?: { inputTokens: number; availableTokens: number };
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
 };
@@ -434,6 +435,7 @@ export const sessionSlice = createSlice({
         state.inlineErrorMessage = undefined;
         state.isPruned = false;
         state.contextPercentage = undefined;
+        delete state.contextTokens;
       }
     },
     deleteMessage: (state, action: PayloadAction<number>) => {
@@ -442,6 +444,7 @@ export const sessionSlice = createSlice({
       state.inlineErrorMessage = undefined;
       state.isPruned = false;
       state.contextPercentage = undefined;
+      delete state.contextTokens;
     },
     deleteCompaction: (state, action: PayloadAction<number>) => {
       // Removes the conversation summary from the specified message
@@ -695,6 +698,7 @@ export const sessionSlice = createSlice({
       state.inlineErrorMessage = undefined;
       state.isPruned = false;
       state.contextPercentage = undefined;
+      delete state.contextTokens;
 
       if (payload) {
         state.history = payload.history as any;
@@ -998,8 +1002,26 @@ export const sessionSlice = createSlice({
     setIsPruned: (state, action: PayloadAction<boolean>) => {
       state.isPruned = action.payload;
     },
-    setContextPercentage: (state, action: PayloadAction<number>) => {
-      state.contextPercentage = action.payload;
+    setContextPercentage: (
+      state,
+      action: PayloadAction<{
+        percentage: number;
+        inputTokens?: number;
+        availableTokens?: number;
+      }>,
+    ) => {
+      state.contextPercentage = action.payload.percentage;
+      if (
+        action.payload.inputTokens !== undefined &&
+        action.payload.availableTokens !== undefined
+      ) {
+        state.contextTokens = {
+          inputTokens: action.payload.inputTokens,
+          availableTokens: action.payload.availableTokens,
+        };
+      } else {
+        delete state.contextTokens;
+      }
     },
   },
   selectors: {

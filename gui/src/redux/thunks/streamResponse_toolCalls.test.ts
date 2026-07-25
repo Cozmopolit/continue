@@ -316,7 +316,7 @@ describe("streamResponseThunk - tool calls", () => {
     const setContextPercentageAction = dispatchedActions.find(
       (a: any) => a.type === "session/setContextPercentage",
     );
-    expect(setContextPercentageAction.payload).toBe(0.9);
+    expect(setContextPercentageAction.payload).toEqual({ percentage: 0.9 });
 
     const streamUpdates = dispatchedActions.filter(
       (a: any) => a.type === "session/streamUpdate",
@@ -735,7 +735,7 @@ describe("streamResponseThunk - tool calls", () => {
       },
       {
         type: "session/setContextPercentage",
-        payload: 0.9,
+        payload: { percentage: 0.9 },
       },
       {
         type: "symbols/updateFromContextItems/fulfilled",
@@ -1289,7 +1289,7 @@ describe("streamResponseThunk - tool calls", () => {
       },
       {
         type: "session/setContextPercentage",
-        payload: 0.85,
+        payload: { percentage: 0.85 },
       },
       {
         type: "symbols/updateFromContextItems/fulfilled",
@@ -1585,7 +1585,7 @@ describe("streamResponseThunk - tool calls", () => {
       },
       {
         type: "session/setContextPercentage",
-        payload: 0.85,
+        payload: { percentage: 0.85 },
       },
       {
         type: "session/streamUpdate",

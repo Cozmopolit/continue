@@ -1977,6 +1977,10 @@ export interface CompiledMessagesResult {
   compiledChatMessages: ChatMessage[];
   didPrune: boolean;
   contextPercentage: number;
+  /** Total input tokens after compilation (system + tools + history + last sequence) */
+  inputTokens?: number;
+  /** Tokens available for input: contextLength minus safety buffer and reserved output tokens */
+  availableTokens?: number;
 }
 
 export interface AddToChatPayload {

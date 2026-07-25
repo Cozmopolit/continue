@@ -452,3 +452,82 @@ describe("sessionSlice streamUpdate", () => {
     });
   });
 });
+
+describe("sessionSlice setContextPercentage", () => {
+  const createMinimalState = () => ({
+    lastSessionId: undefined,
+    allSessionMetadata: [],
+    history: [] as ChatHistoryItemWithMessageId[],
+    isStreaming: false,
+    title: "Test Session",
+    id: "test-session-id",
+    streamAborter: new AbortController(),
+    symbols: {},
+    mode: "chat" as const,
+    isInEdit: false,
+    codeBlockApplyStates: {
+      states: [],
+      curIndex: 0,
+    },
+    newestToolbarPreviewForInput: {},
+    isSessionMetadataLoading: false,
+    compactionLoading: {},
+  });
+
+  it("should store percentage and token counts when full payload is provided", () => {
+    const newState = sessionSlice.reducer(createMinimalState(), {
+      type: "session/setContextPercentage",
+      payload: {
+        percentage: 0.42,
+        inputTokens: 8432,
+        availableTokens: 20000,
+      },
+    });
+
+    expect(newState.contextPercentage).toBe(0.42);
+    expect(newState.contextTokens).toEqual({
+      inputTokens: 8432,
+      availableTokens: 20000,
+    });
+  });
+
+  it("should store only percentage and clear token counts when token fields are absent", () => {
+    const newState = sessionSlice.reducer(createMinimalState(), {
+      type: "session/setContextPercentage",
+      payload: { percentage: 0.9 },
+    });
+
+    expect(newState.contextPercentage).toBe(0.9);
+    expect(newState.contextTokens).toBeUndefined();
+  });
+
+  it("should clear previously stored token counts when a later payload omits them", () => {
+    const withTokens = sessionSlice.reducer(createMinimalState(), {
+      type: "session/setContextPercentage",
+      payload: {
+        percentage: 0.5,
+        inputTokens: 100,
+        availableTokens: 200,
+      },
+    });
+    expect(withTokens.contextTokens).toBeDefined();
+
+    const cleared = sessionSlice.reducer(withTokens, {
+      type: "session/setContextPercentage",
+      payload: { percentage: 0.6, inputTokens: undefined },
+    });
+
+    expect(cleared.contextPercentage).toBe(0.6);
+    expect(cleared.contextTokens).toBeUndefined();
+  });
+
+  it("should clear token counts when only availableTokens is missing", () => {
+    const newState = sessionSlice.reducer(createMinimalState(), {
+      type: "session/setContextPercentage",
+      payload: { percentage: 0.5, inputTokens: 100 },
+    });
+
+    expect(newState.contextPercentage).toBe(0.5);
+    expect(newState.contextTokens).toBeUndefined();
+  });
+});

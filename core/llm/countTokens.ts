@@ -547,6 +547,8 @@ function compileChatMessages({
     compiledChatMessages: reassembled,
     didPrune,
     contextPercentage,
+    inputTokens,
+    availableTokens,
   };
 }
 
