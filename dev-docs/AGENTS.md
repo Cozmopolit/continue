@@ -8,6 +8,14 @@ angepasst für Corporate-Use hinter dem CITT MCP-Tunnel. Monorepo (npm):
 Version (Acqui-Hire durch Cursor, 2026). Es gibt keinen upstream; dieses Repo
 ist die einzige Weiterentwicklung und wird frei geforkt.
 
+## Erste Aktion in jedem Chat
+
+**CITT.MCP-Check**: Ein triviales `citt_`-Tool aufrufen (z.B. `citt_get_current_time`)
+und das Ergebnis kurz bestätigen. CITT.MCP soll **immer** konfiguriert und
+online sein — schlägt der Call fehl (Tool nicht verfügbar, Timeout, Fehler):
+**sofort melden**, bevor irgendetwas anderes passiert. Kein stilles
+Weiterarbeiten ohne CITT.
+
 ## Hard Rules
 
 1. **Keine Test-Planung vor Abschluss der Implementierung** — Tests sind die

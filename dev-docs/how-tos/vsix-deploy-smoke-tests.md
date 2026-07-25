@@ -10,12 +10,16 @@ Bauen Commit notieren (`git rev-parse HEAD`).
 
 ## 1. Baseline-Gesundheit (immer)
 
-| Check                                                  | Grün sieht so aus                                           |
-| ------------------------------------------------------ | ----------------------------------------------------------- |
-| Model Picker                                           | Tunneled Models erscheinen (Endpoint-IDs), MCP-Tunnel steht |
-| Normaler Chat via OpenRouter (strict-termination Host) | streamed bis zum Ende, kein Error-Dialog                    |
-| `%USERPROFILE%\.continue\logs\stream-forensics.jsonl`  | keine neuen Einträge nach normalen Chats                    |
-| Autocomplete (streamFim-Pfad, nicht instrumentiert)    | funktioniert wie gewohnt                                    |
+Nach einem VSC-Restart bauen MCP-Server ihre Verbindung neu auf — der
+CITT-Check kommt deshalb zuerst.
+
+| Check                                                  | Grün sieht so aus                                                                                                                                                                          |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **CITT.MCP online** (zuerst!)                          | `citt_get_current_time` o.ä. triviales citt-Tool antwortet sofort. Fehlschlag (Tool fehlt/Timeout/Fehler) → **sofort melden**, keine weiteren Tests (siehe `../AGENTS.md`, „Erste Aktion") |
+| Model Picker                                           | Tunneled Models erscheinen (Endpoint-IDs), MCP-Tunnel steht                                                                                                                                |
+| Normaler Chat via OpenRouter (strict-termination Host) | streamed bis zum Ende, kein Error-Dialog                                                                                                                                                   |
+| `%USERPROFILE%\.continue\logs\stream-forensics.jsonl`  | keine neuen Einträge nach normalen Chats                                                                                                                                                   |
+| Autocomplete (streamFim-Pfad, nicht instrumentiert)    | funktioniert wie gewohnt                                                                                                                                                                   |
 
 ## 2. Feature-Marker (pro Deploy auswählen, was neu im Build ist)
 
