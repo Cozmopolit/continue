@@ -60,6 +60,9 @@ Damit das nicht in jedem Chat neu verhandelt wird:
   vollständig abbilden. **Tests als getrennter Commit** (nach dem
   Feature-Commit). Kleinigkeiten und Spec-Updates reiten in beliebigen
   Commits mit — Spec-Pflege ist Dauerzustand, kein eigener Commit-Anlass.
+- **Bündeln statt Micro-Commits**: verwandte Kleinigkeiten (z.B. mehrere
+  Doku-Anpassungen) gesammelt in einem Commit, nicht jede Einzeländerung
+  einzeln committen.
 - **Commit-Freiheit**: jederzeit committen, wenn es sich richtig anfühlt —
   auch zwischen Implementierungsphasen. Granularität nach Bauchgefühl und
   Feature-Größe.

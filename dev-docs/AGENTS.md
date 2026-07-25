@@ -37,6 +37,15 @@ Weiterarbeiten ohne CITT.
    nach einzelnen Commits vorschlagen. Vor Push: voller Runner-Lauf, nur bei
    Grün (`dev-docs/coding-guidelines.md` §3).
 
+## Vorgehensweise
+
+- **Agentic CITT-Tools nutzen** (`ask_files`, `ask_file`, `run_file_editor`):
+  Recherche und Datei-Lektüre passieren im Sub-Agent — nur Frage und Antwort
+  landen im eigenen Kontext (Kontext-Hygiene). Breite Code-Fragen an
+  `ask_files` delegieren statt selbst Dateien zu lesen; mechanische Edits
+  über mehrere Stellen/Dateien an `run_file_editor` (braucht vollständige
+  Pfade + klare Änderungsbeschreibung).
+
 ## Must-Reads (je nach Aufgabe, in dieser Reihenfolge)
 
 | Wann                           | Dokument                                                                  |
