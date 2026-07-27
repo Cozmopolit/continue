@@ -34,6 +34,7 @@ import {
 } from "../selectors/selectToolCalls";
 import { getBaseSystemMessage } from "../util/getBaseSystemMessage";
 import { getPlatform } from "../../util";
+import { fileUriToNativePath } from "../../util/fileUriToNativePath";
 import { callToolById } from "./callToolById";
 import { evaluateToolPolicies } from "./evaluateToolPolicies";
 import { preprocessToolCalls } from "./preprocessToolCallArgs";
@@ -144,7 +145,9 @@ export const streamNormalInput = createAsyncThunk<
     // Inject workspace environment info into system message
     // This provides the LLM with workspace context for tools requiring absolute paths
     const workspaceDirs = await extra.ideMessenger.ide.getWorkspaceDirs();
-    const primaryWorkspace = workspaceDirs[0] ?? "unknown";
+    const primaryWorkspace = workspaceDirs[0]
+      ? fileUriToNativePath(workspaceDirs[0])
+      : "unknown";
     const envBlock = `
 <env>
   workspace_root: ${primaryWorkspace}
