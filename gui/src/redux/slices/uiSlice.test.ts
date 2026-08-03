@@ -19,6 +19,7 @@ const createMockTool = (name: string, defaultPolicy?: ToolPolicy): Tool => ({
   displayTitle: name,
   wouldLikeTo: `use ${name}`,
   readonly: false,
+  group: "test",
   defaultToolPolicy: defaultPolicy,
 });
 
