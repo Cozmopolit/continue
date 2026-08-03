@@ -10,11 +10,20 @@ ist die einzige Weiterentwicklung und wird frei geforkt.
 
 ## Erste Aktion in jedem Chat
 
-**CITT.MCP-Check**: Ein triviales `citt_`-Tool aufrufen (z.B. `citt_get_current_time`)
-und das Ergebnis kurz bestätigen. CITT.MCP soll **immer** konfiguriert und
-online sein — schlägt der Call fehl (Tool nicht verfügbar, Timeout, Fehler):
-**sofort melden**, bevor irgendetwas anderes passiert. Kein stilles
-Weiterarbeiten ohne CITT.
+**CITT.MCP-Check**: Zwei Calls zu Beginn jedes Chats:
+
+1. **`citt_get_current_time`** — Timestamp-Anker für die Session
+2. **`citt_memory_get_index`** für `assistant:coding-agent` — verifiziert
+   Memory-Funktionalität und landet den Index im Kontext (Orientierung über
+   bereits gemerkte Themen)
+
+`get_current_time` doubles as a timestamp anchor; `memory_get_index` verifies
+memory functionality and lands the index in context. Ein `available: false`
+Result von `memory_get_index` ist **kein Fehler** (normal für frische Memories).
+
+CITT.MCP soll **immer** konfiguriert und online sein — schlägt einer der Calls
+fehl (Tool nicht verfügbar, Timeout, Fehler): **sofort melden**, bevor
+irgendetwas anderes passiert. Kein stilles Weiterarbeiten ohne CITT.
 
 ## Hard Rules
 
@@ -88,3 +97,37 @@ Weiterarbeiten ohne CITT.
   `dev-docs/design-proposals/`
 - Code-Kommentare zitieren Doku per Dateiname (z.B. `stream-forensics.md`) —
   Dateisuche findet sie.
+
+## Memory des Coding Agents
+
+Dem Coding Agent steht ein persistentes, projektübergreifendes Memory zur
+Verfügung: **`assistant:coding-agent`**. Zugriff über die `citt_memory_*`
+MCP-Tools.
+
+- **Befragen:** Bei thematisch passenden Aufgaben zu Chat-Beginn per
+  `memory_search` / `ask_memory` prüfen, ob relevante Erkenntnisse bereits
+  gemerkt wurden (Projekt-Findings, offene Baustellen, Umgebungs-Fallen).
+- **Merken:** `memory_write_note` für dauerhafte, chat-übergreifende Fakten.
+  Nicht für Betriebsregeln (die gehören in diese AGENTS.md) und keine Secrets.
+- **Nach `write_note`:** Der `suggested_name` ist nur ein Platzhalter; der
+  Naming-Schritt vergibt den finalen Wiki-Namen asynchron (~1–2 Min) — das
+  ist by design, kein Fehler. Den Ist-Namen nur bei tatsächlichem Bedarf via
+  `memory_list_fragments` auflösen.
+
+## Tool-Call-Probleme: Sofort melden, nicht umgehen
+
+CITT-Tools (MCP) sind selbst entwickelt — Probleme sind fixbare Bugs, keine
+Naturgewalten. Bei folgenden Situationen **sofort abbrechen und melden**:
+
+1. Tool-Call schlägt unerwartet fehl (nicht: legitimes "File not found")
+2. Tool liefert unerwartetes Format
+3. Erwartetes Tool nicht verfügbar
+
+**Nicht:** Workarounds bauen und weitermachen — das verschleiert Bugs.
+
+## Session-Ende ist Sache des Users
+
+Niemals annehmen, der User möchte aufhören, nur weil es spät ist. Kein
+uhrzeit-basiertes Drängen zum Abschluss, kein präemptives "Gute Nacht",
+keine "lass uns hier Schluss machen"-Vorschläge basierend auf der Uhrzeit.
+Arbeiten bis der User die Session beendet.
