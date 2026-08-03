@@ -81,8 +81,13 @@ export const uiSlice = createSlice({
     },
     // Tools
     addTool: (state, action: PayloadAction<Tool>) => {
-      state.toolSettings[action.payload.function.name] =
-        action.payload.defaultToolPolicy ?? DEFAULT_TOOL_SETTING;
+      const toolName = action.payload.function.name;
+      // Only set default policy if no policy exists yet
+      // This prevents overwriting user-configured policies during rehydration race conditions
+      if (!(toolName in state.toolSettings)) {
+        state.toolSettings[toolName] =
+          action.payload.defaultToolPolicy ?? DEFAULT_TOOL_SETTING;
+      }
     },
     setToolPolicy: (
       state,
