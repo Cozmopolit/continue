@@ -1,5 +1,9 @@
-import { describe, expect, it, test } from "vitest";
-import { autodetectTemplateType, modelSupportsNextEdit } from "./autodetect";
+import { describe, expect, it, test } from "@jest/globals";
+import {
+  autodetectTemplateType,
+  modelSupportsImages,
+  modelSupportsNextEdit,
+} from "./autodetect";
 
 test("autodetectTemplateType returns 'codellama-70b' for CodeLlama 70B models", () => {
   expect(autodetectTemplateType("codellama-70b")).toBe("codellama-70b");
@@ -334,6 +338,98 @@ describe("modelSupportsNextEdit", () => {
           undefined,
         ),
       ).toBe(true);
+    });
+  });
+});
+
+describe("modelSupportsImages", () => {
+  describe("provider-based detection", () => {
+    it("returns true for moonshot provider with kimi models", () => {
+      expect(
+        modelSupportsImages("moonshot", "kimi-k2-0711", undefined, undefined),
+      ).toBe(true);
+      expect(
+        modelSupportsImages("moonshot", "kimi-k3", undefined, undefined),
+      ).toBe(true);
+      // moonshot-v1-8k is a text-only model, not vision-capable
+      expect(
+        modelSupportsImages("moonshot", "moonshot-v1-8k", undefined, undefined),
+      ).toBe(false);
+    });
+
+    it("returns true for azure provider with vision models", () => {
+      expect(
+        modelSupportsImages("azure", "claude-opus-4", undefined, undefined),
+      ).toBe(true);
+      expect(modelSupportsImages("azure", "gpt-4o", undefined, undefined)).toBe(
+        true,
+      );
+    });
+
+    it("returns false for unsupported providers", () => {
+      expect(
+        modelSupportsImages(
+          "unsupported-provider",
+          "gpt-4o",
+          undefined,
+          undefined,
+        ),
+      ).toBe(false);
+      expect(
+        modelSupportsImages("unknown", "kimi-k3", undefined, undefined),
+      ).toBe(false);
+    });
+  });
+
+  describe("model-based detection", () => {
+    it("returns true for kimi models on supported providers", () => {
+      expect(
+        modelSupportsImages("openai", "kimi-k3", undefined, undefined),
+      ).toBe(true);
+      expect(
+        modelSupportsImages("openrouter", "kimi-k2-0711", undefined, undefined),
+      ).toBe(true);
+    });
+
+    it("returns true for various vision-capable models", () => {
+      expect(
+        modelSupportsImages("openai", "gpt-4o", undefined, undefined),
+      ).toBe(true);
+      expect(
+        modelSupportsImages("anthropic", "claude-3-opus", undefined, undefined),
+      ).toBe(true);
+      expect(
+        modelSupportsImages(
+          "anthropic",
+          "claude-sonnet-4",
+          "Claude Sonnet 4",
+          undefined,
+        ),
+      ).toBe(true);
+      expect(modelSupportsImages("ollama", "llava", undefined, undefined)).toBe(
+        true,
+      );
+      expect(
+        modelSupportsImages("gemini", "gemini-1.5-pro", undefined, undefined),
+      ).toBe(true);
+    });
+  });
+
+  describe("capabilities override", () => {
+    it("respects explicit uploadImage capability", () => {
+      // Explicit true overrides provider check
+      expect(
+        modelSupportsImages("unsupported", "random-model", undefined, {
+          uploadImage: true,
+        }),
+      ).toBe(true);
+
+      // Explicit false overrides model detection
+      expect(
+        modelSupportsImages("openai", "gpt-4o", undefined, {
+          uploadImage: false,
+        }),
+      ).toBe(false);
     });
   });
 });

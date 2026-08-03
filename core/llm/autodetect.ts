@@ -133,6 +133,7 @@ const PROVIDER_SUPPORTS_IMAGES: string[] = [
   "watsonx",
   "zAI",
   "tensorix",
+  "moonshot",
 ];
 
 const MODEL_SUPPORTS_IMAGES: RegExp[] = [
@@ -155,6 +156,7 @@ const MODEL_SUPPORTS_IMAGES: RegExp[] = [
   /qwen(.*)vl/,
   /mistral-small/,
   /mistral-medium/,
+  /kimi/,
 ];
 
 function modelSupportsImages(
