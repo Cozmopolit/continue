@@ -9,6 +9,10 @@ import {
 } from "../../../context/IdeMessenger";
 import { useAppSelector } from "../../../redux/hooks";
 import { selectIsGatheringContext } from "../../../redux/slices/sessionSlice";
+import {
+  tryPrettyPrintJson,
+  withJsonExtension,
+} from "../../../util/prettyPrintJson";
 import { AnimatedEllipsis } from "../../AnimatedEllipsis";
 import FileIcon from "../../FileIcon";
 import SafeImg from "../../SafeImg";
@@ -47,7 +51,15 @@ export function openContextItem(
       void ideMessenger.ide.openFile(uri.value);
     }
   } else {
-    void ideMessenger.ide.showVirtualFile(name, content);
+    const prettyJson = tryPrettyPrintJson(content);
+    if (prettyJson !== undefined) {
+      void ideMessenger.ide.showVirtualFile(
+        withJsonExtension(name),
+        prettyJson,
+      );
+    } else {
+      void ideMessenger.ide.showVirtualFile(name, content);
+    }
   }
 }
 
