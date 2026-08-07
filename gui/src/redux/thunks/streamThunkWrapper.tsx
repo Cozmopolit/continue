@@ -45,10 +45,12 @@ export const streamThunkWrapper = createAsyncThunk<
         isOverloadedErrorMessage(message) && attempt < OVERLOADED_RETRIES;
 
       if (shouldRetry) {
-        await dispatch(cancelStream());
+        // Retries replace the attempt — no reasoning rescue here
+        // (rescue-interrupted-reasoning.md).
+        await dispatch(cancelStream({ skipReasoningRescue: true }));
         const delayMs = OVERLOADED_DELAY_MS * 2 ** attempt;
         await new Promise((resolve) => setTimeout(resolve, delayMs));
-        await dispatch(cancelStream());
+        await dispatch(cancelStream({ skipReasoningRescue: true }));
       } else {
         await dispatch(cancelStream());
         dispatch(setDialogMessage(<StreamErrorDialog error={e} />));

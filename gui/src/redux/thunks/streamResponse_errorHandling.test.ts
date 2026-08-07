@@ -132,6 +132,10 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
+        type: "session/rescueInterruptedReasoning",
+        payload: undefined,
+      },
+      {
         type: "session/clearDanglingMessages",
         payload: undefined,
       },
@@ -656,6 +660,10 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "session/abortStream",
+        payload: undefined,
+      },
+      {
+        type: "session/rescueInterruptedReasoning",
         payload: undefined,
       },
       {

@@ -172,8 +172,9 @@ function ParallelListeners() {
 
   // ON LOAD
   useEffect(() => {
-    // Override persisted state
-    void dispatch(cancelStream());
+    // Override persisted state (no reasoning rescue during webview init,
+    // see rescue-interrupted-reasoning.md)
+    void dispatch(cancelStream({ skipReasoningRescue: true }));
 
     const jetbrains = isJetBrains();
     setDocumentStylesFromLocalStorage(jetbrains);

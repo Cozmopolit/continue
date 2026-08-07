@@ -66,6 +66,25 @@ function filterMultipleEditToolCalls(
 }
 
 /**
+ * Formats the content of an assistant turn that was rescued after the stream
+ * got interrupted mid-reasoning (see rescue-interrupted-reasoning.md).
+ * The rescued reasoning is stored as plain assistant content so it survives
+ * constructMessages and is resent to the model provider-agnostically on the
+ * next run — native reasoning fields cannot carry partial blocks.
+ */
+export function formatInterruptedReasoningContent(
+  reasoningText: string,
+): string {
+  return (
+    `[Response interrupted mid-stream and left incomplete. ` +
+    `My reasoning up to the point of interruption:]\n\n` +
+    `${reasoningText}\n\n` +
+    `[End of the interrupted response. ` +
+    `Continue from here or adjust course as instructed.]`
+  );
+}
+
+/**
  * Initializes tool call states for a new message containing tool calls.
  * This function is called when we receive a complete message with tool calls,
  * typically in non-streaming scenarios or when processing the first chunk
@@ -339,6 +358,101 @@ export const sessionSlice = createSlice({
         state.history = state.history.slice(0, validAssistantMessageIdx + 1);
       }
     },
+    // Rescues partial reasoning when a stream is interrupted before the
+    // assistant produced any content (see rescue-interrupted-reasoning.md).
+    // Without rescue, the dangling reasoning is lost for the next run:
+    // constructMessages drops the empty assistant message, and the outbound
+    // converter returns null for standalone thinking messages. Here the
+    // reasoning is consolidated into the empty assistant turn as plain text,
+    // which survives both and is resent provider-agnostically.
+    rescueInterruptedReasoning: (state) => {
+      if (state.history.length < 2) {
+        return;
+      }
+
+      const lastUserOrToolIdx = findLastIndex(
+        state.history,
+        (item) => item.message.role === "tool" || item.message.role === "user",
+      );
+
+      const tail = state.history.slice(lastUserOrToolIdx + 1);
+      if (tail.length === 0) {
+        return;
+      }
+
+      // Nothing to rescue once the turn already produced usable content,
+      // or while tool calls are in flight (tool flows handle those).
+      for (const item of tail) {
+        if (item.message.role !== "assistant") {
+          continue;
+        }
+        const hasGeneratedMsg = item.toolCallStates?.some(
+          (toolCallState) => toolCallState.status !== "generating",
+        );
+        if (item.message.content || hasGeneratedMsg) {
+          return;
+        }
+        if (item.toolCallStates?.length || item.message.toolCalls?.length) {
+          return;
+        }
+      }
+
+      // Collect rescuable reasoning in chronological order.
+      const reasoningParts: string[] = [];
+      for (const item of tail) {
+        if (item.message.role === "thinking") {
+          const thinkingMessage = item.message as ThinkingChatMessage;
+          // Redacted blocks only carry boilerplate, not usable reasoning.
+          if (thinkingMessage.redactedThinking) {
+            continue;
+          }
+          const text = renderChatMessage(thinkingMessage).trim();
+          if (text) {
+            reasoningParts.push(text);
+          }
+        } else if (
+          item.message.role === "assistant" &&
+          !item.message.content &&
+          item.reasoning?.text?.trim()
+        ) {
+          reasoningParts.push(item.reasoning.text.trim());
+        }
+      }
+
+      if (reasoningParts.length === 0) {
+        return;
+      }
+
+      // Consolidate into the empty assistant item created by
+      // submitEditorAndInitAtIndex. If it is missing (should not happen in
+      // live sessions), keep today's behavior and do not rescue.
+      const assistantItem = state.history.find(
+        (item, i) =>
+          i > lastUserOrToolIdx &&
+          item.message.role === "assistant" &&
+          !item.message.content,
+      );
+      if (!assistantItem) {
+        return;
+      }
+
+      assistantItem.message.content = formatInterruptedReasoningContent(
+        reasoningParts.join("\n\n"),
+      );
+      // The reasoning text now lives in the message content; drop the
+      // reasoning field so the GUI does not render it twice.
+      assistantItem.reasoning = undefined;
+
+      // Remove the thinking items of this turn. This also strips their
+      // native reasoning metadata (signature, reasoning_details,
+      // redactedThinking) so nothing of it can leak into native resend
+      // paths (partial blocks are not valid there).
+      state.history = state.history.filter(
+        (item, i) =>
+          !(i > lastUserOrToolIdx && item.message.role === "thinking"),
+      );
+    },
+
     // Trigger value picked up by editor with isMainInput to set its content
     setMainEditorContentTrigger: (
       state,
@@ -1096,6 +1210,7 @@ export const {
   truncateHistoryToMessage,
   updateHistoryItemAtIndex,
   clearDanglingMessages,
+  rescueInterruptedReasoning,
   setMainEditorContentTrigger,
   deleteMessage,
   deleteCompaction,
