@@ -21,6 +21,12 @@ export type ProxyModelRole = "chat" | "embed" | "rerank";
 interface ApiTypeMapping {
   provider: string;
   role: ProxyModelRole;
+  /**
+   * API version segment the provider class expects as the last apiBase
+   * path segment ("v1" for Anthropic, "v1beta" for Gemini). CITT serves
+   * apiBase without it; appended during discovery when missing.
+   */
+  apiVersionPath?: string;
 }
 
 /**
@@ -29,8 +35,8 @@ interface ApiTypeMapping {
  */
 const API_TYPE_MAPPINGS: Record<string, ApiTypeMapping> = {
   "OpenAI-compatible": { provider: "openai", role: "chat" },
-  Anthropic: { provider: "anthropic", role: "chat" },
-  Gemini: { provider: "gemini", role: "chat" },
+  Anthropic: { provider: "anthropic", role: "chat", apiVersionPath: "v1" },
+  Gemini: { provider: "gemini", role: "chat", apiVersionPath: "v1beta" },
   CohereEmbed: { provider: "cohere", role: "embed" },
   CohereRerank: { provider: "cohere", role: "rerank" },
 };
@@ -41,6 +47,14 @@ const API_TYPE_MAPPINGS: Record<string, ApiTypeMapping> = {
  */
 export function getRoleForApiType(apiType: string): ProxyModelRole | undefined {
   return API_TYPE_MAPPINGS[apiType]?.role;
+}
+
+/**
+ * Appends the API version segment to apiBase unless the path already ends
+ * in a version segment (v1, v1beta, v2, ...). apiBase must end with "/".
+ */
+function ensureVersionSegment(apiBase: string, version: string): string {
+  return /\/v\d+[a-z]*\/$/i.test(apiBase) ? apiBase : `${apiBase}${version}/`;
 }
 
 /**
@@ -62,9 +76,19 @@ export function proxyEndpointToModelDescription(
   //   new URL("embed", "https://host/v2")  → "https://host/embed"  (WRONG)
   //   new URL("embed", "https://host/v2/") → "https://host/v2/embed" (correct)
   // This affects Cohere embed/rerank and other providers that construct URLs this way.
-  const apiBase = endpoint.apiBase.endsWith("/")
+  let apiBase = endpoint.apiBase.endsWith("/")
     ? endpoint.apiBase
     : `${endpoint.apiBase}/`;
+
+  // CITT serves apiBase without the API version segment (e.g.
+  // "https://host/anthropic"), but the provider classes expect it as the
+  // last apiBase segment (Anthropic: new URL("messages", ".../v1/");
+  // Gemini: new URL("models/...", ".../v1beta/")). Without it the tunneled
+  // request 404s (verified against the live CITT proxy). Idempotent: a
+  // base already ending in a version segment stays untouched.
+  if (mapping.apiVersionPath) {
+    apiBase = ensureVersionSegment(apiBase, mapping.apiVersionPath);
+  }
 
   return {
     // Use endpoint.id in title so users can distinguish providers

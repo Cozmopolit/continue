@@ -10,6 +10,7 @@ import {
 import type {
   ProxyHttpParams,
   ProxyHttpResponse,
+  ProxyHttpStreamingResponse,
 } from "../context/mcp/MCPConnection";
 import { McpProxyTransport } from "../context/mcp/mcpProxyFetch";
 import { BaseLLM } from "../llm";
@@ -199,6 +200,89 @@ describe("proxyEndpointToModelDescription", () => {
     );
     expect(desc).toBeUndefined();
   });
+
+  test("appends v1 to Anthropic apiBase missing the version segment", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({
+        apiType: "Anthropic",
+        apiBase: "https://host.openai.azure.com/anthropic",
+      }),
+      "key",
+    );
+    expect(desc?.apiBase).toBe("https://host.openai.azure.com/anthropic/v1/");
+  });
+
+  test("appends v1beta to Gemini apiBase missing the version segment", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({
+        apiType: "Gemini",
+        apiBase: "https://generativelanguage.googleapis.com",
+      }),
+      "key",
+    );
+    expect(desc?.apiBase).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/",
+    );
+  });
+
+  test("keeps an already-versioned Anthropic apiBase (idempotent)", () => {
+    for (const base of [
+      "https://host.openai.azure.com/anthropic/v1",
+      "https://host.openai.azure.com/anthropic/v1/",
+      "https://host.openai.azure.com/anthropic/v2/",
+      "https://host.openai.azure.com/anthropic/V1/",
+      "https://host.openai.azure.com/anthropic/v1beta/",
+    ]) {
+      const desc = proxyEndpointToModelDescription(
+        "CITT",
+        createEndpoint({ apiType: "Anthropic", apiBase: base }),
+        "key",
+      );
+      expect(desc?.apiBase).toBe(base.endsWith("/") ? base : `${base}/`);
+    }
+  });
+
+  test("keeps an already-versioned Gemini apiBase (idempotent)", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({
+        apiType: "Gemini",
+        apiBase: "https://generativelanguage.googleapis.com/v1beta/",
+      }),
+      "key",
+    );
+    expect(desc?.apiBase).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/",
+    );
+  });
+
+  test("appends the version segment when it is not the last path segment", () => {
+    // The version check anchors at the end of the path: a version-like
+    // segment earlier in the path does not count.
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({
+        apiType: "Anthropic",
+        apiBase: "https://host.example.com/v1/anthropic",
+      }),
+      "key",
+    );
+    expect(desc?.apiBase).toBe("https://host.example.com/v1/anthropic/v1/");
+  });
+
+  test("does not add a version segment for apiTypes without apiVersionPath", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({
+        apiType: "OpenAI-compatible",
+        apiBase: "https://openrouter.ai/api/v1",
+      }),
+      "key",
+    );
+    expect(desc?.apiBase).toBe("https://openrouter.ai/api/v1/");
+  });
 });
 
 describe("collectProxyEndpoints", () => {
@@ -383,7 +467,7 @@ function terminatingStreamingResponse(): ProxyHttpResponse {
   };
 }
 
-function emptyStreamingResponse(): ProxyHttpResponse {
+function emptyStreamingResponse(): ProxyHttpStreamingResponse {
   return {
     streaming: true,
     status: 200,
