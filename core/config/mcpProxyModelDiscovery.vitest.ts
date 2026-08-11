@@ -283,6 +283,44 @@ describe("proxyEndpointToModelDescription", () => {
     );
     expect(desc?.apiBase).toBe("https://openrouter.ai/api/v1/");
   });
+
+  test("maps OpenAI-compatible endpoints on openrouter.ai to the openrouter provider", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({
+        apiType: "OpenAI-compatible",
+        apiBase: "https://openrouter.ai/api/v1",
+      }),
+      "key",
+    );
+    expect(desc?.provider).toBe("openrouter");
+    expect(desc?.underlyingProviderName).toBe("openrouter");
+  });
+
+  test("keeps the generic openai provider for non-openrouter hosts", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({
+        apiType: "OpenAI-compatible",
+        apiBase: "https://citt-central-sweden.openai.azure.com/v1",
+      }),
+      "key",
+    );
+    expect(desc?.provider).toBe("openai");
+    expect(desc?.underlyingProviderName).toBe("openai");
+  });
+
+  test("does not remap non-OpenAI-compatible apiTypes by host", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({
+        apiType: "Anthropic",
+        apiBase: "https://openrouter.ai/api/v1",
+      }),
+      "key",
+    );
+    expect(desc?.provider).toBe("anthropic");
+  });
 });
 
 describe("collectProxyEndpoints", () => {

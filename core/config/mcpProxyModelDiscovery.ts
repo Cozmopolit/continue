@@ -58,6 +58,32 @@ function ensureVersionSegment(apiBase: string, version: string): string {
 }
 
 /**
+ * Refines the provider class for OpenAI-compatible endpoints based on the
+ * upstream gateway host. The plain OpenAI class leaves all reasoning flags
+ * off, which breaks multi-turn history serialization for reasoning models
+ * (Kimi K3 rejects requests without preserved reasoning_content). The
+ * OpenRouter class carries the correct flags plus per-model special-casing
+ * (Kimi/DeepSeek reasoning_content, Gemini thought signatures).
+ */
+function resolveProvider(
+  mapping: ApiTypeMapping,
+  endpoint: ProxyEndpoint,
+): string {
+  if (endpoint.apiType !== "OpenAI-compatible") {
+    return mapping.provider;
+  }
+  try {
+    const host = new URL(endpoint.apiBase).hostname.toLowerCase();
+    if (host === "openrouter.ai" || host.endsWith(".openrouter.ai")) {
+      return "openrouter";
+    }
+  } catch {
+    // Invalid apiBase - keep the generic provider.
+  }
+  return mapping.provider;
+}
+
+/**
  * Transforms a discovered proxy endpoint into a Continue model description.
  * Returns undefined for unknown apiTypes.
  */
@@ -90,6 +116,8 @@ export function proxyEndpointToModelDescription(
     apiBase = ensureVersionSegment(apiBase, mapping.apiVersionPath);
   }
 
+  const provider = resolveProvider(mapping, endpoint);
+
   return {
     // Use endpoint.id in title so users can distinguish providers
     // (e.g., azure-claude-opus vs anthropic-claude-opus vs openrouter-claude-opus)
@@ -97,8 +125,8 @@ export function proxyEndpointToModelDescription(
     // all real letters, so discovered models appear after manually configured
     // ones in the GUI's alphabetically sorted model picker.
     title: `\uFFFF[${serverName}] ${endpoint.id}`,
-    provider: mapping.provider,
-    underlyingProviderName: mapping.provider,
+    provider,
+    underlyingProviderName: provider,
     // Use endpoint.id (not endpoint.model) so the CITT proxy can resolve
     // the target endpoint from the request body's "model" field.
     model: endpoint.id,
