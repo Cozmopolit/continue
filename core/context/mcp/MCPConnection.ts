@@ -1,6 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import fs from "fs";
 import { homedir } from "os";
+import path from "path";
 import { fileURLToPath } from "url";
 
 import {
@@ -58,6 +60,9 @@ const ProxyEndpointSchema = z.object({
   model: z.string(),
   apiBase: z.string(),
   timeout: z.number().optional(),
+  // nullish: absent on older CITT builds, JSON null for unpopulated DB rows
+  contextLimit: z.number().nullish(),
+  maxOutputTokens: z.number().nullish(),
 });
 
 const ProxyEndpointsSchema = z.object({
@@ -81,6 +86,67 @@ const PROXY_EARLY_EVENT_LIMIT = 1_000;
 // How long a cancelled stream keeps its registry entry so that late chunks
 // are recognized and discarded instead of being buffered as "early" events.
 const PROXY_CANCELLED_ENTRY_TTL_MS = 60_000;
+
+// ---------- Tunnel stream diagnostics ----------
+// Toggle WITHOUT restart: create ~/.continue/tunnel-diag.enabled (checked
+// every 2s at runtime); alternatively set CONTINUE_TUNNEL_DIAG=1 before
+// launch. Appends a JSONL trace of proxy/http streams (request size, chunk
+// arrival vs. consumer pickup, queue depth, event-loop lag watchdog) to
+// ~/.continue/logs/tunnel-diag.jsonl. Built to localize streaming stalls
+// (extension-host freezes during tunneled streams); near-zero overhead when
+// disabled (one cached existsSync per 2s).
+const TUNNEL_DIAG_ENV_ENABLED = process.env.CONTINUE_TUNNEL_DIAG !== undefined;
+const TUNNEL_DIAG_FILE = path.join(
+  homedir(),
+  ".continue",
+  "logs",
+  "tunnel-diag.jsonl",
+);
+const TUNNEL_DIAG_TOGGLE_FILE = path.join(
+  homedir(),
+  ".continue",
+  "tunnel-diag.enabled",
+);
+let tunnelDiagDirEnsured = false;
+let tunnelDiagFileEnabled = false;
+let tunnelDiagFileCheckedAt = 0;
+
+function tunnelDiagEnabled(): boolean {
+  if (TUNNEL_DIAG_ENV_ENABLED) {
+    return true;
+  }
+  const now = Date.now();
+  if (now - tunnelDiagFileCheckedAt >= 2000) {
+    tunnelDiagFileCheckedAt = now;
+    try {
+      tunnelDiagFileEnabled = fs.existsSync(TUNNEL_DIAG_TOGGLE_FILE);
+    } catch {
+      tunnelDiagFileEnabled = false;
+    }
+  }
+  return tunnelDiagFileEnabled;
+}
+
+function tunnelDiagLog(entry: Record<string, unknown>): void {
+  if (!tunnelDiagEnabled()) {
+    return;
+  }
+  try {
+    if (!tunnelDiagDirEnsured) {
+      fs.mkdirSync(path.dirname(TUNNEL_DIAG_FILE), { recursive: true });
+      tunnelDiagDirEnsured = true;
+    }
+    fs.appendFile(
+      TUNNEL_DIAG_FILE,
+      `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`,
+      () => {
+        // fire-and-forget
+      },
+    );
+  } catch {
+    // Diagnostics must never break the tunnel.
+  }
+}
 
 const ProxyHttpResultSchema = z.object({
   status: z.number(),
@@ -306,6 +372,12 @@ class MCPConnection {
     params: ProxyHttpParams,
     options?: { signal?: AbortSignal; timeout?: number },
   ): Promise<ProxyHttpResponse> {
+    tunnelDiagLog({
+      ev: "req",
+      path: params.path,
+      bodyLen: params.body?.length ?? 0,
+    });
+    const requestedAt = Date.now();
     const result = await this.callMethod(
       "proxy/http",
       { ...params },
@@ -323,6 +395,12 @@ class MCPConnection {
       if (!result.streamId) {
         throw new Error("proxy/http returned streaming=true without streamId");
       }
+      tunnelDiagLog({
+        ev: "reqResult",
+        streamId: result.streamId,
+        status: result.status,
+        ms: Date.now() - requestedAt,
+      });
       return {
         streaming: true,
         status: result.status,
@@ -332,6 +410,12 @@ class MCPConnection {
       };
     }
 
+    tunnelDiagLog({
+      ev: "reqResult",
+      streaming: false,
+      status: result.status,
+      ms: Date.now() - requestedAt,
+    });
     return {
       streaming: false,
       status: result.status,
@@ -351,6 +435,7 @@ class MCPConnection {
     if (!entry || entry.state === ProxyStreamState.Cancelled) {
       return;
     }
+    tunnelDiagLog({ ev: "cancel", streamId });
     entry.state = ProxyStreamState.Cancelled;
     entry.cancelledAt = Date.now();
 
@@ -479,10 +564,26 @@ class MCPConnection {
   }
 
   private createProxyStreamIterable(streamId: string): AsyncIterable<string> {
-    const queue: ProxyStreamEvent[] = [];
+    const queue: { event: ProxyStreamEvent; at: number }[] = [];
     let wake: (() => void) | undefined;
+
+    // Diagnostics: event-loop lag watchdog. A 500ms interval whose actual
+    // tick distance exposes synchronous blocks of the extension host.
+    let lastTickAt = Date.now();
+    const watchdog = setInterval(() => {
+      const now = Date.now();
+      const elapsed = now - lastTickAt;
+      lastTickAt = now;
+      if (elapsed > 1200) {
+        tunnelDiagLog({ ev: "lag", streamId, blockedMs: elapsed - 500 });
+      }
+    }, 500);
+
     const push = (event: ProxyStreamEvent) => {
-      queue.push(event);
+      queue.push({ event, at: Date.now() });
+      if (event.kind !== "chunk") {
+        clearInterval(watchdog);
+      }
       wake?.();
       wake = undefined;
     };
@@ -497,25 +598,44 @@ class MCPConnection {
 
     return {
       [Symbol.asyncIterator]: async function* () {
-        while (true) {
-          while (queue.length === 0) {
-            await new Promise<void>((resolve) => {
-              wake = resolve;
-            });
+        try {
+          while (true) {
+            while (queue.length === 0) {
+              await new Promise<void>((resolve) => {
+                wake = resolve;
+              });
+            }
+            const item = queue.shift();
+            if (!item) {
+              continue;
+            }
+            const qWaitMs = Date.now() - item.at;
+            switch (item.event.kind) {
+              case "chunk":
+                tunnelDiagLog({
+                  ev: "chunk",
+                  streamId,
+                  len: item.event.data.length,
+                  qWaitMs,
+                  depth: queue.length,
+                });
+                yield item.event.data;
+                break;
+              case "done":
+                tunnelDiagLog({ ev: "done", streamId, qWaitMs });
+                return;
+              case "error":
+                tunnelDiagLog({
+                  ev: "streamError",
+                  streamId,
+                  qWaitMs,
+                  message: item.event.error.message,
+                });
+                throw item.event.error;
+            }
           }
-          const event = queue.shift();
-          if (!event) {
-            continue;
-          }
-          switch (event.kind) {
-            case "chunk":
-              yield event.data;
-              break;
-            case "done":
-              return;
-            case "error":
-              throw event.error;
-          }
+        } finally {
+          clearInterval(watchdog);
         }
       },
     };
@@ -525,6 +645,7 @@ class MCPConnection {
     streamId: string,
     event: ProxyStreamEvent,
   ): void {
+    tunnelDiagLog({ ev: "earlyEvent", streamId, kind: event.kind });
     let buffered = this.earlyProxyEvents.get(streamId);
     if (!buffered) {
       buffered = { at: Date.now(), events: [] };

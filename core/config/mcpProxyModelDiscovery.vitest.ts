@@ -323,6 +323,60 @@ describe("proxyEndpointToModelDescription", () => {
   });
 });
 
+describe("contextLimit / maxOutputTokens mapping", () => {
+  test("maps contextLimit to contextLength", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({ contextLimit: 200000 }),
+      "key",
+    );
+    expect(desc?.contextLength).toBe(200000);
+  });
+
+  test("maps maxOutputTokens to completionOptions.maxTokens", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({ maxOutputTokens: 32000 }),
+      "key",
+    );
+    expect(desc?.completionOptions?.maxTokens).toBe(32000);
+  });
+
+  test("maps both fields together", () => {
+    const desc = proxyEndpointToModelDescription(
+      "CITT",
+      createEndpoint({ contextLimit: 1048576, maxOutputTokens: 64000 }),
+      "key",
+    );
+    expect(desc?.contextLength).toBe(1048576);
+    expect(desc?.completionOptions?.maxTokens).toBe(64000);
+  });
+
+  test.each([undefined, null, 0, -1])(
+    "leaves contextLength unset for contextLimit %p",
+    (contextLimit) => {
+      const desc = proxyEndpointToModelDescription(
+        "CITT",
+        createEndpoint({ contextLimit }),
+        "key",
+      );
+      expect(desc?.contextLength).toBeUndefined();
+    },
+  );
+
+  test.each([undefined, null, 0, -1])(
+    "leaves completionOptions unset for maxOutputTokens %p",
+    (maxOutputTokens) => {
+      const desc = proxyEndpointToModelDescription(
+        "CITT",
+        createEndpoint({ maxOutputTokens }),
+        "key",
+      );
+      expect(desc?.completionOptions).toBeUndefined();
+    },
+  );
+});
+
 describe("collectProxyEndpoints", () => {
   test("collects endpoints from connected servers with full proxy data", () => {
     const endpoint = createEndpoint();

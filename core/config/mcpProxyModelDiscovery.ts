@@ -58,6 +58,13 @@ function ensureVersionSegment(apiBase: string, version: string): string {
 }
 
 /**
+ * True for positive numbers; treats null/undefined/zero/negative as "unknown".
+ */
+function isPositiveNumber(value: number | null | undefined): value is number {
+  return typeof value === "number" && value > 0;
+}
+
+/**
  * Refines the provider class for OpenAI-compatible endpoints based on the
  * upstream gateway host. The plain OpenAI class leaves all reasoning flags
  * off, which breaks multi-turn history serialization for reasoning models
@@ -134,6 +141,16 @@ export function proxyEndpointToModelDescription(
     apiKey: proxyKey,
     ...(endpoint.timeout !== undefined && {
       requestOptions: { timeout: endpoint.timeout },
+    }),
+    // CITT "contextLimit" is the hard limit the proxy enforces (not the
+    // model's technical maximum). Feeds Continue's contextLength so context
+    // pruning uses the enforced window instead of the class default.
+    ...(isPositiveNumber(endpoint.contextLimit) && {
+      contextLength: endpoint.contextLimit,
+    }),
+    // null = unknown (most rows today) -> keep the provider default.
+    ...(isPositiveNumber(endpoint.maxOutputTokens) && {
+      completionOptions: { maxTokens: endpoint.maxOutputTokens },
     }),
   };
 }

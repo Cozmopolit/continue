@@ -1449,6 +1449,10 @@ export interface ProxyEndpoint {
   model: string;
   apiBase: string;
   timeout?: number;
+  /** Context window in tokens enforced by the proxy (hard limit; null/absent = unknown). */
+  contextLimit?: number | null;
+  /** Max output tokens per request enforced by the proxy (null/absent = unknown). */
+  maxOutputTokens?: number | null;
 }
 
 export interface ProxyCapabilities {
