@@ -350,9 +350,15 @@ export abstract class BaseLLM implements ILLM {
     usage: Usage | undefined,
     error?: any,
   ): InteractionStatus {
-    let promptTokens = this.countTokens(prompt);
-    let generatedTokens = this.countTokens(completion);
-    let thinkingTokens = thinking ? this.countTokens(thinking) : 0;
+    // Usage-first: prefer the provider-reported ground truth over local
+    // sync counting; fall back to the memoized countTokens
+    // (token-counting-hot-path.md).
+    let promptTokens = usage?.promptTokens ?? this.countTokens(prompt);
+    let generatedTokens =
+      usage?.completionTokens ?? this.countTokens(completion);
+    let thinkingTokens =
+      usage?.completionTokensDetails?.reasoningTokens ??
+      (thinking ? this.countTokens(thinking) : 0);
 
     void DevDataSqliteDb.logTokensGenerated(
       model,

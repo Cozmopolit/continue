@@ -39,6 +39,7 @@ import {
   TextMessagePart,
   ThinkingChatMessage,
   ToolCallDelta,
+  Usage,
 } from "..";
 import { stripImages } from "../util/messageContent";
 
@@ -378,6 +379,27 @@ export function fromChatResponse(response: ChatCompletion): ChatMessage[] {
   return messages;
 }
 
+// Map provider-reported usage onto our Usage shape (token-counting-hot-path.md).
+function fromChunkUsage(chunk: ChatCompletionChunk): Usage | undefined {
+  const usage = chunk.usage;
+  if (!usage) {
+    return undefined;
+  }
+  const result: Usage = {
+    promptTokens: usage.prompt_tokens,
+    completionTokens: usage.completion_tokens,
+  };
+  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
+  if (reasoningTokens !== undefined) {
+    result.completionTokensDetails = { reasoningTokens };
+  }
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  if (cachedTokens !== undefined) {
+    result.promptTokensDetails = { cachedTokens };
+  }
+  return result;
+}
+
 export function fromChatCompletionChunk(
   chunk: ChatCompletionChunk,
 ): ChatMessage | undefined {
@@ -390,11 +412,13 @@ export function fromChatCompletionChunk(
         }[];
       })
     | undefined;
+  const usage = fromChunkUsage(chunk);
 
   if (delta?.content) {
     return {
       role: "assistant",
       content: delta.content,
+      usage,
     };
   } else if (delta?.tool_calls) {
     const toolCalls = delta?.tool_calls
@@ -413,6 +437,7 @@ export function fromChatCompletionChunk(
         role: "assistant",
         content: "",
         toolCalls,
+        usage,
       };
     }
   } else if (
@@ -427,6 +452,16 @@ export function fromChatCompletionChunk(
       reasoning_details: delta?.reasoning_details as any[],
     };
     return message;
+  }
+
+  // Usage-only final chunk (OpenAI-compatible `stream_options.include_usage`):
+  // emit an empty assistant message so processChatChunk picks up the usage.
+  if (usage) {
+    return {
+      role: "assistant",
+      content: "",
+      usage,
+    };
   }
 
   return undefined;

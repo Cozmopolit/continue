@@ -1,6 +1,6 @@
 ﻿# Token-Counting auf der Hot-Path: synchrone Host-Blocker beseitigen
 
-**Status:** Ready für Phase 2 (Entscheidungen bestätigt 2026-08-12)
+**Status:** Implementiert (2026-08-12)
 **Date:** 2026-08-12
 
 ## Problem / Motivation
@@ -81,7 +81,7 @@ Provider-Zahlen).
   `completionTokensDetails.reasoningTokens` — die Provider-Ground-Truth
   (z.B. Anthropic-Adapter sammelt sie während des Streams).
 - `streamChat` ruft `compileChatMessages` pro Request **synchron** auf
-  (~1184–1196), das zählt jede History-Message via `countChatMessageTokens`.
+  (1186–1193), das zählt jede History-Message via `countChatMessageTokens`.
 - `compileChatMessages` kopiert Messages per Spread (`{...m}`) →
   Objektidentitäts-Caches (WeakMap) wirkungslos; Cache-Key muss
   inhaltsbasiert sein.
@@ -91,7 +91,7 @@ Provider-Zahlen).
 
 **Verifiziert im Recon (2026-08-12):**
 
-- `_logEnd` = `core/llm/index.ts` 344–410. Die drei
+- `_logEnd` = `core/llm/index.ts` 344–407. Die drei
   `streamChat`-Calls (1330/1354/1366) übergeben `usage` bereits
   (1336/1360/1372) — kein Call-Site-Wiring nötig. FIM/Complete-Pfade
   (701–981) übergeben `undefined` und ihre Adapter sammeln kein
@@ -111,6 +111,36 @@ OpenAI.ts` 53–56, 163–181). **Aber:** `fromChatCompletionChunk`
   (countTokens.ts 478), zählt heute **ohne** Multiplikator (inkon-
   sistent zu `countChatMessageTokens`); bei großem Toolset (CITT
   MCP-Tools) ist das Schema-Encoden pro Request nicht vernachlässigbar.
+
+**Readiness-Recon (Phase 1, 2026-08-12, Implementierungs-Chat):**
+
+- `fromChatCompletionChunk` hat vier Konsumenten: `openAIAdapterStream`
+  (index.ts, Zielpfad → `processChatChunk`), der `streamFim`-Adapter-Pfad
+  (ein Usage-Chunk rendert dort als leerer String — harmlos),
+  `llms/OpenAI.ts` (raw SSE) und `llms/WatsonX.ts` (beide setzen kein
+  `stream_options` → keine Usage-Chunks, keine Verhaltensänderung).
+- `processChatChunk` (index.ts 1062–1064) übernimmt `usage` nur bei
+  `chunk.role === "assistant"`; der Chunk wird per `yield result.chunk`
+  (1288/1314) bis zur GUI durchgereicht — konsistent mit heute schon
+  yieldeten leeren Tool-Call-Chunks. Phase-4-Test auf
+  `processChatChunk`-Ebene einplanen.
+- Die Spread-Kopie der Messages passiert in `compileChatMessages` selbst
+  (`historyWithTokens`-Map, countTokens.ts ~510–519) → bestätigt den
+  inhaltsbasierten Cache-Key.
+- Weitere `countTokens`-Caller außerhalb dieses Scopes profitieren
+  transparent (pure Funktion, keine Signaturänderung):
+  `autocomplete/templating/*`, `autocomplete/util/HelperVars.ts`,
+  `core.ts::isItemTooBig`, `nextEdit/BaseNextEditProvider.ts` (pro Zeile),
+  `edit/recursiveStream.ts` (pro Chunk, Default-Modell),
+  `indexing/chunk/markdown.ts`, `util/generateRepoMap.ts`.
+- `countTokens(content, modelName = "llama2")`: der Cache-Key muss den
+  aufgelösten Parameterwert verwenden (Default greift vor dem Lookup).
+- Junction-Regel greift nicht: alle Änderungen in `core/`
+  (Usage-Chunk kommt bereits aus dem gebauten `openai-adapters`-dist).
+- Test-Landschaft: `countTokens.test.ts` vorhanden, aber der synchrone
+  `countTokens`-Block ist `describe.skip`; aktiv sind
+  `getAdjustedTokenCount.test.ts` und `openaiTypeConverters.test.ts`
+  (Jest, Tests liegen neben dem Code).
 
 **Warum nicht simpler:** Ein kompletter async-Refactor von
 `compileChatMessages`/`prune*` zieht Signaturen durch viele Caller
@@ -192,18 +222,18 @@ deferred-async (kein modelltreuer async Encoder vorhanden, s. Analysis).
 
 ## Implementation Checklist
 
-- [ ] `core/llm/index.ts` `_logEnd`: usage-first für
+- [x] `core/llm/index.ts` `_logEnd`: usage-first für
       `promptTokens`/`generatedTokens`/`thinkingTokens` (Fallback =
       memoisiertes Counting).
-- [ ] `core/llm/openaiTypeConverters.ts` `fromChatCompletionChunk`:
+- [x] `core/llm/openaiTypeConverters.ts` `fromChatCompletionChunk`:
       `chunk.usage` → `ChatMessage.usage` mappen (inkl. Usage-only-
       Final-Chunk als leere Assistant-Message; Felder: promptTokens,
       completionTokens, reasoningTokens, cachedTokens).
-- [ ] `core/llm/countTokens.ts`: LRU-Memoisierung um `countTokens`
+- [x] `core/llm/countTokens.ts`: LRU-Memoisierung um `countTokens`
       (Key: modelName + Länge + FNV-1a-Hash; nur String-Content; Value
       adjustiert; begrenzt).
-- [ ] `countToolsTokens` durch den gecachten `countTokens` routen
+- [x] `countToolsTokens` durch den gecachten `countTokens` routen
       (Entscheidung 3).
-- [ ] Build `core` grün (`npm run build`); Abweichungen von dieser Spec im
+- [x] Build `core` grün (`npm run build`); Abweichungen von dieser Spec im
       Abschluss-Report nennen, Status → **Implementiert**, Checklist auf
       `[x]` (gemäß `_IMPLEMENTATION.md` Phase 2).

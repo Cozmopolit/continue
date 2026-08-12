@@ -109,15 +109,34 @@ async function countTokensAsync(
   return (await encoding.encode(content ?? "")).length;
 }
 
+// Memoized sync token counting (see token-counting-hot-path.md). Chat
+// history is immutable once appended, so an LRU keyed by modelName +
+// content length + FNV-1a content hash turns "re-count the entire history
+// per request" into "count only new content". Stored values are the final
+// adjusted counts. Hash collisions are negligible — the counts are
+// estimates anyway (getAdjustedTokenCountFromModel).
+const COUNT_TOKENS_CACHE_LIMIT = 5000;
+const countTokensCache = new Map<string, number>();
+
+// FNV-1a: cheap, dependency-free string hash (avoids `crypto` costs).
+function fnv1aHash(str: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
 function countTokens(
   content: MessageContent,
   // defaults to llama2 because the tokenizer tends to produce more tokens
   modelName = "llama2",
 ): number {
-  const encoding = encodingForModel(modelName);
-  let baseTokens = 0;
   if (Array.isArray(content)) {
-    baseTokens = content.reduce((acc, part) => {
+    // MessagePart[] content is rare and goes through the uncached path.
+    const encoding = encodingForModel(modelName);
+    const baseTokens = content.reduce((acc, part) => {
       return (
         acc +
         (part.type === "text"
@@ -125,16 +144,50 @@ function countTokens(
           : countImageTokens(part))
       );
     }, 0);
-  } else {
-    baseTokens = encoding.encode(content ?? "", "all", []).length;
+    return getAdjustedTokenCountFromModel(baseTokens, modelName);
   }
-  return getAdjustedTokenCountFromModel(baseTokens, modelName);
+
+  if (typeof content === "string") {
+    // Cache key includes the resolved modelName (default applied above),
+    // the content length and a content hash — never the content itself.
+    const cacheKey = `${modelName}|${content.length}|${fnv1aHash(content)}`;
+    const cached = countTokensCache.get(cacheKey);
+    if (cached !== undefined) {
+      // Refresh LRU recency (Map iteration order = insertion order).
+      countTokensCache.delete(cacheKey);
+      countTokensCache.set(cacheKey, cached);
+      return cached;
+    }
+
+    const encoding = encodingForModel(modelName);
+    const baseTokens = encoding.encode(content, "all", []).length;
+    const result = getAdjustedTokenCountFromModel(baseTokens, modelName);
+
+    if (countTokensCache.size >= COUNT_TOKENS_CACHE_LIMIT) {
+      // Evict the oldest entry.
+      const oldestKey = countTokensCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        countTokensCache.delete(oldestKey);
+      }
+    }
+    countTokensCache.set(cacheKey, result);
+    return result;
+  }
+
+  // Defensive: non-array, non-string content (e.g. undefined) counts empty.
+  const encoding = encodingForModel(modelName);
+  return getAdjustedTokenCountFromModel(
+    encoding.encode(content ?? "", "all", []).length,
+    modelName,
+  );
 }
 
 // https://community.openai.com/t/how-to-calculate-the-tokens-when-using-function-call/266573/10
 function countToolsTokens(tools: Tool[], modelName: string): number {
-  const count = (value: string) =>
-    encodingForModel(modelName).encode(value).length;
+  // Route through the memoized countTokens (token-counting-hot-path.md):
+  // consistent with countChatMessageTokens (model multiplier applies) and
+  // cached across requests for large tool sets.
+  const count = (value: string) => countTokens(value, modelName);
 
   let numTokens = 12;
 
@@ -558,11 +611,17 @@ async function cleanupAsyncEncoders(): Promise<void> {
   } catch (e) {}
 }
 
+// COUNT_TOKENS_CACHE_LIMIT / countTokensCache are exported for test
+// observability of the LRU memoization (token-counting-hot-path.md).
+// countToolsTokens is exported for direct unit testing.
 export {
   cleanupAsyncEncoders,
   compileChatMessages,
+  COUNT_TOKENS_CACHE_LIMIT,
   countTokens,
   countTokensAsync,
+  countTokensCache,
+  countToolsTokens,
   extractToolSequence,
   pruneLinesFromBottom,
   pruneLinesFromTop,
