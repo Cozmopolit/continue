@@ -1,6 +1,6 @@
 ﻿# Test Baseline (lokale Entwicklung)
 
-Status: **2026-07-25** — vollständige Baseline über alle lauffähigen Suites hergestellt.
+Status: **2026-07-25** — vollständige Baseline über alle lauffähigen Suites hergestellt. **Zahlen-Refresh 2026-08-12** (Suite-/File-Counts drifteten durch Commits seit der Baseline; core: Jest 52 Suites, Vitest 100 Files).
 Ziel: Nie wieder "überraschende" pre-existing Test-Failures bei Feature-Arbeit.
 Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen werden.
 
@@ -13,8 +13,8 @@ Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen we
 
 | Suite                      | Runner     | Kommando                                      | Erwartetes Ergebnis                                                                                                                 |
 | -------------------------- | ---------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `core` (Jest)              | jest (ESM) | `cd core; npm test`                           | 51 Suites passed, 7 skipped, 0 failed                                                                                               |
-| `core` (Vitest)            | vitest     | `cd core; npm run vitest`                     | 101 Files, 0 failed (siehe Timing-Hinweis unten)                                                                                    |
+| `core` (Jest)              | jest (ESM) | `cd core; npm test`                           | 52 Suites passed, 7 skipped, 0 failed                                                                                               |
+| `core` (Vitest)            | vitest     | `cd core; npm run vitest`                     | 100 Files, 0 failed (siehe Timing-Hinweis unten)                                                                                    |
 | `gui`                      | vitest     | `cd gui; npm test`                            | 41 Files / 446 Tests, 0 failed                                                                                                      |
 | `packages/config-yaml`     | jest (ESM) | `cd packages/config-yaml; npm test`           | 15 Suites / 287 passed, 1 skipped                                                                                                   |
 | `packages/fetch`           | vitest     | `cd packages/fetch; npm test`                 | 8 Files / 131 passed (inkl. e2e, siehe OpenSSL)                                                                                     |
@@ -116,6 +116,11 @@ Alle Fixes sind **test-only**; kein Produktionscode geändert.
 - `extensions/cli`: TUI-Tests (ink/stdin-Simulation) können unter Volllast flaken
   (beobachtet: `TUIChat.editMessage` "edit selector should exit with Esc", 2× —
   solo deterministisch grün). Bei Failure zuerst Datei solo nachlaufen lassen.
+- `core` (Vitest): `autocomplete/generation/ListenableGenerator.vitest.ts`
+  „should allow listeners to receive values" kann unter Volllast flaken
+  (Timing-Race: Listener-Spy sieht 1, 2 statt des letzten Werts —
+  beobachtet 2026-08-12 im Runner-Gesamtlauf, solo deterministisch grün).
+  Bei Failure zuerst solo nachlaufen lassen.
 - `gui`: `MockIdeMessenger` hat weiterhin kein `history/load`-Default → kosmetischer
   `console.error` im History-Test (kein Testimpact).
 - `core` Jest: "Jest did not exit one second after the test run" (open handles) —

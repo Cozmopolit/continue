@@ -1,8 +1,12 @@
-import { ChatMessage, LLMOptions } from "..";
+import { jest } from "@jest/globals";
+import { ChatMessage, LLMOptions, Usage } from "..";
 
 import { allModelProviders } from "@continuedev/llm-info";
 import { LlmInfo } from "@continuedev/llm-info/dist/types";
 import { BaseLLM } from ".";
+import { countTokens } from "./countTokens.js";
+import { DevDataSqliteDb } from "../data/devdataSqlite.js";
+import { DataLogger } from "../data/log.js";
 import { DEFAULT_CONTEXT_LENGTH } from "./constants";
 import { LLMClasses } from "./llms";
 import { LLMLogger } from "./logger";
@@ -196,6 +200,146 @@ describe("BaseLLM", () => {
           );
         });
       });
+    });
+  });
+});
+
+describe("BaseLLM token usage integration (token-counting-hot-path.md)", () => {
+  let llm: BaseLLM;
+
+  const mockInteraction = () => ({ logItem: jest.fn() });
+
+  beforeEach(() => {
+    llm = new DummyLLM({ model: "dummy-model" });
+    // Avoid real sqlite/file writes during tests
+    jest
+      .spyOn(DevDataSqliteDb, "logTokensGenerated")
+      .mockResolvedValue(undefined as any);
+    jest
+      .spyOn(DataLogger.prototype, "logDevData")
+      .mockResolvedValue(undefined as any);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  describe("processChatChunk", () => {
+    it("extracts usage from assistant chunks carrying usage", () => {
+      const usage: Usage = { promptTokens: 11, completionTokens: 22 };
+      const chunk: ChatMessage = { role: "assistant", content: "", usage };
+      const result = (llm as any).processChatChunk(chunk, undefined);
+      expect(result.usage).toEqual(usage);
+    });
+
+    it("returns usage null for assistant chunks without usage", () => {
+      const chunk: ChatMessage = { role: "assistant", content: "hi" };
+      const result = (llm as any).processChatChunk(chunk, undefined);
+      expect(result.usage).toBeNull();
+    });
+
+    it("collects thinking content from thinking chunks", () => {
+      const chunk = { role: "thinking", content: "hmm" } as any;
+      const result = (llm as any).processChatChunk(chunk, undefined);
+      expect(result.thinking).toEqual(["hmm"]);
+      expect(result.usage).toBeNull();
+    });
+
+    it("logs each chunk to the interaction log", () => {
+      const interaction = mockInteraction();
+      const chunk: ChatMessage = { role: "assistant", content: "hi" };
+      (llm as any).processChatChunk(chunk, interaction);
+      expect(interaction.logItem).toHaveBeenCalledWith({
+        kind: "message",
+        message: chunk,
+      });
+    });
+  });
+
+  describe("_logEnd usage-first", () => {
+    const fullUsage: Usage = {
+      promptTokens: 1234,
+      completionTokens: 567,
+      completionTokensDetails: { reasoningTokens: 89 },
+    };
+
+    it("prefers provider usage over local counting", () => {
+      const interaction = mockInteraction();
+      const status = (llm as any)._logEnd(
+        "dummy-model",
+        "some prompt that is longer than any usage value",
+        "some completion",
+        "some thinking",
+        interaction,
+        fullUsage,
+      );
+      expect(status).toBe("success");
+      expect(interaction.logItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "success",
+          promptTokens: 1234,
+          generatedTokens: 567,
+          thinkingTokens: 89,
+          usage: fullUsage,
+        }),
+      );
+    });
+
+    it("falls back to local counting when usage is missing", () => {
+      const interaction = mockInteraction();
+      const prompt = "fallback prompt";
+      const completion = "fallback completion";
+      (llm as any)._logEnd(
+        "dummy-model",
+        prompt,
+        completion,
+        undefined,
+        interaction,
+        undefined,
+      );
+      expect(interaction.logItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "success",
+          promptTokens: countTokens(prompt, "dummy-model"),
+          generatedTokens: countTokens(completion, "dummy-model"),
+          thinkingTokens: 0,
+        }),
+      );
+    });
+
+    it("counts thinking when usage lacks reasoning details", () => {
+      const interaction = mockInteraction();
+      const thinking = "deep thoughts";
+      (llm as any)._logEnd("dummy-model", "p", "c", thinking, interaction, {
+        promptTokens: 10,
+        completionTokens: 5,
+      });
+      expect(interaction.logItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thinkingTokens: countTokens(thinking, "dummy-model"),
+        }),
+      );
+    });
+
+    it("applies usage-first on the error path too", () => {
+      const interaction = mockInteraction();
+      const status = (llm as any)._logEnd(
+        "dummy-model",
+        "p",
+        "c",
+        undefined,
+        interaction,
+        fullUsage,
+        new Error("boom"),
+      );
+      expect(status).toBe("error");
+      expect(interaction.logItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "error",
+          promptTokens: 1234,
+          generatedTokens: 567,
+        }),
+      );
     });
   });
 });

@@ -1,5 +1,9 @@
-import { toResponsesInput, isItemType } from "./openaiTypeConverters";
-import { ChatMessage } from "..";
+import {
+  fromChatCompletionChunk,
+  isItemType,
+  toResponsesInput,
+} from "./openaiTypeConverters";
+import { AssistantChatMessage, ChatMessage } from "..";
 import type {
   EasyInputMessage,
   ResponseInputItem,
@@ -846,5 +850,122 @@ describe("openaiTypeConverters", () => {
         expect(devMessages.length).toBe(1);
       });
     });
+  });
+});
+
+describe("fromChatCompletionChunk usage mapping (token-counting-hot-path.md)", () => {
+  const baseChunk = {
+    id: "chatcmpl-test",
+    object: "chat.completion.chunk",
+    created: 1700000000,
+    model: "gpt-4",
+  };
+
+  const fullUsage = {
+    prompt_tokens: 10,
+    completion_tokens: 20,
+    total_tokens: 30,
+    completion_tokens_details: { reasoning_tokens: 5 },
+    prompt_tokens_details: { cached_tokens: 8 },
+  };
+
+  it("maps a usage-only final chunk to an empty assistant message", () => {
+    const chunk = { ...baseChunk, choices: [], usage: fullUsage };
+    const result = fromChatCompletionChunk(chunk as any);
+    expect(result).toEqual({
+      role: "assistant",
+      content: "",
+      usage: {
+        promptTokens: 10,
+        completionTokens: 20,
+        completionTokensDetails: { reasoningTokens: 5 },
+        promptTokensDetails: { cachedTokens: 8 },
+      },
+    });
+  });
+
+  it("maps usage without detail fields to the two required fields only", () => {
+    const chunk = {
+      ...baseChunk,
+      choices: [],
+      usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
+    };
+    const result = fromChatCompletionChunk(chunk as any);
+    expect(result?.role).toBe("assistant");
+    expect((result as AssistantChatMessage)?.usage).toEqual({
+      promptTokens: 3,
+      completionTokens: 4,
+    });
+  });
+
+  it("attaches usage to content chunks", () => {
+    const chunk = {
+      ...baseChunk,
+      choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }],
+      usage: fullUsage,
+    };
+    const result = fromChatCompletionChunk(chunk as any);
+    expect(result?.role).toBe("assistant");
+    expect(result?.content).toBe("Hi");
+    expect((result as AssistantChatMessage)?.usage?.promptTokens).toBe(10);
+  });
+
+  it("leaves usage undefined for chunks without usage", () => {
+    const chunk = {
+      ...baseChunk,
+      choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }],
+    };
+    const result = fromChatCompletionChunk(chunk as any);
+    expect(result?.content).toBe("Hi");
+    expect((result as AssistantChatMessage)?.usage).toBeUndefined();
+  });
+
+  it("attaches usage to tool call chunks", () => {
+    const chunk = {
+      ...baseChunk,
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: { name: "get_weather", arguments: "{}" },
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+      ],
+      usage: fullUsage,
+    };
+    const result = fromChatCompletionChunk(chunk as any);
+    expect(
+      (result as AssistantChatMessage)?.toolCalls?.[0]?.function?.name,
+    ).toBe("get_weather");
+    expect((result as AssistantChatMessage)?.usage?.completionTokens).toBe(20);
+  });
+
+  it("does not attach usage to thinking chunks", () => {
+    const chunk = {
+      ...baseChunk,
+      choices: [
+        {
+          index: 0,
+          delta: { reasoning_content: "hmm" },
+          finish_reason: null,
+        },
+      ],
+      usage: fullUsage,
+    };
+    const result = fromChatCompletionChunk(chunk as any);
+    expect(result?.role).toBe("thinking");
+    expect((result as any).usage).toBeUndefined();
+  });
+
+  it("still returns undefined for empty chunks without usage", () => {
+    const chunk = { ...baseChunk, choices: [] };
+    expect(fromChatCompletionChunk(chunk as any)).toBeUndefined();
   });
 });
