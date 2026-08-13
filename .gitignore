@@ -185,3 +185,6 @@ keys
 # Windows reserved-name artifact: PowerShell redirects to "NUL" create a real
 # file (unlike cmd's null device)
 NUL
+
+# Local temporary files
+temp/

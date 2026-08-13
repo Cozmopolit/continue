@@ -850,6 +850,424 @@ describe("openaiTypeConverters", () => {
         expect(devMessages.length).toBe(1);
       });
     });
+
+    // Regression tests for the GPT-5.6 multi-turn failure:
+    // provider emits reasoning -> message -> function_call per turn, and the
+    // replay must preserve that mixed order via metadata.responsesOutputItemIds.
+    // See dev-docs/specifications/preserve-openai-responses-output-order.md.
+    describe("output-item order preservation (preserve-openai-responses-output-order.md)", () => {
+      it("should preserve provider order msg_ -> fc_ (the exact failing GPT-5.6 turn)", () => {
+        // Failing replay: reasoning -> message -> function_call was rebuilt as
+        // reasoning -> function_call -> message, and Azure rejected the history
+        // because msg_ lost its required preceding reasoning item.
+        const messages: ChatMessage[] = [
+          {
+            role: "user",
+            content: "List the files and tell me what you see",
+          },
+          {
+            role: "thinking",
+            content: "",
+            reasoning_details: [
+              { type: "reasoning_id", id: "rs_001" },
+              {
+                type: "encrypted_content",
+                encrypted_content: "encrypted_data_here",
+              },
+            ],
+            metadata: {
+              reasoningId: "rs_001",
+              encrypted_content: "encrypted_data_here",
+            },
+          } as ChatMessage,
+          {
+            role: "assistant",
+            content: "Let me check the directory contents.",
+            toolCalls: [
+              {
+                id: "call_001",
+                type: "function",
+                function: {
+                  name: "list_files",
+                  arguments: '{"path":"."}',
+                },
+              },
+            ],
+            metadata: {
+              responsesOutputItemIds: ["msg_001", "fc_001"],
+              responsesOutputItemId: "fc_001",
+            },
+          } as ChatMessage,
+        ];
+
+        const result = toResponsesInput(messages);
+
+        // Order must match the original provider emission:
+        // user message, reasoning, output message, function_call.
+        const observed = result.map((item) => {
+          if (isItemType<ResponseReasoningItem>(item, "reasoning"))
+            return "reasoning";
+          if (isItemType<ResponseFunctionToolCall>(item, "function_call"))
+            return "function_call";
+          if ("type" in item && item.type === "message")
+            return `message:${(item as any).role}`;
+          return `other:${(item as any).type}`;
+        });
+
+        expect(observed).toEqual([
+          "message:user",
+          "reasoning",
+          "message:assistant",
+          "function_call",
+        ]);
+
+        // IDs must follow the same mixed order.
+        const assistantMsg = result.find(
+          (i) =>
+            "type" in i &&
+            i.type === "message" &&
+            "role" in i &&
+            i.role === "assistant",
+        ) as ResponseOutputMessage;
+        expect(assistantMsg.id).toBe("msg_001");
+        expect(assistantMsg.content[0]).toMatchObject({
+          type: "output_text",
+          text: "Let me check the directory contents.",
+        });
+
+        const functionCalls = getFunctionCalls(result);
+        expect(functionCalls.length).toBe(1);
+        expect(functionCalls[0].id).toBe("fc_001");
+        expect(functionCalls[0].call_id).toBe("call_001");
+      });
+
+      it("should preserve provider order for parallel calls: msg_ -> fc_ -> fc_ -> fc_", () => {
+        const messages: ChatMessage[] = [
+          {
+            role: "user",
+            content: "Read these 3 files",
+          },
+          {
+            role: "thinking",
+            content: "",
+            reasoning_details: [
+              { type: "reasoning_id", id: "rs_parallel" },
+              {
+                type: "encrypted_content",
+                encrypted_content: "encrypted_data",
+              },
+            ],
+            metadata: {
+              reasoningId: "rs_parallel",
+              encrypted_content: "encrypted_data",
+            },
+          } as ChatMessage,
+          {
+            role: "assistant",
+            content: "Reading all three files.",
+            toolCalls: [
+              {
+                id: "call_001",
+                type: "function",
+                function: { name: "read_file", arguments: '{"path":"a.py"}' },
+              },
+              {
+                id: "call_002",
+                type: "function",
+                function: { name: "read_file", arguments: '{"path":"b.js"}' },
+              },
+              {
+                id: "call_003",
+                type: "function",
+                function: { name: "read_file", arguments: '{"path":"c.ts"}' },
+              },
+            ],
+            metadata: {
+              responsesOutputItemIds: [
+                "msg_parallel",
+                "fc_001",
+                "fc_002",
+                "fc_003",
+              ],
+            },
+          } as ChatMessage,
+        ];
+
+        const result = toResponsesInput(messages);
+
+        const fcItems = getFunctionCalls(result);
+        expect(fcItems.length).toBe(3);
+
+        // Positional mapping: nth fc_ ID stays with nth tool call.
+        expect(fcItems[0].id).toBe("fc_001");
+        expect(fcItems[0].call_id).toBe("call_001");
+        expect(fcItems[1].id).toBe("fc_002");
+        expect(fcItems[1].call_id).toBe("call_002");
+        expect(fcItems[2].id).toBe("fc_003");
+        expect(fcItems[2].call_id).toBe("call_003");
+
+        // And the message must appear before the function calls, matching the
+        // original provider interleaving.
+        const messageIndex = result.findIndex(
+          (i) =>
+            "type" in i &&
+            i.type === "message" &&
+            "role" in i &&
+            i.role === "assistant",
+        );
+        const firstFcIndex = result.findIndex((i) =>
+          isItemType<ResponseFunctionToolCall>(i, "function_call"),
+        );
+        expect(messageIndex).toBeGreaterThan(-1);
+        expect(firstFcIndex).toBeGreaterThan(-1);
+        expect(messageIndex).toBeLessThan(firstFcIndex);
+      });
+
+      it("should deduplicate repeated metadata IDs without duplicating items", () => {
+        // The streaming reducer can append the same responsesOutputItemId more
+        // than once; replay must not duplicate the message or function_call.
+        const messages: ChatMessage[] = [
+          {
+            role: "thinking",
+            content: "",
+            reasoning_details: [
+              { type: "reasoning_id", id: "rs_dedup" },
+              {
+                type: "encrypted_content",
+                encrypted_content: "enc",
+              },
+            ],
+            metadata: {
+              reasoningId: "rs_dedup",
+              encrypted_content: "enc",
+            },
+          } as ChatMessage,
+          {
+            role: "assistant",
+            content: "Done once.",
+            toolCalls: [
+              {
+                id: "call_once",
+                type: "function",
+                function: { name: "noop", arguments: "{}" },
+              },
+            ],
+            metadata: {
+              responsesOutputItemIds: [
+                "msg_dedup",
+                "msg_dedup",
+                "fc_once",
+                "fc_once",
+              ],
+            },
+          } as ChatMessage,
+        ];
+
+        const result = toResponsesInput(messages);
+
+        const assistantMessages = result.filter(
+          (i) =>
+            "type" in i &&
+            i.type === "message" &&
+            "role" in i &&
+            i.role === "assistant",
+        );
+        expect(assistantMessages.length).toBe(1);
+
+        const functionCalls = getFunctionCalls(result);
+        expect(functionCalls.length).toBe(1);
+        expect(functionCalls[0].id).toBe("fc_once");
+      });
+
+      it("should keep legacy behavior when no ordered metadata exists", () => {
+        // Without responsesOutputItemIds there is no authoritative order; the
+        // previous deterministic layout (calls first, then text) is retained.
+        const messages: ChatMessage[] = [
+          {
+            role: "assistant",
+            content: "Working on it.",
+            toolCalls: [
+              {
+                id: "call_legacy",
+                type: "function",
+                function: { name: "legacy_tool", arguments: "{}" },
+              },
+            ],
+            // no metadata
+          } as ChatMessage,
+        ];
+
+        const result = toResponsesInput(messages);
+
+        const functionCalls = getFunctionCalls(result);
+        expect(functionCalls.length).toBe(1);
+        expect(functionCalls[0].id).toBeUndefined();
+        expect(functionCalls[0].call_id).toBe("call_legacy");
+
+        const assistantMessages = getMessagesByRole(result, "assistant");
+        expect(assistantMessages.length).toBe(1);
+
+        // Legacy ordering: calls before text.
+        const fcIndex = result.findIndex((i) =>
+          isItemType<ResponseFunctionToolCall>(i, "function_call"),
+        );
+        const msgIndex = result.findIndex(
+          (i) =>
+            "type" in i &&
+            i.type === "message" &&
+            "role" in i &&
+            i.role === "assistant",
+        );
+        expect(fcIndex).toBeLessThan(msgIndex);
+      });
+
+      it("should keep an empty text message when only a msg_ ID is present", () => {
+        // A text-only assistant turn can carry an empty content string but a
+        // msg_ ID; the empty message must still be emitted with that ID.
+        const messages: ChatMessage[] = [
+          {
+            role: "thinking",
+            content: "",
+            reasoning_details: [
+              { type: "reasoning_id", id: "rs_empty" },
+              { type: "encrypted_content", encrypted_content: "enc" },
+            ],
+            metadata: {
+              reasoningId: "rs_empty",
+              encrypted_content: "enc",
+            },
+          } as ChatMessage,
+          {
+            role: "assistant",
+            content: "",
+            metadata: { responsesOutputItemId: "msg_empty" },
+          } as ChatMessage,
+        ];
+
+        const result = toResponsesInput(messages);
+
+        const assistantMessages = getMessagesByRole(result, "assistant");
+        expect(assistantMessages.length).toBe(1);
+        expect((assistantMessages[0] as ResponseOutputMessage).id).toBe(
+          "msg_empty",
+        );
+        expect(
+          (assistantMessages[0] as ResponseOutputMessage).content[0],
+        ).toMatchObject({ type: "output_text", text: "" });
+      });
+    });
+
+    describe("reasoning-group safety invariant", () => {
+      it("should strip msg_/fc_ IDs when a previous reasoning was removed", () => {
+        // A stored reasoning id without encrypted_content cannot be replayed;
+        // the downstream msg_/fc_ IDs still reference that lost reasoning and
+        // must be stripped (content and call_id stay).
+        const messages: ChatMessage[] = [
+          {
+            role: "user",
+            content: "Do the thing",
+          },
+          {
+            role: "thinking",
+            content: "",
+            reasoning_details: [
+              { type: "reasoning_id", id: "rs_stale" },
+              // No encrypted_content — will be removed, breaking the group.
+            ],
+            metadata: { reasoningId: "rs_stale" },
+          } as ChatMessage,
+          {
+            role: "assistant",
+            content: "Working.",
+            toolCalls: [
+              {
+                id: "call_stale",
+                type: "function",
+                function: { name: "stale_tool", arguments: "{}" },
+              },
+            ],
+            metadata: {
+              responsesOutputItemIds: ["msg_stale", "fc_stale"],
+            },
+          } as ChatMessage,
+        ];
+
+        const result = toResponsesInput(messages);
+
+        const assistantMsg = result.find(
+          (i) =>
+            "type" in i &&
+            i.type === "message" &&
+            "role" in i &&
+            i.role === "assistant",
+        ) as ResponseOutputMessage;
+        expect(assistantMsg.id).toBeUndefined();
+        expect(assistantMsg.content[0]).toMatchObject({
+          type: "output_text",
+          text: "Working.",
+        });
+
+        const functionCalls = getFunctionCalls(result);
+        expect(functionCalls.length).toBe(1);
+        expect(functionCalls[0].id).toBeUndefined();
+        expect(functionCalls[0].call_id).toBe("call_stale");
+        expect(functionCalls[0].name).toBe("stale_tool");
+      });
+
+      it("should keep msg_/fc_ IDs when a valid reasoning group precedes them", () => {
+        const messages: ChatMessage[] = [
+          {
+            role: "user",
+            content: "Go",
+          },
+          {
+            role: "thinking",
+            content: "",
+            reasoning_details: [
+              { type: "reasoning_id", id: "rs_kept" },
+              { type: "encrypted_content", encrypted_content: "enc" },
+            ],
+            metadata: {
+              reasoningId: "rs_kept",
+              encrypted_content: "enc",
+            },
+          } as ChatMessage,
+          {
+            role: "assistant",
+            content: "On it.",
+            toolCalls: [
+              {
+                id: "call_kept",
+                type: "function",
+                function: { name: "kept_tool", arguments: "{}" },
+              },
+            ],
+            metadata: {
+              responsesOutputItemIds: ["msg_kept", "fc_kept"],
+            },
+          } as ChatMessage,
+        ];
+
+        const result = toResponsesInput(messages);
+
+        const reasoning = getReasoningItems(result);
+        expect(reasoning.length).toBe(1);
+        expect(reasoning[0].id).toBe("rs_kept");
+
+        const assistantMsg = result.find(
+          (i) =>
+            "type" in i &&
+            i.type === "message" &&
+            "role" in i &&
+            i.role === "assistant",
+        ) as ResponseOutputMessage;
+        expect(assistantMsg.id).toBe("msg_kept");
+
+        const functionCalls = getFunctionCalls(result);
+        expect(functionCalls.length).toBe(1);
+        expect(functionCalls[0].id).toBe("fc_kept");
+      });
+    });
   });
 });
 

@@ -880,31 +880,159 @@ function toResponseInputContentList(
   return list;
 }
 
-/** Emits function_call items for each tool call. Omits `id` when no fc_ ID is available. */
-function emitFunctionCallsFromToolCalls(
+/** Builds function_call items for each valid tool call (aligned by index; undefined = invalid). */
+function buildFunctionCallItemsFromToolCalls(
   toolCalls: ToolCallDelta[],
-  fcIds: string[],
-  input: ResponseInput,
-): void {
-  for (let i = 0; i < toolCalls.length; i++) {
-    const tc = toolCalls[i];
-    const fcId = fcIds[i];
-
+): (ResponseFunctionToolCall | undefined)[] {
+  return toolCalls.map((tc) => {
     const name = tc?.function?.name as string | undefined;
     const args = tc?.function?.arguments as string | undefined;
     const call_id = tc?.id as string | undefined;
 
-    if (name && call_id) {
-      const functionCallItem: ResponseFunctionToolCall = {
-        type: "function_call",
-        name,
-        arguments: typeof args === "string" ? args : "{}",
-        call_id,
-        id: fcId,
-      };
-      input.push(functionCallItem);
+    if (!name || !call_id) {
+      return undefined;
+    }
+
+    return {
+      type: "function_call",
+      name,
+      arguments: typeof args === "string" ? args : "{}",
+      call_id,
+    } as ResponseFunctionToolCall;
+  });
+}
+
+function buildOutputMessageItem(
+  text: string,
+  id?: string,
+): ResponseOutputMessage {
+  const content: ResponseOutputText[] = [
+    {
+      type: "output_text",
+      text,
+      annotations: [],
+    },
+  ];
+
+  return {
+    ...(id ? { id } : {}),
+    role: "assistant",
+    type: "message",
+    status: "completed",
+    content,
+  } as unknown as ResponseOutputMessage;
+}
+
+/**
+ * Converts an assistant ChatMessage to Responses input items.
+ *
+ * Preserves the original provider output-item order from
+ * metadata.responsesOutputItemIds: GPT-5.x emits
+ * reasoning -> message -> function_call per assistant turn, and OpenAI
+ * requires that exact pairing on replay. The flat internal ChatMessage
+ * merges text + tool calls, so the deterministic default (calls first,
+ * text last) reverses the original sequence and produces
+ * 'msg_ was provided without its required reasoning item' errors.
+ */
+function buildResponsesItemsFromAssistant(
+  text: string,
+  toolCalls: ToolCallDelta[] | undefined,
+  metadata: Record<string, unknown> | undefined,
+): ResponseInput {
+  const validToolCalls = Array.isArray(toolCalls) ? toolCalls : [];
+  const functionCallItems = buildFunctionCallItemsFromToolCalls(validToolCalls);
+  const hasAnyFc = functionCallItems.some((i) => i);
+
+  const allIds =
+    (metadata?.responsesOutputItemIds as string[] | undefined) || [];
+  const singularId = metadata?.responsesOutputItemId as string | undefined;
+
+  const orderedIds: string[] = [];
+  const rawIds = allIds.length ? allIds : singularId ? [singularId] : [];
+  for (const id of rawIds) {
+    if (
+      (id.startsWith("msg_") || id.startsWith("fc_")) &&
+      !orderedIds.includes(id)
+    ) {
+      orderedIds.push(id);
     }
   }
+
+  // No ordered metadata: retain legacy behavior (calls first, then text).
+  if (orderedIds.length === 0) {
+    const items: ResponseInput = [];
+    for (const fc of functionCallItems) {
+      if (fc) items.push(fc);
+    }
+    if (hasAnyFc) {
+      if (text && text.trim()) {
+        items.push({
+          role: "assistant",
+          content: text,
+          type: "message",
+        } as ResponseInputItem);
+      }
+    } else {
+      items.push({
+        role: "assistant",
+        content: text || "",
+        type: "message",
+      } as ResponseInputItem);
+    }
+    return items;
+  }
+
+  const msgIds = orderedIds.filter((id) => id.startsWith("msg_"));
+  const fcIds = orderedIds.filter((id) => id.startsWith("fc_"));
+
+  const msgItem = msgIds.length
+    ? buildOutputMessageItem(text, msgIds[0])
+    : undefined;
+
+  const fcWithIds: (ResponseFunctionToolCall | undefined)[] = fcIds.map(
+    (id, i) => {
+      const base = functionCallItems[i];
+      return base ? { ...base, id } : undefined;
+    },
+  );
+
+  const items: ResponseInput = [];
+  let msgUsed = false;
+  const emittedFcIndices = new Set<number>();
+
+  for (const id of orderedIds) {
+    if (id.startsWith("msg_") && msgItem && !msgUsed) {
+      items.push(msgItem);
+      msgUsed = true;
+    } else if (id.startsWith("fc_")) {
+      const fcIndex = fcIds.indexOf(id);
+      if (
+        fcIndex >= 0 &&
+        fcWithIds[fcIndex] &&
+        !emittedFcIndices.has(fcIndex)
+      ) {
+        items.push(fcWithIds[fcIndex] as ResponseInputItem);
+        emittedFcIndices.add(fcIndex);
+      }
+    }
+  }
+
+  // Append generated items that had no matching provider ID (lenient fallback).
+  functionCallItems.forEach((fc, i) => {
+    if (fc && !emittedFcIndices.has(i)) items.push(fc);
+  });
+  if (msgItem && !msgUsed) items.push(msgItem);
+  // If there was text but no msg_ ID in the ordered source, the provider
+  // still spoke it; keep it as an ID-less trailing item rather than dropping.
+  else if (!msgItem && text && text.trim()) {
+    items.push({
+      role: "assistant",
+      content: text,
+      type: "message",
+    } as ResponseInputItem);
+  }
+
+  return items;
 }
 
 /**
@@ -1022,6 +1150,66 @@ function sanitizeResponsesInput(input: ResponseInput): ResponseInput {
     }
   }
 
+  // Postcondition: server-originated output-item IDs (msg_/fc_) may only be
+  // sent when they belong to a retained reasoning group (reasoning with
+  // encrypted_content). Otherwise the API resolves the stored dependency and
+  // fails with "was provided without its required 'reasoning' item".
+  // Strip the id but keep content/call_id in that case.
+  //
+  // This guard must not fire for legacy turns that never had a reasoning
+  // item in the first place (e.g. tools-only histories): replaying those
+  // unchanged was previously accepted by OpenAI and is covered by legacy
+  // tests. Only when at least one reasoning item existed in this input do
+  // we enforce the group invariant.
+  const hadAnyReasoning = input.some((item) =>
+    isItemType<ResponseReasoningItem>(item, "reasoning"),
+  );
+
+  if (hadAnyReasoning) {
+    let inReasoningGroup = false;
+    for (let i = 0; i < input.length; i++) {
+      const item = input[i];
+      if (skipIndices.has(i)) continue;
+
+      if (isItemType<ResponseReasoningItem>(item, "reasoning")) {
+        inReasoningGroup = !!item.encrypted_content;
+        continue;
+      }
+
+      const isFunctionCall = isItemType<ResponseFunctionToolCall>(
+        item,
+        "function_call",
+      );
+      const isOutputMessage =
+        "type" in item &&
+        item.type === "message" &&
+        "role" in item &&
+        item.role === "assistant";
+
+      if (isFunctionCall || isOutputMessage) {
+        const id = (item as { id?: string }).id;
+        if (
+          id &&
+          (id.startsWith("msg_") || id.startsWith("fc_")) &&
+          !inReasoningGroup
+        ) {
+          stripIdIndices.add(i);
+        }
+        continue;
+      }
+
+      // Any other item type (user/developer message, function_call_output, ...)
+      // ends the reasoning group.
+      if ("type" in item && (item as any).type === "function_call_output") {
+        inReasoningGroup = false;
+      } else if (!("type" in item) || (item as any).type !== "message") {
+        inReasoningGroup = false;
+      } else if ("role" in item && item.role !== "assistant") {
+        inReasoningGroup = false;
+      }
+    }
+  }
+
   const result: ResponseInput = [];
   for (let i = 0; i < input.length; i++) {
     if (skipIndices.has(i)) continue;
@@ -1091,61 +1279,12 @@ export function toResponsesInput(messages: ChatMessage[]): ResponseInput {
       case "assistant": {
         const text = getTextFromMessageContent(msg.content);
         const toolCalls = msg.toolCalls as ToolCallDelta[] | undefined;
-
-        // Separate fc_ IDs (for function_calls) from msg_ IDs (for messages)
-        const allRespIds =
-          (msg.metadata?.responsesOutputItemIds as string[] | undefined) || [];
-        const respId = msg.metadata?.responsesOutputItemId as
-          | string
-          | undefined;
-        const fcIds = allRespIds.filter((id) => id.startsWith("fc_"));
-        if (fcIds.length === 0 && respId?.startsWith("fc_")) {
-          fcIds.push(respId);
-        }
-        const msgId =
-          allRespIds.find((id) => id.startsWith("msg_")) ||
-          (respId?.startsWith("msg_") ? respId : undefined);
-
-        if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-          emitFunctionCallsFromToolCalls(toolCalls, fcIds, input);
-
-          if (text && text.trim()) {
-            if (msgId) {
-              const outputMessageItem: ResponseOutputMessage = {
-                id: msgId,
-                role: "assistant",
-                type: "message",
-                status: "completed",
-                content: [
-                  {
-                    type: "output_text",
-                    text,
-                    annotations: [],
-                  } satisfies ResponseOutputText,
-                ],
-              };
-              input.push(outputMessageItem);
-            } else {
-              pushMessage("assistant", text);
-            }
-          }
-        } else if (msgId) {
-          const outputMessageItem: ResponseOutputMessage = {
-            id: msgId,
-            role: "assistant",
-            type: "message",
-            status: "completed",
-            content: [
-              {
-                type: "output_text",
-                text: text || "",
-                annotations: [],
-              } satisfies ResponseOutputText,
-            ],
-          };
-          input.push(outputMessageItem);
-        } else {
-          pushMessage("assistant", text || "");
+        for (const item of buildResponsesItemsFromAssistant(
+          text,
+          toolCalls,
+          msg.metadata as Record<string, unknown> | undefined,
+        )) {
+          input.push(item);
         }
         break;
       }
