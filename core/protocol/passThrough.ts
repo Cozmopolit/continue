@@ -62,6 +62,12 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     "streamDiffLines",
     "chatDescriber/describe",
     "conversation/compact",
+    // Board auto-topic-injection (board-auto-topic-injection.md): run-start
+    // consumption of MsgBoard messages. Without this entry the request is
+    // silently dropped by VsCodeMessenger (no webview listener registered)
+    // and the GUI await never settles — the 2026-08-14 generating-hang
+    // incident. Keep in sync with extensions/intellij/.../MessageTypes.kt.
+    "board/consumePending",
     "stats/getTokensPerDay",
     "stats/getTokensPerModel",
     // Codebase

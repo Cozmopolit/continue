@@ -125,6 +125,9 @@ class MessageTypes {
             "getDiffLines",
             "chatDescriber/describe",
             "conversation/compact",
+            // Board auto-topic-injection (board-auto-topic-injection.md).
+            // Keep in sync with core/protocol/passThrough.ts.
+            "board/consumePending",
             "stats/getTokensPerDay",
             "stats/getTokensPerModel",
             // Codebase
