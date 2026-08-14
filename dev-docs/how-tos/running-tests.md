@@ -58,4 +58,4 @@ gibt es nicht.
 - Nach jeder bereinigten Failure-Welle: Erwartungs-Zahlen + Repair-Log in
   test-baseline.md aktualisieren.
 - Repair-Log-Einträge knapp halten: Suite, Ursache, Fix-Ansatz (Details
-  gehören in die Commit-Message).
+  gehören hierhin, nicht in die Commit-Message — die ist ein Einzeiler).

@@ -11,20 +11,11 @@ Gesammelte Fallstricke, die wiederholt Zeit gekostet haben. Referenziert von
 
 ## Git / Commits
 
-- **Commit-Message-Policy: `-m`-One-Liner bevorzugen.** Wenn
-  `git commit -m "…"` nicht reicht, ist die Message (oder der Commit) zu
-  komplex. Mehrzeilige Messages bleiben möglich — dann Message-File korrekt
-  verwenden (nächste beiden Punkte).
-- **`git commit -F` ist encoding-neutral:** `-F` liest eine vorhandene Datei
-  (mehrzeilig problemlos) und erzeugt sie weder noch wählt es ihr Encoding.
-  Die historischen BOM/UTF-16-Probleme kamen vom Schreiben der Datei, nicht
-  von `-F`.
-- **UTF-8-Message-File ohne BOM:** nie per `>`/`Out-File`/`Set-Content`
-  schreiben (UTF-16-/BOM-Gefahr), sondern nur via Here-String `@'…'@` +
-  `[System.IO.File]::WriteAllText($path, $msg, [System.Text.UTF8Encoding]::new($false))`.
-  (Ein BOM ist so schon einmal in der Subject-Zeile gelandet.)
-- `node -e`-Quoting in PowerShell ist brüchig (eingebettete Anführungszeichen)
-  → lieber .NET `WriteAllText`.
+- **Commit-Messages sind Einzeiler** per `git commit -m "…"` — wenn das
+  nicht reicht, ist die Message (oder der Commit) zu komplex. Keine
+  mehrzeiligen Messages, keine Message-Files, keine Workarounds: genau die
+  haben historisch die BOM/UTF-16-Probleme und die langen Anleitungen dazu
+  erzeugt.
 - **lint-staged/prettier läuft bei jedem Commit** und formatiert gestagte
   Dateien (`*.{js,jsx,ts,tsx,json,css,md}`) nach — Diff danach kurz prüfen.
 - Selten landet Konsolen-Müll (z.B. `StruStr`-Bytes) während des

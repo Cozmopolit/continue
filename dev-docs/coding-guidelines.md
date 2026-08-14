@@ -56,10 +56,11 @@ Konsequenzen:
 
 Damit das nicht in jedem Chat neu verhandelt wird:
 
-- **Granularität**: relativ komplette Features, die eine Verhaltensänderung
-  vollständig abbilden. **Tests als getrennter Commit** (nach dem
-  Feature-Commit). Kleinigkeiten und Spec-Updates reiten in beliebigen
-  Commits mit — Spec-Pflege ist Dauerzustand, kein eigener Commit-Anlass.
+- **Granularität**: EIN Commit pro Workstream — Code + Spec + Doku + Tests
+  zusammen (AGENTS.md Regel 8); relativ komplette Features, die eine
+  Verhaltensänderung vollständig abbilden. Kleinigkeiten und Spec-Updates
+  reiten per Piggyback in beliebigen Commits mit — Spec-Pflege ist
+  Dauerzustand, kein eigener Commit-Anlass.
 - **Bündeln statt Micro-Commits**: verwandte Kleinigkeiten (z.B. mehrere
   Doku-Anpassungen) gesammelt in einem Commit, nicht jede Einzeländerung
   einzeln committen.
@@ -67,9 +68,10 @@ Damit das nicht in jedem Chat neu verhandelt wird:
   für Agents: Commit-Punkte gerne vorschlagen, aber niemals eigenständig
   committen. Die Commit-Freiheit (jederzeit, auch zwischen Phasen;
   Granularität nach Bauchgefühl und Feature-Größe) liegt beim User.
-- **Messages kompakt**: kurzer Subject (Prefixe wie bisher: `feat(…):`,
-  `fix:`, `test:`, `docs:`, `chore:`), Body nur wenn er echten Kontext
-  liefert. BOM-frei (siehe `how-tos/environment-gotchas.md`).
+- **Messages sind Einzeiler**: Subject mit Conventional Prefix
+  (`feat(…):`, `fix:`, `test:`, `docs:`, `chore:`), ≤ ~80 Zeichen,
+  kein Body — wenn es nicht per `git commit -m "…"` geht, ist die
+  Message zu komplex.
 - **Push ist selten**: 1–3× pro Tag, typischerweise „am Ende der Schicht".
   **Nicht-Pushen ist der Default** — Agents schlagen keinen Push nach
   einzelnen Commits vor.

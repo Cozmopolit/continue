@@ -75,8 +75,8 @@ irgendetwas anderes passiert. Kein stilles Weiterarbeiten ohne CITT.
 3. **Junction-Regel**: nach Änderungen an `packages/fetch` oder
    `packages/openai-adapters` zuerst dort `npm run build` — abhängige Pakete
    konsumieren deren `dist/` per Junction.
-4. **Commit-Messages BOM-frei** (Verfahren:
-   `dev-docs/how-tos/environment-gotchas.md`); lint-staged/prettier formatiert
+4. **Commit-Messages sind Einzeiler** per `git commit -m "…"` — wenn das
+   nicht reicht, ist die Message zu komplex; lint-staged/prettier formatiert
    gestagte Dateien beim Commit nach.
 5. **Kein Upstream — freies Forken**, aber keine gratuiten repo-weiten
    Umformatierungen (History/Blame). `docs/` = Produktdoku (Mintlify);
@@ -102,10 +102,9 @@ irgendetwas anderes passiert. Kein stilles Weiterarbeiten ohne CITT.
    statt einen Folge-Commit zu öffnen; Code + Spec + Doku + Tests eines
    Workstreams gehören in EINEN Commit. Ein dirty Worktree ist normaler
    Arbeitszustand — dreckige Dateien sind für den nächsten Commit vorgemerkt
-   und nie wieder ein Commit-Zeit-Thema. Commit-Messages bleiben kurz:
-   Conventional Prefix, Subject einzeilig (≤ ~80 Zeichen), Body optional und
-   wenige Zeilen (das Was, nicht die Story). Doc-Referenzen nutzen nackte
-   Dateinamen, keine Pfade.
+   und nie wieder ein Commit-Zeit-Thema. Commit-Messages sind Einzeiler:
+   Conventional Prefix, Subject ≤ ~80 Zeichen, kein Body. Doc-Referenzen
+   nutzen nackte Dateinamen, keine Pfade.
 
 ## Vorgehensweise
 
