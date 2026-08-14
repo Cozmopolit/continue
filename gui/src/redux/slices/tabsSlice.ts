@@ -11,14 +11,17 @@ interface TabsState {
   tabs: Tab[];
 }
 
+// Fresh unassigned tab; the TabBar session listener binds the current
+// session to it. Shared by the initial state and the fresh-boot tab reset
+// (workspace-fresh-boot.md).
+export const createFreshTab = (): Tab => ({
+  id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+  title: "Chat 1",
+  isActive: true,
+});
+
 export const INITIAL_TABS_STATE: TabsState = {
-  tabs: [
-    {
-      id: Date.now().toString(36) + Math.random().toString(36).substring(2),
-      title: "Chat 1",
-      isActive: true,
-    },
-  ],
+  tabs: [createFreshTab()],
 };
 
 export const tabsSlice = createSlice({

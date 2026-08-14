@@ -25,6 +25,11 @@ workspace is one explicit click.
 - GUI boot path: always start in a fresh session.
 - `loadLastSession`: workspace-aware resume — powers both the "Last Session"
   button (shown on an empty chat) and the delete-current-session flow.
+- Tab bar reset on boot (follow-up): tabs are per-window-lifetime UI state,
+  not persisted; boot leaves exactly one fresh tab. Without the reset,
+  `TabBar.handleSessionChange` saw the unknown fresh session id next to a
+  bound active tab on every boot and appended one tab per reload
+  (persisted tabs accumulated — the observed 13-tab bug).
 
 **Out of Scope:**
 
@@ -55,9 +60,15 @@ workspace is one explicit click.
 Boot (ParallelListeners.initialLoadConfig):
   replace  loadSession(initialSessionId)
   with     dispatch(newSession())
+           dispatch(setTabs([createFreshTab()]))
   -> fresh session id; the old chat stays on disk and is the top entry of
      the workspace-scoped history list. newSession() also records the old id
      as lastSessionId, keeping the "Last Session" button visible.
+     The tab reset leaves a single unassigned tab; the TabBar session
+     listener binds the fresh session to it ("active tab has no session ID"
+     branch). Tabs are no longer persisted: `createFilter("tabs", [])` in
+     `store.ts` (same pattern as `config`/`indexing`) — the empty whitelist
+     also discards legacy stored tabs on rehydrate.
 
 Resume (loadLastSession, rewritten):
   history/list { workspaceDirectory: window.workspacePaths?.[0] || undefined,
@@ -91,3 +102,11 @@ Behavior rules:
       the newest session of this workspace via `history/list` (limit 2,
       exclude current session id) and load it, with `newSession()` fallback;
       remove the stale commented-out block.
+- [x] `gui/src/redux/slices/tabsSlice.ts`: `createFreshTab()` factory shared
+      by `INITIAL_TABS_STATE` and the boot reset.
+- [x] `gui/src/hooks/ParallelListeners.tsx`: boot dispatches
+      `setTabs([createFreshTab()])` right after `newSession()`.
+- [x] `gui/src/redux/store.ts`: tabs persist filter switched to an empty
+      whitelist (no tab persistence, legacy stored tabs discarded).
+- [x] `gui/src/hooks/freshBootSingleTab.test.tsx`: regression test — boot
+      leaves exactly one tab, bound to the fresh session.

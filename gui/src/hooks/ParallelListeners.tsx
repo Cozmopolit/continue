@@ -17,6 +17,7 @@ import {
   setHasReasoningEnabled,
   setIsSessionMetadataLoading,
 } from "../redux/slices/sessionSlice";
+import { createFreshTab, setTabs } from "../redux/slices/tabsSlice";
 import { setAutoApproveAllTools, setTTSActive } from "../redux/slices/uiSlice";
 
 import { modelSupportsReasoning } from "core/llm/autodetect";
@@ -128,7 +129,12 @@ function ParallelListeners() {
       // Always boot into a fresh session (workspace-fresh-boot.md): the
       // previous chat stays on disk and is the top entry of the
       // workspace-scoped history list ("Last Session" button resumes it).
+      // The boot also resets the tab bar to a single fresh tab — tabs are
+      // per-window-lifetime UI state, and without the reset every boot
+      // accumulated one more tab. The TabBar session listener binds the
+      // fresh session to the reset tab.
       dispatch(newSession());
+      dispatch(setTabs([createFreshTab()]));
     }
     void initialLoadConfig();
     const interval = setInterval(() => {

@@ -59,7 +59,10 @@ const saveSubsetFilters = [
     "reasoningSettings",
   ]),
   createFilter("indexing", []),
-  createFilter("tabs", ["tabs"]),
+  // Tabs are per-window-lifetime UI state: fresh boot resets the tab bar
+  // (workspace-fresh-boot.md); persisting it accumulated one tab per reload.
+  // The empty whitelist also discards legacy stored tabs on rehydrate.
+  createFilter("tabs", []),
   createFilter("profiles", ["preferencesByProfileId", "selectedProfileId"]),
 ];
 
