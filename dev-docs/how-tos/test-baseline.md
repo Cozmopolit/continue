@@ -1,6 +1,7 @@
 ﻿# Test Baseline (lokale Entwicklung)
 
 Status: **2026-07-25** — vollständige Baseline über alle lauffähigen Suites hergestellt. **Zahlen-Refresh 2026-08-12** (Suite-/File-Counts drifteten durch Commits seit der Baseline; core: Jest 52 Suites, Vitest 100 Files).
+**Zahlen-Refresh 2026-08-14** (Board-Auto-Topic-Injection-Tests: core-Vitest 100→103 Files, gui 41→43 Files / 446→461 Tests. Die exakten Action-Sequenzen in `streamResponse*.test.ts` setzen `boardInjectionConsumed: true` (Zweite-Turn-Sicht), da der erste Turn jetzt `setBoardInjectionConsumed` dispatched; First-Turn-Abdeckung liegt in `streamResponse_boardInjection.test.ts`).
 Ziel: Nie wieder "überraschende" pre-existing Test-Failures bei Feature-Arbeit.
 Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen werden.
 
@@ -14,8 +15,8 @@ Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen we
 | Suite                      | Runner     | Kommando                                      | Erwartetes Ergebnis                                                                                                                 |
 | -------------------------- | ---------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `core` (Jest)              | jest (ESM) | `cd core; npm test`                           | 52 Suites passed, 7 skipped, 0 failed                                                                                               |
-| `core` (Vitest)            | vitest     | `cd core; npm run vitest`                     | 100 Files, 0 failed (siehe Timing-Hinweis unten)                                                                                    |
-| `gui`                      | vitest     | `cd gui; npm test`                            | 41 Files / 446 Tests, 0 failed                                                                                                      |
+| `core` (Vitest)            | vitest     | `cd core; npm run vitest`                     | 103 Files (102 passed, 1 skipped), 0 failed (siehe Timing-Hinweis unten)                                                            |
+| `gui`                      | vitest     | `cd gui; npm test`                            | 43 Files / 461 Tests, 0 failed                                                                                                      |
 | `packages/config-yaml`     | jest (ESM) | `cd packages/config-yaml; npm test`           | 15 Suites / 287 passed, 1 skipped                                                                                                   |
 | `packages/fetch`           | vitest     | `cd packages/fetch; npm test`                 | 8 Files / 131 passed (inkl. e2e, siehe OpenSSL)                                                                                     |
 | `packages/openai-adapters` | vitest     | `cd packages/openai-adapters; npx vitest run` | 17 Files / 160 passed, 5 skipped                                                                                                    |

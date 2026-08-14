@@ -6,15 +6,23 @@ Gesammelte Fallstricke, die wiederholt Zeit gekostet haben. Referenziert von
 ## PowerShell
 
 - `&&` ist ungültig → `;` zur Verkettung verwenden.
-- `>` / `Out-File` schreibt UTF-16 → Dateien, die Tools als UTF-8 erwarten
-  (z.B. Commit-Messages), nie per Redirect schreiben.
+- `>` / `Out-File` schreibt UTF-16 → Dateien, die Tools als UTF-8 erwarten,
+  nie per Redirect schreiben.
 
 ## Git / Commits
 
-- **Commit-Messages BOM-frei schreiben**: Message in Here-String `@'…'@`, dann
-  `[System.IO.File]::WriteAllText($path, $msg, [System.Text.UTF8Encoding]::new($false))`,
-  danach `git commit -F $path`. (Ein BOM in der Subject-Zeile ist so schon
-  einmal gelandet.)
+- **Commit-Message-Policy: `-m`-One-Liner bevorzugen.** Wenn
+  `git commit -m "…"` nicht reicht, ist die Message (oder der Commit) zu
+  komplex. Mehrzeilige Messages bleiben möglich — dann Message-File korrekt
+  verwenden (nächste beiden Punkte).
+- **`git commit -F` ist encoding-neutral:** `-F` liest eine vorhandene Datei
+  (mehrzeilig problemlos) und erzeugt sie weder noch wählt es ihr Encoding.
+  Die historischen BOM/UTF-16-Probleme kamen vom Schreiben der Datei, nicht
+  von `-F`.
+- **UTF-8-Message-File ohne BOM:** nie per `>`/`Out-File`/`Set-Content`
+  schreiben (UTF-16-/BOM-Gefahr), sondern nur via Here-String `@'…'@` +
+  `[System.IO.File]::WriteAllText($path, $msg, [System.Text.UTF8Encoding]::new($false))`.
+  (Ein BOM ist so schon einmal in der Subject-Zeile gelandet.)
 - `node -e`-Quoting in PowerShell ist brüchig (eingebettete Anführungszeichen)
   → lieber .NET `WriteAllText`.
 - **lint-staged/prettier läuft bei jedem Commit** und formatiert gestagte

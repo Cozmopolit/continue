@@ -85,6 +85,7 @@ describe("sessionSlice streamUpdate", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
+    boardInjectionConsumed: false,
   });
 
   describe("Basic Chat Message", () => {
@@ -481,6 +482,7 @@ describe("sessionSlice setContextPercentage", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
+    boardInjectionConsumed: false,
   });
 
   it("should store percentage and token counts when full payload is provided", () => {
@@ -571,6 +573,7 @@ describe("sessionSlice endActiveReasoning", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
+    boardInjectionConsumed: false,
   });
 
   it("should end active reasoning and stamp endAt", () => {
@@ -678,6 +681,7 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
+    boardInjectionConsumed: false,
   });
 
   const userItem = (): ChatHistoryItemWithMessageId => ({

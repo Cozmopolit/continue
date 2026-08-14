@@ -49,6 +49,7 @@ import {
 
 import { ConfigYaml } from "@continuedev/config-yaml";
 import { getDiffFn, GitDiffCache } from "./autocomplete/snippets/gitDiffCache";
+import { consumeBoardPending } from "./board/boardClient";
 import { stringifyMcpPrompt } from "./commands/slash/mcpSlashCommand";
 import { createNewAssistantFile } from "./config/createNewAssistantFile";
 import {
@@ -507,6 +508,11 @@ export class Core {
       await MCPManagerSingleton.getInstance().refreshConnection(
         msg.data.serverId,
       );
+    });
+
+    // Board auto-topic-injection (board-auto-topic-injection.md)
+    on("board/consumePending", async () => {
+      return await consumeBoardPending(this.ide);
     });
 
     // Context providers

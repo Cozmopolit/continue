@@ -1457,6 +1457,11 @@ export interface ProxyEndpoint {
 
 export interface ProxyCapabilities {
   proxy: boolean;
+  /**
+   * Board auto-topic-injection (board-auto-topic-injection.md): server
+   * supports the stateless `board/pending` RPC. Absent on older builds.
+   */
+  board?: boolean;
 }
 
 export type MCPServerStatus = InternalMcpOptions & {
@@ -1954,7 +1959,35 @@ export type RuleSource =
   | "colocated-markdown"
   | "json-systemMessage"
   | ".continuerules"
-  | "agentFile";
+  | "agentFile"
+  | "board";
+
+// ---------- Board auto-topic-injection (board-auto-topic-injection.md) ----------
+// Contract v1.2 with the CITT side (stateless board gateway): one message of a
+// subscribed MsgBoard topic as delivered by `board/pending`.
+export interface BoardMessage {
+  topic: string;
+  id: number;
+  from: string;
+  to: string;
+  re?: number;
+  createdAt: string;
+  body: string;
+}
+
+// Result of `board/pending {topics, sinceId?}`. `sinceId` omitted = init mode
+// (no messages, only latestByTopic). `latestByTopic` always carries the true
+// highest comment id per topic (cap-independent); an absent entry means the
+// topic does not exist — unambiguously, because existing-but-empty topics are
+// reported in `emptyTopics` (additive contract annex 5291256996).
+export interface BoardPendingResult {
+  messages: BoardMessage[];
+  latestByTopic: Record<string, number>;
+  /** Existing topics without any comments (optional, absent on older builds). */
+  emptyTopics?: string[];
+  omitted?: { count: number; oldestOmittedId: number };
+  warning?: string;
+}
 
 export interface RuleMetadata {
   name?: string;

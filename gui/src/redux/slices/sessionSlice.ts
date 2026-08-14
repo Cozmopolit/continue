@@ -243,6 +243,15 @@ type SessionState = {
   contextTokens?: { inputTokens: number; availableTokens: number };
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
+  // Board auto-topic-injection (board-auto-topic-injection.md): rendered
+  // block of consumed MsgBoard messages, appended to the system message on
+  // every turn of this session (AGENTS.md pattern). Set on the first turn.
+  boardInjectionBlock?: string;
+  // Marks that board/consumePending was attempted this session (even when it
+  // failed or returned nothing) — consumption runs only once per session.
+  // History-shape detection is NOT viable: submitEditorAndInitAtIndex
+  // pre-creates an empty assistant placeholder before the thunk runs.
+  boardInjectionConsumed: boolean;
 };
 
 export const INITIAL_SESSION_STATE: SessionState = {
@@ -263,6 +272,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   lastSessionId: undefined,
   newestToolbarPreviewForInput: {},
   compactionLoading: {},
+  boardInjectionConsumed: false,
 };
 
 export const sessionSlice = createSlice({
@@ -569,6 +579,9 @@ export const sessionSlice = createSlice({
       state.isPruned = false;
       state.contextPercentage = undefined;
       delete state.contextTokens;
+      // Board injection is per-session-start (board-auto-topic-injection.md)
+      state.boardInjectionBlock = undefined;
+      state.boardInjectionConsumed = false;
     },
     deleteCompaction: (state, action: PayloadAction<number>) => {
       // Removes the conversation summary from the specified message
@@ -1088,6 +1101,15 @@ export const sessionSlice = createSlice({
     setMode: (state, action: PayloadAction<MessageModes>) => {
       state.mode = action.payload;
     },
+    setBoardInjectionBlock: (
+      state,
+      action: PayloadAction<string | undefined>,
+    ) => {
+      state.boardInjectionBlock = action.payload;
+    },
+    setBoardInjectionConsumed: (state, action: PayloadAction<boolean>) => {
+      state.boardInjectionConsumed = action.payload;
+    },
     setIsInEdit: (state, action: PayloadAction<boolean>) => {
       state.isInEdit = action.payload;
     },
@@ -1226,6 +1248,8 @@ export const {
   updateToolCallOutput,
   setProcessedToolCallArgs,
   setMode,
+  setBoardInjectionBlock,
+  setBoardInjectionConsumed,
   setIsSessionMetadataLoading,
   setAllSessionMetadata,
   addSessionMetadata,

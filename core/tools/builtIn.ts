@@ -18,6 +18,11 @@ export enum BuiltInToolNames {
   CodebaseTool = "codebase",
   ReadSkill = "read_skill",
 
+  // Board auto-topic-injection (board-auto-topic-injection.md)
+  BoardSubscribe = "board_subscribe",
+  BoardUnsubscribe = "board_unsubscribe",
+  BoardSubscriptions = "board_subscriptions",
+
   // excluded from allTools for now
   ViewRepoMap = "view_repo_map",
   ViewSubdirectory = "view_subdirectory",

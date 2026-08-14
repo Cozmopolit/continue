@@ -12,6 +12,8 @@ import {
   errorToolCall,
   setActive,
   setAppliedRulesAtIndex,
+  setBoardInjectionBlock,
+  setBoardInjectionConsumed,
   setContextPercentage,
   setInactive,
   setInlineErrorMessage,
@@ -34,6 +36,10 @@ import {
 } from "../selectors/selectToolCalls";
 import { getBaseSystemMessage } from "../util/getBaseSystemMessage";
 import { getPlatform } from "../../util";
+import {
+  boardInjectionRule,
+  renderBoardInjectionBlock,
+} from "../../util/boardInjection";
 import { fileUriToNativePath } from "../../util/fileUriToNativePath";
 import { callToolById } from "./callToolById";
 import { evaluateToolPolicies } from "./evaluateToolPolicies";
@@ -164,6 +170,50 @@ export const streamNormalInput = createAsyncThunk<
         )
       : baseSystemMessageWithEnv;
 
+    // Board auto-topic-injection (board-auto-topic-injection.md): once per
+    // session, consume pending MsgBoard messages from the board-capable CITT
+    // server. The attempt is marked up front (even on failure/empty result)
+    // so consumption never re-runs within the session. History-shape
+    // detection is NOT viable here: submitEditorAndInitAtIndex pre-creates
+    // an empty assistant placeholder before this thunk runs. The block
+    // persists in session state and is re-appended to the system message
+    // every turn, like AGENTS.md. Best-effort: any failure skips the
+    // injection, the run always starts.
+    if (!state.session.boardInjectionConsumed) {
+      dispatch(setBoardInjectionConsumed(true));
+      try {
+        const boardRes = await extra.ideMessenger.request(
+          "board/consumePending",
+          undefined,
+        );
+        if (boardRes.status === "error") {
+          console.warn(`Board injection skipped: ${boardRes.error}`);
+        } else {
+          if (boardRes.content.warning) {
+            console.warn(`MsgBoard: ${boardRes.content.warning}`);
+          }
+          if (boardRes.content.messages.length > 0) {
+            dispatch(
+              setBoardInjectionBlock(
+                renderBoardInjectionBlock(boardRes.content),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        console.warn(
+          `Board injection skipped: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
+    }
+
+    const boardInjectionBlock = getState().session.boardInjectionBlock;
+    const availableRules = boardInjectionBlock
+      ? [...state.config.config.rules, boardInjectionRule(boardInjectionBlock)]
+      : state.config.config.rules;
+
     const withoutMessageIds = state.session.history.map((item) => {
       const { id, ...messageWithoutId } = item.message;
       return { ...item, message: messageWithoutId };
@@ -172,7 +222,7 @@ export const streamNormalInput = createAsyncThunk<
     const { messages, appliedRules, appliedRuleIndex } = constructMessages(
       withoutMessageIds,
       systemMessage,
-      state.config.config.rules,
+      availableRules,
       state.ui.ruleSettings,
       systemToolsFramework,
     );

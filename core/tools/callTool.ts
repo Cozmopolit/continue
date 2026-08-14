@@ -6,6 +6,11 @@ import { ContinueError, ContinueErrorReason } from "../util/errors";
 import { canParseUrl } from "../util/url";
 import { BuiltInToolNames } from "./builtIn";
 
+import {
+  boardSubscriptionsImpl,
+  boardSubscribeImpl,
+  boardUnsubscribeImpl,
+} from "./implementations/boardTools";
 import { codebaseToolImpl } from "./implementations/codebaseTool";
 import { createNewFileImpl } from "./implementations/createNewFile";
 import { createRuleBlockImpl } from "./implementations/createRuleBlock";
@@ -228,6 +233,12 @@ export async function callBuiltInTool(
       return await viewSubdirectoryImpl(args, extras);
     case BuiltInToolNames.GetWorkspaceRoot:
       return await getWorkspaceRootImpl(args, extras);
+    case BuiltInToolNames.BoardSubscribe:
+      return await boardSubscribeImpl(args, extras);
+    case BuiltInToolNames.BoardUnsubscribe:
+      return await boardUnsubscribeImpl(args, extras);
+    case BuiltInToolNames.BoardSubscriptions:
+      return await boardSubscriptionsImpl(args, extras);
     default:
       throw new Error(`Tool "${functionName}" not found`);
   }

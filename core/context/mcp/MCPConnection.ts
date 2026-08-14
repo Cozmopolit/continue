@@ -19,6 +19,7 @@ import { WebSocketClientTransport } from "@modelcontextprotocol/sdk/client/webso
 import { Agent as HttpsAgent } from "https";
 import { z } from "zod";
 import {
+  BoardPendingResult,
   IDE,
   InternalMcpOptions,
   InternalSseMcpOptions,
@@ -51,6 +52,36 @@ const PROXY_METHOD_TIMEOUT = 5_000; // 5 seconds
 
 const ProxyCapabilitiesSchema = z.object({
   proxy: z.boolean(),
+  // Board auto-topic-injection (board-auto-topic-injection.md): CITT signals
+  // `board/pending` support here. Optional so older CITT builds (and other
+  // servers) stay compatible; Zod strips the key on older fork schemas.
+  board: z.boolean().optional(),
+});
+
+// Timeout for the run-start board fetch; mirrors PROXY_METHOD_TIMEOUT.
+// Best-effort by contract: on timeout the injection is skipped, the run starts.
+const BOARD_PENDING_TIMEOUT = 5_000; // 5 seconds
+
+// Contract v1.2 (stateless CITT board gateway). sinceId omitted = init mode.
+const BoardPendingSchema = z.object({
+  messages: z.array(
+    z.object({
+      topic: z.string(),
+      id: z.number(),
+      from: z.string(),
+      to: z.string(),
+      re: z.number().optional(),
+      createdAt: z.string(),
+      body: z.string(),
+    }),
+  ),
+  latestByTopic: z.record(z.string(), z.number()),
+  // Additive contract annex (5291256996): existing topics without comments.
+  emptyTopics: z.array(z.string()).optional(),
+  omitted: z
+    .object({ count: z.number(), oldestOmittedId: z.number() })
+    .optional(),
+  warning: z.string().optional(),
 });
 
 const ProxyEndpointSchema = z.object({
@@ -354,6 +385,28 @@ class MCPConnection {
     return await this.client.request({ method, params }, resultSchema as any, {
       signal: options?.signal,
       timeout: options?.timeout,
+    });
+  }
+
+  /**
+   * Fetches pending MsgBoard messages for subscribed topics through the CITT
+   * board gateway (`board/pending`, contract v1.2 in
+   * board-auto-topic-injection.md). Omit `sinceId` for init mode (no
+   * messages, only `latestByTopic`). Best-effort: callers must handle errors
+   * and never block a run on this.
+   */
+  async boardPending(
+    topics: string[],
+    sinceId?: number,
+    options?: { signal?: AbortSignal },
+  ): Promise<BoardPendingResult> {
+    const params: Record<string, unknown> = { topics };
+    if (sinceId !== undefined) {
+      params.sinceId = sinceId;
+    }
+    return await this.callMethod("board/pending", params, BoardPendingSchema, {
+      signal: options?.signal,
+      timeout: BOARD_PENDING_TIMEOUT,
     });
   }
 

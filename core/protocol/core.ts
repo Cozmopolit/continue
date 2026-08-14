@@ -16,6 +16,7 @@ import { GlobalContextModelSelections } from "../util/GlobalContext";
 
 import {
   BaseSessionMetadata,
+  BoardPendingResult,
   BrowserSerializedContinueConfig,
   ChatMessage,
   CompiledMessagesResult,
@@ -163,6 +164,10 @@ export type ToCoreFromIdeOrWebviewProtocol = {
     },
     void,
   ];
+  // Board auto-topic-injection (board-auto-topic-injection.md): run-start
+  // fetch of subscribed topics + cursor advance. Best-effort: empty result
+  // on any failure, never blocks the run.
+  "board/consumePending": [undefined, BoardPendingResult];
   "context/getSymbolsForFiles": [{ uris: string[] }, FileSymbolMap];
   "context/loadSubmenuItems": [{ title: string }, ContextSubmenuItem[]];
   "autocomplete/complete": [AutocompleteInput, string[]];

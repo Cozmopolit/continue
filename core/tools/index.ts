@@ -13,6 +13,9 @@ export const getBaseToolDefinitions = () => [
   toolDefinitions.lsTool,
   toolDefinitions.createRuleBlock,
   toolDefinitions.fetchUrlContentTool,
+  toolDefinitions.boardSubscribeTool,
+  toolDefinitions.boardUnsubscribeTool,
+  toolDefinitions.boardSubscriptionsTool,
 ];
 
 export const getConfigDependentToolDefinitions = async (
