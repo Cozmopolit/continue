@@ -167,8 +167,8 @@ every LLM call (streamNormalInput, incl. tool-loop recursion):
                                    schema, {timeout: 5000})
                         advance cursor = max(injected ids)
     GUI <- core   {messages, latestByTopic, omitted?, warning?}
-    GUI: append messages to sessionSlice.boardMessages (capped window)
-         lastBoardFetchAt = now
+    GUI: append messages to sessionSlice.board.messages (capped window)
+         board.lastFetchAt = now
   every call: render block from boardMessages -> boardRule (always-apply)
               constructMessages(..., [...config.rules, boardRule])
 
@@ -191,10 +191,16 @@ LLM tools (core-side impls, read/write .continue/board-state.json):
   `BOARD_FETCH_TTL_MS` in the GUI). Awaited on the LLM-call critical path;
   the existing 5 s RPC timeout bounds the worst case; failures never block
   the run (best-effort).
-- **Session window cap:** accumulated `boardMessages` are capped at
+- **Session boundary:** `newSession` (with or without payload) and
+  `deleteMessage` reset the board state (messages, notes, `lastFetchAt`) —
+  a new session always starts with a backlog fetch on its first LLM call.
+- **Session window cap:** accumulated `session.board.messages` are capped at
   20 messages / ~40k chars (mirroring the server cap); overflow drops the
   OLDEST messages and is surfaced in the block note. Server-side `omitted`
   counts (cap-truncated at fetch time) are accumulated and surfaced likewise.
+  A single message that alone exceeds the char cap is dropped with a
+  `tooLargeIds` retrieval note (full text via `msg_read`) instead of blowing
+  up the system message every turn.
 - **Block format** (rendered by the fork, markdown, per topic):
 
 ```markdown
@@ -211,6 +217,10 @@ the session window dropped messages)
 
 _M weitere Nachrichten (älter als #<oldestOmittedId>) wurden nicht injiziert —
 bei Bedarf per msg_list/msg_read nachladen._ (only when omitted present)
+
+_K Nachricht(en) übersteigen das Session-Fenster (~40k Chars) und wurden
+nicht injiziert: #<id>, … — vollständig per msg_read nachladen._ (only when
+oversized messages were dropped)
 ```
 
 - **Multi-window/workspace:** one state file per workspace. Two windows on the
@@ -241,9 +251,12 @@ bei Bedarf per msg_list/msg_read nachladen._ (only when omitted present)
 - [x] Protocol: `board/consumePending` in `core/protocol/core.ts`; handler in
       `core/core.ts` (connection discovery, state read, RPC, cursor advance).
 - [x] GUI (Revision 2): `sessionSlice` board state as
-      `boardMessages: BoardMessage[]` + `lastBoardFetchAt?: number` (replacing
-      `boardInjectionBlock`/`boardInjectionConsumed`, incl. `newSession`-style
-      resets and actions); `streamNormalInput` TTL-gated consumption on every
-      LLM call (flag removed); `util/boardInjection.ts` renders from the
-      accumulated list incl. window-cap and omitted notes; board rule passed
-      into `constructMessages` every call.
+      `session.board: BoardSessionState` (`messages`, `droppedCount`,
+      `omittedTotal`, `omittedOldestId`, `tooLargeIds`, `lastFetchAt`)
+      replacing `boardInjectionBlock`/`boardInjectionConsumed`, reset in
+      `newSession` (both branches) and `deleteMessage`; actions
+      `setBoardFetchAttempted`/`appendBoardMessages`; `streamNormalInput`
+      TTL-gated consumption on every LLM call with fresh-state gate read;
+      `util/boardInjection.ts` renders from the accumulated list incl.
+      window-cap, oversized-drop and omitted notes; board rule passed into
+      `constructMessages` every call.

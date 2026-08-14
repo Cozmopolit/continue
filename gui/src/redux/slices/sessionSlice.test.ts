@@ -90,6 +90,7 @@ describe("sessionSlice streamUpdate", () => {
       droppedCount: 0,
       omittedTotal: 0,
       omittedOldestId: undefined,
+      tooLargeIds: [],
       lastFetchAt: undefined,
     },
   });
@@ -493,6 +494,7 @@ describe("sessionSlice setContextPercentage", () => {
       droppedCount: 0,
       omittedTotal: 0,
       omittedOldestId: undefined,
+      tooLargeIds: [],
       lastFetchAt: undefined,
     },
   });
@@ -590,6 +592,7 @@ describe("sessionSlice endActiveReasoning", () => {
       droppedCount: 0,
       omittedTotal: 0,
       omittedOldestId: undefined,
+      tooLargeIds: [],
       lastFetchAt: undefined,
     },
   });
@@ -704,6 +707,7 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
       droppedCount: 0,
       omittedTotal: 0,
       omittedOldestId: undefined,
+      tooLargeIds: [],
       lastFetchAt: undefined,
     },
   });
@@ -924,5 +928,82 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
     expect(
       newState.history.some((item) => item.message.role === "thinking"),
     ).toBe(true);
+  });
+});
+
+describe("sessionSlice newSession board reset", () => {
+  const createStateWithBoard = () => ({
+    lastSessionId: undefined,
+    allSessionMetadata: [],
+    history: [] as ChatHistoryItemWithMessageId[],
+    isStreaming: false,
+    title: "Test Session",
+    id: "test-session-id",
+    streamAborter: new AbortController(),
+    symbols: {},
+    mode: "chat" as const,
+    isInEdit: false,
+    codeBlockApplyStates: { states: [], curIndex: 0 },
+    newestToolbarPreviewForInput: {},
+    isSessionMetadataLoading: false,
+    compactionLoading: {},
+    board: {
+      messages: [
+        {
+          topic: "t",
+          id: 1,
+          from: "a",
+          to: "*",
+          createdAt: "2026-08-14T09:00:00Z",
+          body: "old session mail",
+        },
+      ],
+      droppedCount: 1,
+      omittedTotal: 1,
+      omittedOldestId: 3,
+      tooLargeIds: [5],
+      lastFetchAt: 123,
+    },
+  });
+
+  it("resets board state on newSession(undefined)", () => {
+    const newState = sessionSlice.reducer(createStateWithBoard(), {
+      type: "session/newSession",
+      payload: undefined,
+    });
+    expect(newState.board).toEqual({
+      messages: [],
+      droppedCount: 0,
+      omittedTotal: 0,
+      omittedOldestId: undefined,
+      tooLargeIds: [],
+      lastFetchAt: undefined,
+    });
+    expect(newState.history).toHaveLength(0);
+    expect(newState.id).not.toBe("test-session-id");
+    expect(newState.lastSessionId).toBe("test-session-id");
+  });
+
+  it("resets board state on newSession(payload)", () => {
+    const payload = {
+      history: [
+        {
+          message: { id: "u1", role: "user", content: "hi" },
+          contextItems: [],
+        },
+      ],
+      title: "Restored",
+      sessionId: "restored-id",
+      mode: "agent",
+    };
+    const newState = sessionSlice.reducer(createStateWithBoard(), {
+      type: "session/newSession",
+      payload: payload as any,
+    });
+    expect(newState.board.messages).toEqual([]);
+    expect(newState.board.lastFetchAt).toBeUndefined();
+    expect(newState.history).toHaveLength(1);
+    expect(newState.id).toBe("restored-id");
+    expect(newState.title).toBe("Restored");
   });
 });

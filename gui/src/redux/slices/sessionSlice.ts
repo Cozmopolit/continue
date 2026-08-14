@@ -832,6 +832,8 @@ export const sessionSlice = createSlice({
 
       state.isStreaming = false;
       state.symbols = {};
+      // Board accumulation/throttle is per session (board-auto-topic-injection.md)
+      state.board = { ...EMPTY_BOARD_SESSION_STATE };
 
       state.inlineErrorMessage = undefined;
       state.isPruned = false;

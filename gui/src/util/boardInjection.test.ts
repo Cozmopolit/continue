@@ -97,6 +97,7 @@ describe("accumulateBoardFetch", () => {
     expect(next.droppedCount).toBe(0);
     expect(next.omittedTotal).toBe(0);
     expect(next.omittedOldestId).toBeUndefined();
+    expect(next.tooLargeIds).toEqual([]);
   });
 
   it("carries lastFetchAt through untouched", () => {
@@ -153,14 +154,30 @@ describe("accumulateBoardFetch", () => {
     expect(next.droppedCount).toBe(1);
   });
 
-  it("keeps a single oversized message instead of dropping everything", () => {
+  it("drops a single oversized message below the cap and keeps a retrieval pointer", () => {
     const huge = "x".repeat(BOARD_WINDOW_MAX_CHARS * 2);
     const next = accumulateBoardFetch(
       EMPTY_BOARD_SESSION_STATE,
       result({ messages: [makeMessage({ id: 1, topic: "t", body: huge })] }),
     );
-    expect(next.messages).toHaveLength(1);
+    expect(next.messages).toHaveLength(0);
     expect(next.droppedCount).toBe(0);
+    expect(next.tooLargeIds).toEqual([1]);
+  });
+
+  it("drops an oversized message even when smaller ones preceded it", () => {
+    const huge = "x".repeat(BOARD_WINDOW_MAX_CHARS * 2);
+    const current = stateWith({
+      messages: [makeMessage({ id: 1, topic: "t", body: "small" })],
+    });
+    const next = accumulateBoardFetch(
+      current,
+      result({ messages: [makeMessage({ id: 2, topic: "t", body: huge })] }),
+    );
+    // "small" fell to the char-cap window drop, the oversized one to tooLarge
+    expect(next.messages).toHaveLength(0);
+    expect(next.droppedCount).toBe(1);
+    expect(next.tooLargeIds).toEqual([2]);
   });
 
   it("accumulates server-side omitted counts and keeps the oldest omitted id", () => {
@@ -274,6 +291,13 @@ describe("renderBoardInjectionBlock", () => {
     );
     expect(block).toContain("3 weitere Nachrichten (älter als #10)");
     expect(block).toContain("msg_list/msg_read");
+  });
+
+  it("notes oversized dropped messages with msg_read retrieval pointers", () => {
+    const block = renderDefined(stateWith({ tooLargeIds: [7, 9] }));
+    expect(block).toContain("2 Nachricht(en) übersteigen das Session-Fenster");
+    expect(block).toContain("#7, #9");
+    expect(block).toContain("msg_read");
   });
 
   it("renders no notes when counters are zero", () => {

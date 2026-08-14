@@ -22,6 +22,8 @@ export interface BoardSessionState {
   omittedTotal: number;
   /** Oldest id ever reported as omitted (for the backlog hint). */
   omittedOldestId?: number;
+  /** Ids of messages that alone exceed the char cap (msg_read retrieval pointers). */
+  tooLargeIds: number[];
   /** Epoch ms of the last board/consumePending attempt; undefined = never. */
   lastFetchAt?: number;
 }
@@ -31,6 +33,7 @@ export const EMPTY_BOARD_SESSION_STATE: BoardSessionState = {
   droppedCount: 0,
   omittedTotal: 0,
   omittedOldestId: undefined,
+  tooLargeIds: [],
   lastFetchAt: undefined,
 };
 
@@ -72,11 +75,24 @@ export function accumulateBoardFetch(
     droppedCount += 1;
   }
 
+  // A single message that alone exceeds the char cap is dropped with a
+  // retrieval pointer instead of blowing up the system message every turn;
+  // the full text stays reachable via msg_read (contract omitted pattern).
+  const tooLargeIds = [...current.tooLargeIds];
+  if (
+    messages.length === 1 &&
+    messages[0].body.length > BOARD_WINDOW_MAX_CHARS
+  ) {
+    tooLargeIds.push(messages[0].id);
+    messages.length = 0;
+  }
+
   const omitted = result.omitted;
   return {
     messages,
     droppedCount,
     omittedTotal: current.omittedTotal + (omitted?.count ?? 0),
+    tooLargeIds,
     omittedOldestId:
       omitted && omitted.count > 0
         ? Math.min(
@@ -100,7 +116,8 @@ export function renderBoardInjectionBlock(
   if (
     board.messages.length === 0 &&
     board.droppedCount === 0 &&
-    board.omittedTotal === 0
+    board.omittedTotal === 0 &&
+    board.tooLargeIds.length === 0
   ) {
     return undefined;
   }
@@ -132,6 +149,13 @@ export function renderBoardInjectionBlock(
   if (board.omittedTotal > 0) {
     sections.push(
       `\n_${board.omittedTotal} weitere Nachrichten (älter als #${board.omittedOldestId}) wurden nicht injiziert — bei Bedarf per msg_list/msg_read nachladen._`,
+    );
+  }
+  if (board.tooLargeIds.length > 0) {
+    sections.push(
+      `\n_${board.tooLargeIds.length} Nachricht(en) übersteigen das Session-Fenster (~${BOARD_WINDOW_MAX_CHARS} Chars) und wurden nicht injiziert: ${board.tooLargeIds
+        .map((id) => `#${id}`)
+        .join(", ")} — vollständig per msg_read nachladen._`,
     );
   }
   return sections.join("\n");

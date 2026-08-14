@@ -360,4 +360,25 @@ describe("board auto-topic-injection at LLM-call level", () => {
     // no board rule in the system message of this call
     expect(compilePayload.messages[0].content).not.toContain("# MsgBoard");
   });
+
+  it("overlapping calls: only one board/consumePending request", async () => {
+    const store = createMockStore(getInitialState());
+    const messenger = store.mockIdeMessenger;
+    messenger.responses["board/consumePending"] = BOARD_RESULT;
+    messenger.responseHandlers["llm/compileChat"] = async () =>
+      COMPILE_RESPONSE;
+    setupStreaming(messenger);
+    const requestSpy = vi.spyOn(messenger, "request");
+
+    // two concurrent turns: the second gate must see the first attempt stamp
+    await Promise.all([dispatchTurn(store), dispatchTurn(store)]);
+
+    const boardCalls = requestSpy.mock.calls.filter(
+      ([messageType]) => messageType === "board/consumePending",
+    );
+    expect(boardCalls).toHaveLength(1);
+    expect((store.getState() as RootState).session.board.messages).toEqual([
+      BOARD_MESSAGE,
+    ]);
+  });
 });

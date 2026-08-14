@@ -176,12 +176,16 @@ export const streamNormalInput = createAsyncThunk<
     // the first turn and every tool-loop iteration
     // (streamResponseAfterToolCall recurses into it). The attempt timestamp is
     // stamped up front (even on failure/empty result) so concurrent paths
-    // never double-fetch within the TTL window. Consumed messages accumulate
-    // in session state; the rendered block is re-appended to the system
+    // never double-fetch within the TTL window. The `state` snapshot was
+    // captured before the getWorkspaceDirs() await, so a concurrent earlier
+    // call may have stamped the attempt during our awaits — read fresh to keep
+    // the gate race-free (gate check + attempt dispatch are synchronous, hence
+    // atomic). Consumed messages accumulate in session state; the rendered
+    // block is re-appended to the system
     // message every call, like AGENTS.md. Best-effort: any failure skips the
     // injection, the run always starts.
     const now = Date.now();
-    if (shouldFetchBoard(state.session.board.lastFetchAt, now)) {
+    if (shouldFetchBoard(getState().session.board.lastFetchAt, now)) {
       dispatch(setBoardFetchAttempted(now));
       try {
         const boardRes = await extra.ideMessenger.request(
