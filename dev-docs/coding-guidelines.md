@@ -73,6 +73,20 @@ Damit das nicht in jedem Chat neu verhandelt wird:
 - **Push ist selten**: 1–3× pro Tag, typischerweise „am Ende der Schicht".
   **Nicht-Pushen ist der Default** — Agents schlagen keinen Push nach
   einzelnen Commits vor.
-- **Vor dem Push**: idealerweise voller Runner-Lauf
-  (`node scripts/run-all-tests.mjs`, ~13 min) — gepusht wird nur bei Grün
-  (Abgleich gegen `how-tos/test-baseline.md`).
+- **Vor dem Push gilt ein risikobasiertes Test-Gate, kein Voll-Lauf-Ritual.**
+  Maßstab: Sind die Suites, die die Änderungen seit dem letzten Push
+  betreffen, _seit diesen Änderungen_ grün gelaufen?
+  - **Ja** (z.B. im selben Arbeitsfluss bereits gezielt grün getestet) →
+    direkt pushen, kein neuer Lauf.
+  - **Nein** → nur die betroffenen Suites über den Runner nachziehen
+    (`node scripts/run-all-tests.mjs --only …`), nicht die volle Suite.
+  - **Voller Runner-Lauf** (~13 min) nur bei paketübergreifenden oder
+    shared Änderungen (Junction-Pakete `packages/fetch` /
+    `packages/openai-adapters`; Typ-/Protokoll-Änderungen in
+    `core/index.d.ts`, die andere Pakete konsumieren), nach längeren
+    Einheiten oder auf expliziten Wunsch. Referenz bleibt
+    `how-tos/test-baseline.md`; vor dem Push gilt wie immer: nur bei Grün.
+- **Commits brauchen kein Test-Gate**: lint-staged/prettier formatiert beim
+  Commit (semantikerhaltend), Typprüfung (`tsc:check`) läuft während der
+  Implementierung. Nachträgliche Läufe nur wegen eines Commit-Time-Formatters
+  sind Verschwendung.

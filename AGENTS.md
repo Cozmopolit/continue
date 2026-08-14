@@ -45,8 +45,11 @@ irgendetwas anderes passiert. Kein stilles Weiterarbeiten ohne CITT.
 6. **Kein Commit ohne explizites Go des Users** — Commit-Punkte gerne
    vorschlagen, aber niemals eigenständig committen.
 7. **Push ist selten und Absicht** (1–3×/Tag, „Ende der Schicht") — nicht
-   nach einzelnen Commits vorschlagen. Vor Push: voller Runner-Lauf, nur bei
-   Grün (`dev-docs/coding-guidelines.md` §3).
+   nach einzelnen Commits vorschlagen. Vor Push: **risikobasiertes Test-Gate** —
+   die von der Änderung betroffenen Suites müssen seit der Änderung grün sein
+   (ein gezielter Lauf genügt); ein voller Runner-Lauf ist nur nötig bei
+   paketübergreifenden Änderungen oder längeren Einheiten
+   (`dev-docs/coding-guidelines.md` §3).
 
 ## Vorgehensweise
 
