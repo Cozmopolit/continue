@@ -10,6 +10,9 @@ type LocalStorageTypes = {
   vsCodeUriScheme: string;
   fontSize: number;
   [key: `inputHistory_${string}`]: JSONContent[];
+  // Per-window "Show all workspaces" history toggle, keyed by windowId
+  // (workspace-scoped-session-history.md)
+  [key: `historyAllWorkspaces_${string}`]: boolean;
   extensionVersion: string;
   showTutorialCard: boolean;
   shownProfilesIntroduction: boolean;

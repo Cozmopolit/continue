@@ -67,8 +67,8 @@ Ziel: Verifizieren, dass die Spec wie geschrieben gegen den echten Code umsetzba
 
 ### Commits
 
-- **Feature-Commit** nach Abschluss von Phase 2/3 (vollständige Verhaltensänderung), **Tests als getrennter Commit** nach Phase 4.
-- Kleinigkeiten und Spec-Updates reiten in beliebigen Commits mit — Spec-Pflege ist Dauerzustand.
-- **Kein Commit ohne explizites Go des Users** — der Agent schlägt Commit-Punkte vor (typisch: Feature-Commit nach Phase 2/3, Test-Commit nach Phase 4), committet aber niemals eigenständig. Messages kompakt halten.
+- **Ein Commit pro Workstream** (AGENTS.md Regel 8): Code + Spec + Doku + Tests zusammen, grobe Granularität — **kein Aufteilen** in Feature-/Test-Commits. Commit-Punkt typischerweise nach Abschluss von Phase 4.
+- **Piggyback**: zum Commit-Zeitpunkt alles Dirty im Worktree mitnehmen — keine Dateiauswahl, keine Kleinst-Commits für Liegengebliebenes oder thematisch Fremdes.
+- **Kein Commit ohne explizites Go des Users** — der Agent schlägt Commit-Punkte vor, committet aber niemals eigenständig. Messages kompakt halten.
 - Commit-Message **BOM-frei** schreiben (Verfahren: `how-tos/environment-gotchas.md`); lint-staged/prettier formatiert gestagte Dateien beim Commit nach — kurz gegenprüfen.
 - **Push ist selten** (1–3×/Tag, typischerweise „am Ende der Schicht") — Details: `../coding-guidelines.md` §3. Nicht nach einzelnen Commits zum Push raten; vor dem Push idealerweise voller Runner-Lauf, nur bei Grün.

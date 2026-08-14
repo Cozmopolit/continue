@@ -3,6 +3,7 @@ import { BaseSessionMetadata, ChatMessage, Session } from "core";
 import { NEW_SESSION_TITLE } from "core/util/constants";
 import { renderChatMessage } from "core/util/messageContent";
 import { IIdeMessenger } from "../../context/IdeMessenger";
+import { getLocalStorage } from "../../util/localStorage";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import { selectSelectedProfile } from "../slices/profilesSlice";
 import {
@@ -36,20 +37,36 @@ export const refreshSessionMetadata = createAsyncThunk<
   {
     offset?: number;
     limit?: number;
+    allWorkspaces?: boolean;
   },
   ThunkApiType
->("session/refreshMetadata", async ({ offset, limit }, { dispatch, extra }) => {
-  const result = await extra.ideMessenger.request("history/list", {
-    limit,
-    offset,
-  });
-  if (result.status === "error") {
-    throw new Error(result.error);
-  }
-  dispatch(setIsSessionMetadataLoading(false));
-  dispatch(setAllSessionMetadata(result.content));
-  return result.content;
-});
+>(
+  "session/refreshMetadata",
+  async ({ offset, limit, allWorkspaces }, { dispatch, extra }) => {
+    // Workspace scoping (workspace-scoped-session-history.md): list only the
+    // sessions of the current workspace unless allWorkspaces is set (or
+    // persisted per window via the History toggle). Windows without workspace
+    // folders keep the unfiltered behavior.
+    const showAllWorkspaces =
+      allWorkspaces ??
+      getLocalStorage(`historyAllWorkspaces_${window.windowId}`) ??
+      false;
+    const workspaceDirectory = showAllWorkspaces
+      ? undefined
+      : window.workspacePaths?.[0] || undefined;
+    const result = await extra.ideMessenger.request("history/list", {
+      limit,
+      offset,
+      workspaceDirectory,
+    });
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+    dispatch(setIsSessionMetadataLoading(false));
+    dispatch(setAllSessionMetadata(result.content));
+    return result.content;
+  },
+);
 
 export const deleteSession = createAsyncThunk<void, string, ThunkApiType>(
   "session/delete",
@@ -140,27 +157,42 @@ export const selectChatModelForProfile = createAsyncThunk<
 export const loadLastSession = createAsyncThunk<void, void, ThunkApiType>(
   "session/loadLast",
   async (_, { extra, dispatch, getState }) => {
-    let lastSessionId = getState().session.lastSessionId;
+    // Workspace-aware resume (workspace-fresh-boot.md): load the newest
+    // session of this workspace. The current session id is excluded so the
+    // delete-current-session flow (file still on disk at query time) does not
+    // bounce back into the session being deleted. Windows without workspace
+    // folders keep the unfiltered (legacy) list.
+    const currentSessionId = getState().session.id;
+    const workspaceDirectory = window.workspacePaths?.[0] || undefined;
+    const listResult = await extra.ideMessenger.request("history/list", {
+      workspaceDirectory,
+      limit: 2,
+    });
+    const lastSessionMetadata =
+      listResult.status === "success"
+        ? listResult.content.find(
+            (metadata) => metadata.sessionId !== currentSessionId,
+          )
+        : undefined;
 
-    // const lastSessionResult = await extra.ideMessenger.request("history/list", {
-    //   limit: 1,
-    // });
-    // if (lastSessionResult.status === "success") {
-    //   lastSessionId = lastSessionResult.content.at(0)?.sessionId;
-    // }
-
-    if (!lastSessionId) {
+    if (!lastSessionMetadata) {
       dispatch(newSession());
       return;
     }
 
     let session: Session;
     try {
-      session = await getSession(extra.ideMessenger, lastSessionId);
+      session = await getSession(
+        extra.ideMessenger,
+        lastSessionMetadata.sessionId,
+      );
     } catch {
       // retry again after 1 sec
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      session = await getSession(extra.ideMessenger, lastSessionId);
+      session = await getSession(
+        extra.ideMessenger,
+        lastSessionMetadata.sessionId,
+      );
     }
     dispatch(newSession(session));
     if (session.chatModelTitle) {

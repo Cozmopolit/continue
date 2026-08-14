@@ -9,6 +9,7 @@ import React, {
   useState,
 } from "react";
 import Shortcut from "../gui/Shortcut";
+import ToggleSwitch from "../gui/Switch";
 
 import { XMarkIcon } from "@heroicons/react/24/solid";
 import { useNavigate } from "react-router-dom";
@@ -21,6 +22,7 @@ import {
 import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
 import { refreshSessionMetadata } from "../../redux/thunks/session";
 import { getFontSize, getPlatform } from "../../util";
+import { getLocalStorage, setLocalStorage } from "../../util/localStorage";
 import { ROUTES } from "../../util/navigation";
 import ConfirmationDialog from "../dialogs/ConfirmationDialog";
 import { Button } from "../ui";
@@ -34,6 +36,20 @@ export function History() {
   const ideMessenger = useContext(IdeMessengerContext);
 
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Workspace scoping (workspace-scoped-session-history.md): the history list
+  // is scoped to the current workspace unless the user opts out per window.
+  const hasWorkspacePaths = !!window.workspacePaths?.length;
+  const [showAllWorkspaces, setShowAllWorkspaces] = useState(
+    () => getLocalStorage(`historyAllWorkspaces_${window.windowId}`) ?? false,
+  );
+
+  const toggleAllWorkspaces = () => {
+    const next = !showAllWorkspaces;
+    setShowAllWorkspaces(next);
+    setLocalStorage(`historyAllWorkspaces_${window.windowId}`, next);
+    void dispatch(refreshSessionMetadata({ allWorkspaces: next }));
+  };
 
   const minisearch = useRef<MiniSearch>(
     new MiniSearch({
@@ -169,6 +185,18 @@ export function History() {
           />
         )}
       </div>
+
+      {hasWorkspacePaths && (
+        <div className="px-3 pb-1" data-testid="history-all-workspaces-toggle">
+          <ToggleSwitch
+            isToggled={showAllWorkspaces}
+            onToggle={toggleAllWorkspaces}
+            text="Show all workspaces"
+            size={14}
+            tooltip="When off, only sessions from the current workspace are listed."
+          />
+        </div>
+      )}
 
       <div className="thin-scrollbar flex w-full flex-1 flex-col overflow-y-auto">
         {filteredAndSortedSessions.length === 0 && (

@@ -42,6 +42,10 @@ diesen Agenten):
    nicht wiederbeleben.
 5. **Persistenz:** Das Board ist flüchtig. Erkenntnisse, die überleben
    sollen, gehören ins Memory (`assistant:coding-agent`), nicht ins Board.
+6. **Basis-Subscriptions:** Jeder VSC-Agent abonniert `Allgemein` und sein
+   eigenes Postfach `to-<handle>` — Postfächer sind One-shot-Zustellung ohne
+   Rückkanal (keine Replies, keine Diskussion; Eskalation in eigene Topics).
+   Vollständige Regeln: Memory-Fragment `board-postfach-konzept`.
 
 ## Erste Aktion in jedem Chat
 
@@ -78,18 +82,30 @@ irgendetwas anderes passiert. Kein stilles Weiterarbeiten ohne CITT.
    Umformatierungen (History/Blame). `docs/` = Produktdoku (Mintlify);
    interne Doku ausschließlich in `dev-docs/`.
 6. **Kein Commit ohne explizites Go des Users** — Commit-Punkte gerne
-   vorschlagen, aber niemals eigenständig committen.
+   vorschlagen, aber niemals eigenständig committen. Wenn das Go kommt:
+   alles Dirty committen — keine Dateiauswahl, keine Diskussion
+   (Piggyback, Regel 8).
 7. **Push ist selten und Absicht** (1–3×/Tag, „Ende der Schicht") — nicht
    nach einzelnen Commits vorschlagen. Vor Push: **risikobasiertes Test-Gate** —
    die von der Änderung betroffenen Suites müssen seit der Änderung grün sein
    (ein gezielter Lauf genügt); ein voller Runner-Lauf ist nur nötig bei
    paketübergreifenden Änderungen oder längeren Einheiten
    (`dev-docs/coding-guidelines.md` §3).
-8. **Piggyback statt Einzel-Commits:** Wenn committet wird, nimmt der Commit
-   alle pending Änderungen mit — der Working Tree bleibt danach clean.
-   Liegengebliebene oder thematisch fremde Änderungen werden nicht als
-   separater Commit behandelt oder „für später" vorgeschlagen, sondern fahren
-   im selben Commit mit und werden im Commit-Body als Piggyback benannt.
+8. **Commit-Granularität: grob, niemals pro Datei. PIGGYBACK: alle pending
+   Änderungen fahren mit — immer, in jeder Größe, zero deliberation.** Wenn
+   committet wird, nimmt der Commit alles Dirty mit (Regel 6): keine
+   Dateiauswahl, keine Diskussion. Liegengebliebene Edits — auch thematisch
+   fremde (AGENTS.md selbst, Specs, Notizen, Tippfehler) — fahren im selben
+   Commit mit; niemals fragen, ob etwas dazugehört, niemals ausschließen,
+   niemals einen eigenen Kleinst-Commit daraus machen. Vergessene
+   zusammengehörige Änderungen per `--amend` in den bestehenden Commit falten
+   statt einen Folge-Commit zu öffnen; Code + Spec + Doku + Tests eines
+   Workstreams gehören in EINEN Commit. Ein dirty Worktree ist normaler
+   Arbeitszustand — dreckige Dateien sind für den nächsten Commit vorgemerkt
+   und nie wieder ein Commit-Zeit-Thema. Commit-Messages bleiben kurz:
+   Conventional Prefix, Subject einzeilig (≤ ~80 Zeichen), Body optional und
+   wenige Zeilen (das Was, nicht die Story). Doc-Referenzen nutzen nackte
+   Dateinamen, keine Pfade.
 
 ## Vorgehensweise
 

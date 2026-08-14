@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef } from "react";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 
 import { FromCoreProtocol } from "core/protocol";
@@ -13,6 +13,7 @@ import {
 } from "../redux/slices/profilesSlice";
 import {
   addContextItemsAtIndex,
+  newSession,
   setHasReasoningEnabled,
   setIsSessionMetadataLoading,
 } from "../redux/slices/sessionSlice";
@@ -21,7 +22,7 @@ import { setAutoApproveAllTools, setTTSActive } from "../redux/slices/uiSlice";
 import { modelSupportsReasoning } from "core/llm/autodetect";
 import { cancelStream } from "../redux/thunks/cancelStream";
 import { handleApplyStateUpdate } from "../redux/thunks/handleApplyStateUpdate";
-import { loadSession, refreshSessionMetadata } from "../redux/thunks/session";
+import { refreshSessionMetadata } from "../redux/thunks/session";
 import { updateFileSymbolsFromHistory } from "../redux/thunks/updateFileSymbols";
 import {
   setDocumentStylesFromLocalStorage,
@@ -47,8 +48,6 @@ function ParallelListeners() {
 
   // Load symbols for chat on any session change
   const sessionId = useAppSelector((state) => state.session.id);
-  const lastSessionId = useAppSelector((store) => store.session.lastSessionId);
-  const [initialSessionId] = useState(sessionId || lastSessionId);
 
   const handleConfigUpdate = useCallback(
     async (isInitial: boolean, result: FromCoreProtocol["configUpdate"][0]) => {
@@ -126,14 +125,10 @@ function ParallelListeners() {
         await handleConfigUpdate(true, result.content);
       }
       dispatch(setConfigLoading(false));
-      if (initialSessionId) {
-        await dispatch(
-          loadSession({
-            sessionId: initialSessionId,
-            saveCurrentSession: false,
-          }),
-        );
-      }
+      // Always boot into a fresh session (workspace-fresh-boot.md): the
+      // previous chat stays on disk and is the top entry of the
+      // workspace-scoped history list ("Last Session" button resumes it).
+      dispatch(newSession());
     }
     void initialLoadConfig();
     const interval = setInterval(() => {
@@ -151,7 +146,7 @@ function ParallelListeners() {
     }, 2_000);
 
     return () => clearInterval(interval);
-  }, [hasDoneInitialConfigLoad, ideMessenger, initialSessionId]);
+  }, [hasDoneInitialConfigLoad, ideMessenger]);
 
   useWebviewListener(
     "configUpdate",
