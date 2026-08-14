@@ -135,7 +135,7 @@ export function renderBoardInjectionBlock(
   for (const [topic, messages] of byTopic) {
     sections.push(`\n## Topic: ${topic}`);
     for (const message of messages) {
-      const re = message.re !== undefined ? ` · re: #${message.re}` : "";
+      const re = message.re != null ? ` · re: #${message.re}` : "";
       sections.push(
         `\n_[cittmsg] id ${message.id} · from: ${message.from} → to: ${message.to}${re} · ${message.createdAt}_\n\n${message.body}`,
       );

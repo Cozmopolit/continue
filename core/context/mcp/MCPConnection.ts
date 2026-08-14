@@ -60,7 +60,8 @@ const ProxyCapabilitiesSchema = z.object({
 
 // Timeout for the run-start board fetch; mirrors PROXY_METHOD_TIMEOUT.
 // Best-effort by contract: on timeout the injection is skipped, the run starts.
-const BOARD_PENDING_TIMEOUT = 5_000; // 5 seconds
+// Exported for test assertions.
+export const BOARD_PENDING_TIMEOUT = 5_000; // 5 seconds
 
 // Contract v1.2 (stateless CITT board gateway). sinceId omitted = init mode.
 const BoardPendingSchema = z.object({
@@ -70,7 +71,14 @@ const BoardPendingSchema = z.object({
       id: z.number(),
       from: z.string(),
       to: z.string(),
-      re: z.number().optional(),
+      // Wire format: JSON `null` when the message is not a reply (unpopulated
+      // DB column on the CITT side); normalize to undefined so downstream
+      // keeps the `re?: number` domain shape (same nullish class as
+      // contextLimit below).
+      re: z
+        .number()
+        .nullish()
+        .transform((v) => v ?? undefined),
       createdAt: z.string(),
       body: z.string(),
     }),

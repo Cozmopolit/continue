@@ -3,6 +3,20 @@
 **Status:** Implementiert (Revision 2: LLM-Call-Level-Consumption)
 **Date:** 2026-08-14
 
+### Revision 3 (2026-08-14, erster Live-Test nach Incident-Fix)
+
+Live-Test-Befund: CITT serialisiert `re` als JSON `null` für Nachrichten,
+die keine Reply sind (unbefüllte DB-Spalte). Die Fork-Zod-Schema-Validierung
+(`re: z.number().optional()`) verwarf darauf die **gesamte** `board/pending`-
+Antwort — jede Injection starb lautlos im catch-all (Cursor avancierte nie,
+kein Block; sichtbar nur als `Board injection skipped`-Warn in der
+Webview-Konsole). Fix: `re: z.number().nullish()` mit Normalisierung nach
+`undefined` (gleiche Klasse wie `contextLimit` in `ProxyEndpointSchema`);
+Renderer prüft `!= null`. Regressionstests in `MCPConnection.vitest.ts`
+(board-gateway-Block, Mock parst das übergebene Schema wie der echte
+SDK-`Client#request`). Der Contract selbst ist unverändert — `re` bleibt
+Teil des Message-Envelopes, die Nullability ist ein Wire-Format-Detail.
+
 ### Revision 2 (2026-08-14, nach erstem Live-Test)
 
 Revision 1 injizierte Board-Mail nur im ersten Turn einer neuen Session
@@ -45,7 +59,11 @@ proxy/capabilities response
 board/pending { topics: string[], sinceId?: number }
   -> {
        messages: [{ topic, id, from, to, re, createdAt, body }],  // full text,
-                                                                   // oldest first
+                                                                   // oldest first;
+                                                                   // wire detail: `re` is JSON
+                                                                   // null for non-replies
+                                                                   // (fork schema normalizes
+                                                                   // null -> undefined, rev 3)
        latestByTopic: Record<topic, id>,  // true highest comment id per topic,
                                           // cap-independent; absent = topic
                                           // does not exist (unambiguous, see

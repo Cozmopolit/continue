@@ -6,7 +6,10 @@ import {
   InternalWebsocketMcpOptions,
 } from "../..";
 import * as ideUtils from "../../util/ideUtils";
-import MCPConnection, { DEFAULT_MCP_TOOL_CALL_TIMEOUT } from "./MCPConnection";
+import MCPConnection, {
+  BOARD_PENDING_TIMEOUT,
+  DEFAULT_MCP_TOOL_CALL_TIMEOUT,
+} from "./MCPConnection";
 
 // Mock the shell path utility
 vi.mock("../../util/shellPath", () => ({
@@ -736,6 +739,96 @@ describe("MCPConnection", () => {
       } finally {
         Object.defineProperty(process, "platform", { value: originalPlatform });
       }
+    });
+  });
+
+  // Board auto-topic-injection (board-auto-topic-injection.md): gateway
+  // response schema. The mock parses with the schema handed to the SDK call,
+  // mirroring real Client#request behavior — unlike the pass-through mocks
+  // elsewhere in this file. Regression test for the live incident of
+  // 2026-08-14: the CITT wire format serializes `re` as JSON `null` for
+  // non-reply messages, which failed validation and silently dropped every
+  // injection.
+  describe("board gateway (board/pending)", () => {
+    const options: InternalStdioMcpOptions = {
+      name: "test-mcp",
+      id: "test-id",
+      type: "stdio",
+      command: "test-cmd",
+      args: [],
+    };
+
+    const mockBoardRequest = (result: unknown) =>
+      vi
+        .spyOn(Client.prototype, "request")
+        .mockImplementation(async (req: any, resultSchema: any) => {
+          if (req.method === "board/pending") {
+            return resultSchema.parse(result);
+          }
+          throw new Error(`Unexpected request: ${req.method}`);
+        });
+
+    const wireMessage = (overrides: Record<string, unknown>) => ({
+      topic: "board-etikette",
+      id: 1,
+      from: "delta",
+      to: "*",
+      createdAt: "2026-08-14T18:00:00Z",
+      body: "body",
+      ...overrides,
+    });
+
+    it("normalizes JSON null re of non-reply messages to undefined", async () => {
+      mockBoardRequest({
+        messages: [
+          wireMessage({ id: 1, re: null }),
+          wireMessage({ id: 2, re: 5296779803 }),
+        ],
+        latestByTopic: { "board-etikette": 2 },
+      });
+      const conn = new MCPConnection(options);
+
+      const res = await conn.boardPending(["board-etikette"], 0);
+
+      expect(res.messages[0].re).toBeUndefined();
+      expect(res.messages[1].re).toBe(5296779803);
+    });
+
+    it("passes topics and sinceId, bounded by the board timeout", async () => {
+      const requestSpy = mockBoardRequest({
+        messages: [],
+        latestByTopic: {},
+      });
+      const conn = new MCPConnection(options);
+
+      await conn.boardPending(["t1", "t2"], 42);
+
+      expect(requestSpy).toHaveBeenCalledWith(
+        {
+          method: "board/pending",
+          params: { topics: ["t1", "t2"], sinceId: 42 },
+        },
+        expect.anything(),
+        { signal: undefined, timeout: BOARD_PENDING_TIMEOUT },
+      );
+    });
+
+    it("omits sinceId in init mode", async () => {
+      const requestSpy = mockBoardRequest({
+        messages: [],
+        latestByTopic: { t: 7 },
+        emptyTopics: [],
+      });
+      const conn = new MCPConnection(options);
+
+      const res = await conn.boardPending(["t"]);
+
+      expect(requestSpy).toHaveBeenCalledWith(
+        { method: "board/pending", params: { topics: ["t"] } },
+        expect.anything(),
+        { signal: undefined, timeout: BOARD_PENDING_TIMEOUT },
+      );
+      expect(res.latestByTopic).toEqual({ t: 7 });
     });
   });
 });
