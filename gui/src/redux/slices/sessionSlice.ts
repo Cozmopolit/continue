@@ -10,6 +10,7 @@ import {
   ApplyState,
   AssistantChatMessage,
   BaseSessionMetadata,
+  BoardPendingResult,
   ChatHistoryItem,
   ChatMessage,
   ContextItem,
@@ -37,6 +38,11 @@ import { v4 as uuidv4 } from "uuid";
 import { type InlineErrorMessageType } from "../../components/mainInput/InlineErrorMessage";
 import { toolCallCtxItemToCtxItemWithId } from "../../pages/gui/ToolCallDiv/utils";
 import { addToolCallDeltaToState, isEditTool } from "../../util/toolCallState";
+import {
+  accumulateBoardFetch,
+  BoardSessionState,
+  EMPTY_BOARD_SESSION_STATE,
+} from "../../util/boardInjection";
 import { RootState } from "../store";
 import { streamResponseThunk } from "../thunks/streamResponse";
 import { findChatHistoryItemByToolCallId, findToolCallById } from "../util";
@@ -243,15 +249,11 @@ type SessionState = {
   contextTokens?: { inputTokens: number; availableTokens: number };
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
-  // Board auto-topic-injection (board-auto-topic-injection.md): rendered
-  // block of consumed MsgBoard messages, appended to the system message on
-  // every turn of this session (AGENTS.md pattern). Set on the first turn.
-  boardInjectionBlock?: string;
-  // Marks that board/consumePending was attempted this session (even when it
-  // failed or returned nothing) — consumption runs only once per session.
-  // History-shape detection is NOT viable: submitEditorAndInitAtIndex
-  // pre-creates an empty assistant placeholder before the thunk runs.
-  boardInjectionConsumed: boolean;
+  // Board auto-topic-injection (board-auto-topic-injection.md, revision 2):
+  // accumulated consumed MsgBoard messages of this session (bounded window)
+  // plus the TTL throttle timestamp; rendered into an always-apply rule on
+  // every LLM call (AGENTS.md pattern).
+  board: BoardSessionState;
 };
 
 export const INITIAL_SESSION_STATE: SessionState = {
@@ -272,7 +274,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   lastSessionId: undefined,
   newestToolbarPreviewForInput: {},
   compactionLoading: {},
-  boardInjectionConsumed: false,
+  board: { ...EMPTY_BOARD_SESSION_STATE },
 };
 
 export const sessionSlice = createSlice({
@@ -579,9 +581,8 @@ export const sessionSlice = createSlice({
       state.isPruned = false;
       state.contextPercentage = undefined;
       delete state.contextTokens;
-      // Board injection is per-session-start (board-auto-topic-injection.md)
-      state.boardInjectionBlock = undefined;
-      state.boardInjectionConsumed = false;
+      // Board accumulation is per session (board-auto-topic-injection.md)
+      state.board = { ...EMPTY_BOARD_SESSION_STATE };
     },
     deleteCompaction: (state, action: PayloadAction<number>) => {
       // Removes the conversation summary from the specified message
@@ -1101,14 +1102,11 @@ export const sessionSlice = createSlice({
     setMode: (state, action: PayloadAction<MessageModes>) => {
       state.mode = action.payload;
     },
-    setBoardInjectionBlock: (
-      state,
-      action: PayloadAction<string | undefined>,
-    ) => {
-      state.boardInjectionBlock = action.payload;
+    setBoardFetchAttempted: (state, action: PayloadAction<number>) => {
+      state.board.lastFetchAt = action.payload;
     },
-    setBoardInjectionConsumed: (state, action: PayloadAction<boolean>) => {
-      state.boardInjectionConsumed = action.payload;
+    appendBoardMessages: (state, action: PayloadAction<BoardPendingResult>) => {
+      state.board = accumulateBoardFetch(state.board, action.payload);
     },
     setIsInEdit: (state, action: PayloadAction<boolean>) => {
       state.isInEdit = action.payload;
@@ -1248,8 +1246,8 @@ export const {
   updateToolCallOutput,
   setProcessedToolCallArgs,
   setMode,
-  setBoardInjectionBlock,
-  setBoardInjectionConsumed,
+  setBoardFetchAttempted,
+  appendBoardMessages,
   setIsSessionMetadataLoading,
   setAllSessionMetadata,
   addSessionMetadata,

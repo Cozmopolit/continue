@@ -72,11 +72,12 @@ const mockModifiers: InputModifiers = {
 export function getRootStateWithClaude(): RootState {
   const state = getEmptyRootState();
   // These tests target streaming behavior from the second turn onward:
-  // first-turn board consumption (setBoardInjectionConsumed + the
-  // board/consumePending request, see board-auto-topic-injection.md) would
-  // otherwise add an extra action to every exact action-sequence assertion.
-  // The first-turn path is covered by streamResponse_boardInjection.test.ts.
-  state.session.boardInjectionConsumed = true;
+  // a fresh board fetch (board/consumePending request, see
+  // board-auto-topic-injection.md revision 2) would otherwise add an extra
+  // action to every exact action-sequence assertion. A fresh lastFetchAt
+  // keeps the TTL gate closed; the fetch path is covered by
+  // streamResponse_boardInjection.test.ts.
+  state.session.board.lastFetchAt = Date.now();
   return {
     ...state,
     config: {

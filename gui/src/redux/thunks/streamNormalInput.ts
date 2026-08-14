@@ -8,12 +8,12 @@ import { selectSelectedChatModel } from "../slices/configSlice";
 import {
   abortStream,
   addPromptCompletionPair,
+  appendBoardMessages,
   endActiveReasoning,
   errorToolCall,
   setActive,
   setAppliedRulesAtIndex,
-  setBoardInjectionBlock,
-  setBoardInjectionConsumed,
+  setBoardFetchAttempted,
   setContextPercentage,
   setInactive,
   setInlineErrorMessage,
@@ -39,6 +39,7 @@ import { getPlatform } from "../../util";
 import {
   boardInjectionRule,
   renderBoardInjectionBlock,
+  shouldFetchBoard,
 } from "../../util/boardInjection";
 import { fileUriToNativePath } from "../../util/fileUriToNativePath";
 import { callToolById } from "./callToolById";
@@ -170,17 +171,18 @@ export const streamNormalInput = createAsyncThunk<
         )
       : baseSystemMessageWithEnv;
 
-    // Board auto-topic-injection (board-auto-topic-injection.md): once per
-    // session, consume pending MsgBoard messages from the board-capable CITT
-    // server. The attempt is marked up front (even on failure/empty result)
-    // so consumption never re-runs within the session. History-shape
-    // detection is NOT viable here: submitEditorAndInitAtIndex pre-creates
-    // an empty assistant placeholder before this thunk runs. The block
-    // persists in session state and is re-appended to the system message
-    // every turn, like AGENTS.md. Best-effort: any failure skips the
+    // Board auto-topic-injection (board-auto-topic-injection.md, revision 2):
+    // TTL-throttled consumption on EVERY LLM call — this thunk is the seam for
+    // the first turn and every tool-loop iteration
+    // (streamResponseAfterToolCall recurses into it). The attempt timestamp is
+    // stamped up front (even on failure/empty result) so concurrent paths
+    // never double-fetch within the TTL window. Consumed messages accumulate
+    // in session state; the rendered block is re-appended to the system
+    // message every call, like AGENTS.md. Best-effort: any failure skips the
     // injection, the run always starts.
-    if (!state.session.boardInjectionConsumed) {
-      dispatch(setBoardInjectionConsumed(true));
+    const now = Date.now();
+    if (shouldFetchBoard(state.session.board.lastFetchAt, now)) {
+      dispatch(setBoardFetchAttempted(now));
       try {
         const boardRes = await extra.ideMessenger.request(
           "board/consumePending",
@@ -192,13 +194,7 @@ export const streamNormalInput = createAsyncThunk<
           if (boardRes.content.warning) {
             console.warn(`MsgBoard: ${boardRes.content.warning}`);
           }
-          if (boardRes.content.messages.length > 0) {
-            dispatch(
-              setBoardInjectionBlock(
-                renderBoardInjectionBlock(boardRes.content),
-              ),
-            );
-          }
+          dispatch(appendBoardMessages(boardRes.content));
         }
       } catch (e) {
         console.warn(
@@ -209,7 +205,9 @@ export const streamNormalInput = createAsyncThunk<
       }
     }
 
-    const boardInjectionBlock = getState().session.boardInjectionBlock;
+    const boardInjectionBlock = renderBoardInjectionBlock(
+      getState().session.board,
+    );
     const availableRules = boardInjectionBlock
       ? [...state.config.config.rules, boardInjectionRule(boardInjectionBlock)]
       : state.config.config.rules;

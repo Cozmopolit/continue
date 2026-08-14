@@ -1,7 +1,19 @@
 # Board Auto-Topic-Injection (Fork Side)
 
-**Status:** Implementiert
+**Status:** Implementiert (Revision 2: LLM-Call-Level-Consumption)
 **Date:** 2026-08-14
+
+### Revision 2 (2026-08-14, nach erstem Live-Test)
+
+Revision 1 injizierte Board-Mail nur im ersten Turn einer neuen Session
+(Once-per-Session-Flag `boardInjectionConsumed`). Der erste Live-Test zeigte
+den Konstruktionsfehler: Ein Mid-Session-Subscribe blieb bis zur nächsten
+Session wirkungslos; Agent-zu-Agent-Austausch innerhalb einer laufenden
+Session war passiv unsichtbar. User-Entscheidung: Consumption auf
+**LLM-Call-Level** (Agents müssen Board-Mail ohne User-Input empfangen),
+gedrosselt per **TTL 15 s**. Der Contract (Interface) bleibt unverändert —
+`board/pending {topics, sinceId}` ist bereits inkrementell; nur die
+Abruffrequenz der Fork-Seite steigt.
 
 ## Problem / Motivation
 
@@ -12,8 +24,10 @@ actively polls with the LLM tools (`msg_*`) — the agent must already know that
 something arrived.
 
 Desired behavior: an agent **subscribes** to board topics, and new messages are
-**injected into its context at run start** (first turn of a new chat session),
-the same way `AGENTS.md` is injected.
+**injected into its context as they arrive — checked on every LLM call (throttled
+by a short TTL), so agents can exchange board messages within a live session
+without user input**. The rendered block participates in the system message like
+`AGENTS.md`.
 
 The cross-instance contract was negotiated with `home-citt` (CITT side) in the
 MsgBoard topic `auto-topic-injection` and closed as **contract v1.2** (closing
@@ -58,8 +72,9 @@ Fork-side changes only:
   `board_subscriptions` (core-side, no CITT roundtrip except cursor bootstrap)
 - Transport: `MCPConnection` board capability + typed `board/pending` wrapper
 - Core protocol message `board/consumePending` (fetch + cursor advance)
-- GUI: run-start injection in `streamNormalInput`, block held in session state,
-  appended to the system message every turn (AGENTS.md pattern)
+- GUI: TTL-gated per-LLM-call consumption in `streamNormalInput`, accumulated
+  block held in session state, appended to the system message every turn
+  (AGENTS.md pattern)
 
 **Out of Scope:**
 
@@ -83,16 +98,38 @@ on every turn; `AGENTS.md` participates as a rule with `alwaysApply: true`.
 
 ### Consequences
 
-- Fetch happens on the **first turn of a new session**, guarded by an
-  explicit session-state flag (`boardInjectionConsumed`), NOT by history
-  shape: `submitEditorAndInitAtIndex` pre-creates an empty assistant
-  placeholder before `streamNormalInput` runs, so a "no assistant message
-  yet" check would never fire. The attempt is marked once per session even
-  when the fetch fails or returns nothing. The rendered block is stored in
-  session state and passed as an additional always-apply rule into
-  `constructMessages` on every turn — exactly the AGENTS.md behavior,
-  including applied-rules visibility.
-- No re-fetch within a session; a new session fetches again.
+- Consumption runs at the start of **every LLM call**, throttled by a TTL:
+  `streamNormalInput` is the seam for every model call — the first user turn
+  and every tool-loop iteration recurse into it
+  (`streamResponseAfterToolCall` → `streamNormalInput({depth+1})`) and rebuild
+  the system message via `constructMessages` on each pass. A session-state
+  timestamp (`lastBoardFetchAt`) gates the fetch: consume when never fetched
+  or when the last fetch is ≥ TTL (15 s) old. The fetch is awaited and
+  best-effort; the rendered block is included in the same call's system
+  message.
+- The once-per-session flag of revision 1 (`boardInjectionConsumed`) is
+  removed. It institutionalized the blind spot the feature was meant to close:
+  a mid-session subscribe only took effect in the next session, and live
+  agent-to-agent exchange within a session stayed invisible without active
+  `msg_*` polling. The flag's original purpose — first-turn detection — is
+  obsolete: TTL gating needs no history-shape detection at all (which was
+  unreliable anyway, since `submitEditorAndInitAtIndex` pre-creates an empty
+  assistant placeholder).
+- Consumed messages **accumulate** in session state for the rest of the
+  session (bounded window, see behavior rules), so an exchange stays visible
+  while the agent works on it. The block is re-rendered from the accumulated
+  list whenever a fetch runs and re-appended to the system message every turn
+  — exactly the AGENTS.md behavior, including applied-rules visibility.
+  (Revision 1 replaced the block on each fetch — wrong for accumulation: a
+  consumed question would drop out of context before the agent answers it.)
+- First fetch of a session = backlog fetch ("from now on" cursor semantics
+  unchanged): a new session shows messages that arrived since the last cursor
+  advance on its first LLM call.
+- Rejected alternative: fire-and-forget background fetch (zero latency impact,
+  but messages only reach the NEXT LLM call and in-flight dedup adds
+  concurrency complexity). Accepted: awaited fetch bounded by the existing
+  5 s RPC timeout; worst case one stalled LLM call per TTL window when the
+  gateway hangs — rare, bounded, best-effort.
 
 ### Cursor semantics (fork-owned)
 
@@ -121,16 +158,19 @@ discovery mirrors `mcpProxyModelDiscovery.collectProxyEndpoints`:
 ## Solution
 
 ```
-new session, 1st turn (streamNormalInput):
-  GUI -> core   "board/consumePending" {}
-                core: no state file / no topics -> {messages: []} (no RPC)
-                core: resolve board-capable connected CITT server
-                      callMethod("board/pending", {topics, sinceId},
-                                 schema, {timeout: 5000})
-                      advance cursor = max(injected ids)
-  GUI <- core   {messages, latestByTopic, omitted?, warning?}
-  GUI: render block -> sessionSlice.boardInjection
-       every turn: constructMessages(..., [...config.rules, boardRule])
+every LLM call (streamNormalInput, incl. tool-loop recursion):
+  if never fetched or now - lastBoardFetchAt >= TTL (15 s):
+    GUI -> core   "board/consumePending" {}
+                  core: no state file / no topics -> {messages: []} (no RPC)
+                  core: resolve board-capable connected CITT server
+                        callMethod("board/pending", {topics, sinceId},
+                                   schema, {timeout: 5000})
+                        advance cursor = max(injected ids)
+    GUI <- core   {messages, latestByTopic, omitted?, warning?}
+    GUI: append messages to sessionSlice.boardMessages (capped window)
+         lastBoardFetchAt = now
+  every call: render block from boardMessages -> boardRule (always-apply)
+              constructMessages(..., [...config.rules, boardRule])
 
 LLM tools (core-side impls, read/write .continue/board-state.json):
   board_subscribe {handle, topic}     creates/extends state; init-mode RPC
@@ -147,6 +187,14 @@ LLM tools (core-side impls, read/write .continue/board-state.json):
 - **Handle identity:** passed explicitly by the LLM (session context /
   AGENTS.md, per board convention — never inferred). Conflict against an
   existing handle in the state file => visible tool error.
+- **TTL throttle:** at most one fetch per 15 s per session (constant
+  `BOARD_FETCH_TTL_MS` in the GUI). Awaited on the LLM-call critical path;
+  the existing 5 s RPC timeout bounds the worst case; failures never block
+  the run (best-effort).
+- **Session window cap:** accumulated `boardMessages` are capped at
+  20 messages / ~40k chars (mirroring the server cap); overflow drops the
+  OLDEST messages and is surfaced in the block note. Server-side `omitted`
+  counts (cap-truncated at fetch time) are accumulated and surfaced likewise.
 - **Block format** (rendered by the fork, markdown, per topic):
 
 ```markdown
@@ -158,7 +206,10 @@ _[cittmsg] id <id> · from: <from> → to: <to> · re: #<re> · <createdAt>_
 
 <body>
 
-_N weitere Nachrichten (älter als #<oldestOmittedId>) wurden nicht injiziert —
+_N ältere Nachrichten dieser Session sind nicht mehr im Block (älter als #<oldestKeptId>) — bei Bedarf per msg_list/msg_read nachladen._ (only when
+the session window dropped messages)
+
+_M weitere Nachrichten (älter als #<oldestOmittedId>) wurden nicht injiziert —
 bei Bedarf per msg_list/msg_read nachladen._ (only when omitted present)
 ```
 
@@ -171,9 +222,10 @@ bei Bedarf per msg_list/msg_read nachladen._ (only when omitted present)
   list is authoritative, the cursor is consolidated monotonically (max) —
   concurrent subscribe/unsubscribe operations are not overwritten. If the
   file was removed during the RPC, the save is skipped (no resurrection).
-- **Session resume:** the injection block lives in redux session state; if the
-  persistence layer does not carry it across window reloads, consumed messages
-  are not re-fetched (cursor already advanced). Accepted for v1.
+- **Session resume:** the block is derived from session-state `boardMessages`;
+  if the persistence layer does not carry it across window reloads, consumed
+  messages are not re-fetched (cursor already advanced) — the block simply
+  starts empty again. Accepted for v1.
 
 ## Implementation Checklist
 
@@ -188,8 +240,10 @@ bei Bedarf per msg_list/msg_read nachladen._ (only when omitted present)
       register in `core/tools/builtIn.ts`.
 - [x] Protocol: `board/consumePending` in `core/protocol/core.ts`; handler in
       `core/core.ts` (connection discovery, state read, RPC, cursor advance).
-- [x] GUI: `sessionSlice` board-injection state + actions; `streamNormalInput`
-      first-turn fetch (once-per-session `boardInjectionConsumed` flag —
-      history-shape detection is broken by the pre-created assistant
-      placeholder) + block rendering; pass board rule into
-      `constructMessages`.
+- [x] GUI (Revision 2): `sessionSlice` board state as
+      `boardMessages: BoardMessage[]` + `lastBoardFetchAt?: number` (replacing
+      `boardInjectionBlock`/`boardInjectionConsumed`, incl. `newSession`-style
+      resets and actions); `streamNormalInput` TTL-gated consumption on every
+      LLM call (flag removed); `util/boardInjection.ts` renders from the
+      accumulated list incl. window-cap and omitted notes; board rule passed
+      into `constructMessages` every call.

@@ -172,6 +172,7 @@ extensions/.continue-debug/
 
 .continuerules
 **/.continue/assistants/
+**/.continue/board-state.json
 keys
 
 .channels_cache.json

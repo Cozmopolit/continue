@@ -85,7 +85,13 @@ describe("sessionSlice streamUpdate", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    boardInjectionConsumed: false,
+    board: {
+      messages: [],
+      droppedCount: 0,
+      omittedTotal: 0,
+      omittedOldestId: undefined,
+      lastFetchAt: undefined,
+    },
   });
 
   describe("Basic Chat Message", () => {
@@ -482,7 +488,13 @@ describe("sessionSlice setContextPercentage", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    boardInjectionConsumed: false,
+    board: {
+      messages: [],
+      droppedCount: 0,
+      omittedTotal: 0,
+      omittedOldestId: undefined,
+      lastFetchAt: undefined,
+    },
   });
 
   it("should store percentage and token counts when full payload is provided", () => {
@@ -573,7 +585,13 @@ describe("sessionSlice endActiveReasoning", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    boardInjectionConsumed: false,
+    board: {
+      messages: [],
+      droppedCount: 0,
+      omittedTotal: 0,
+      omittedOldestId: undefined,
+      lastFetchAt: undefined,
+    },
   });
 
   it("should end active reasoning and stamp endAt", () => {
@@ -681,7 +699,13 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    boardInjectionConsumed: false,
+    board: {
+      messages: [],
+      droppedCount: 0,
+      omittedTotal: 0,
+      omittedOldestId: undefined,
+      lastFetchAt: undefined,
+    },
   });
 
   const userItem = (): ChatHistoryItemWithMessageId => ({

@@ -1,4 +1,4 @@
-import { JSONContent } from "@tiptap/core";
+﻿import { JSONContent } from "@tiptap/core";
 import {
   AssistantChatMessage,
   BoardMessage,
@@ -6,23 +6,23 @@ import {
   InputModifiers,
   ModelDescription,
 } from "core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { createMockStore, getEmptyRootState } from "../../util/test/mockStore";
 import {
-  setBoardInjectionBlock,
-  setBoardInjectionConsumed,
+  appendBoardMessages,
+  setBoardFetchAttempted,
   streamUpdate,
 } from "../slices/sessionSlice";
 import { RootState } from "../store";
+import { BOARD_FETCH_TTL_MS } from "../../util/boardInjection";
 import { streamResponseThunk } from "./streamResponse";
 
-// Board auto-topic-injection (board-auto-topic-injection.md): once-per-session
-// consumption at run start, exercised through the public streamResponseThunk
-// entry point. The consumed-flag gate is the regression guard for the
-// assistant-placeholder trap: submitEditorAndInitAtIndex pre-creates an empty
-// assistant message before streamNormalInput runs, so history-shape detection
-// can never work here.
+// Board auto-topic-injection (board-auto-topic-injection.md, revision 2):
+// TTL-gated consumption on every LLM call, exercised through the public
+// streamResponseThunk entry point. The TTL gate replaces revision 1's
+// once-per-session flag: within the window no second board/consumePending
+// request may go out; after it, the next call re-fetches and accumulates.
 
 vi.mock("../util/getBaseSystemMessage", () => ({
   getBaseSystemMessage: vi.fn(),
@@ -101,9 +101,23 @@ const BOARD_MESSAGE: BoardMessage = {
   body: "Anhang emptyTopics umgesetzt.",
 };
 
+const BOARD_MESSAGE_2: BoardMessage = {
+  topic: "auto-topic-injection",
+  id: 5292160690,
+  from: "home-citt",
+  to: "*",
+  createdAt: "2026-08-14T10:14:54Z",
+  body: "Build bestaetigt, bereit fuer den Live-Test.",
+};
+
 const BOARD_RESULT: BoardPendingResult = {
   messages: [BOARD_MESSAGE],
   latestByTopic: { "auto-topic-injection": 5291369957 },
+};
+
+const BOARD_RESULT_2: BoardPendingResult = {
+  messages: [BOARD_MESSAGE_2],
+  latestByTopic: { "auto-topic-injection": 5292160690 },
 };
 
 const COMPILE_RESPONSE = {
@@ -147,8 +161,13 @@ async function dispatchTurn(store: ReturnType<typeof createMockStore>) {
   );
 }
 
+const NOW = 1_755_160_000_000;
+let nowMs = NOW;
+
 beforeEach(() => {
   vi.clearAllMocks();
+  nowMs = NOW;
+  vi.spyOn(Date, "now").mockImplementation(() => nowMs);
   mockResolveEditorContent.mockResolvedValue({
     selectedContextItems: [],
     selectedCode: [],
@@ -158,8 +177,12 @@ beforeEach(() => {
   mockGetBaseSystemMessage.mockReturnValue("You are a helpful assistant.");
 });
 
-describe("board auto-topic-injection at run start", () => {
-  it("consumes pending board messages on the first turn and injects them as a rule", async () => {
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("board auto-topic-injection at LLM-call level", () => {
+  it("consumes pending board messages on the first call and injects them as a rule", async () => {
     const store = createMockStore(getInitialState());
     const messenger = store.mockIdeMessenger;
     messenger.responses["board/consumePending"] = BOARD_RESULT;
@@ -173,36 +196,28 @@ describe("board auto-topic-injection at run start", () => {
 
     await dispatchTurn(store);
 
-    // exactly one gateway roundtrip
+    // exactly one gateway roundtrip, attempt stamped with the gated now
     expect(requestSpy).toHaveBeenCalledWith("board/consumePending", undefined);
-
     const actions = store.getActions();
-    const consumedActions = actions.filter(
-      (a) => a.type === setBoardInjectionConsumed.type,
+    const attemptActions = actions.filter(
+      (a) => a.type === setBoardFetchAttempted.type,
     );
-    expect(consumedActions).toHaveLength(1);
-    expect(consumedActions[0].payload).toBe(true);
-
-    const blockActions = actions.filter(
-      (a) => a.type === setBoardInjectionBlock.type,
-    );
-    expect(blockActions).toHaveLength(1);
-    expect(blockActions[0].payload).toContain("# MsgBoard");
-    expect(blockActions[0].payload).toContain(BOARD_MESSAGE.body);
-
-    expect((store.getState() as RootState).session.boardInjectionConsumed).toBe(
-      true,
-    );
+    expect(attemptActions).toHaveLength(1);
+    expect(attemptActions[0].payload).toBe(NOW);
     expect(
-      (store.getState() as RootState).session.boardInjectionBlock,
-    ).toContain(BOARD_MESSAGE.body);
+      actions.filter((a) => a.type === appendBoardMessages.type),
+    ).toHaveLength(1);
 
-    // the block rides along in the system message of this turn
+    const board = (store.getState() as RootState).session.board;
+    expect(board.lastFetchAt).toBe(NOW);
+    expect(board.messages).toEqual([BOARD_MESSAGE]);
+
+    // the block rides along in the system message of this call
     expect(compilePayload.messages[0].role).toBe("system");
     expect(compilePayload.messages[0].content).toContain(BOARD_MESSAGE.body);
   });
 
-  it("does not consume again on later turns but keeps re-appending the block", async () => {
+  it("does not re-fetch within the TTL window but keeps appending the block", async () => {
     const store = createMockStore(getInitialState());
     const messenger = store.mockIdeMessenger;
     messenger.responses["board/consumePending"] = BOARD_RESULT;
@@ -214,11 +229,10 @@ describe("board auto-topic-injection at run start", () => {
 
     setupStreaming(messenger);
     await dispatchTurn(store);
-    expect((store.getState() as RootState).session.boardInjectionConsumed).toBe(
-      true,
-    );
+    expect((store.getState() as RootState).session.board.lastFetchAt).toBe(NOW);
 
-    // second turn in the same session
+    // second call just inside the TTL window
+    nowMs = NOW + BOARD_FETCH_TTL_MS - 1;
     store.clearActions();
     setupStreaming(messenger); // fresh stream generator
     const requestSpy = vi.spyOn(messenger, "request");
@@ -229,16 +243,56 @@ describe("board auto-topic-injection at run start", () => {
     );
     expect(boardCalls).toHaveLength(0);
 
-    // block persists and is re-appended to the system message every turn
-    expect(
-      (store.getState() as RootState).session.boardInjectionBlock,
-    ).toContain(BOARD_MESSAGE.body);
+    // accumulated block is still re-appended to the system message
+    expect((store.getState() as RootState).session.board.messages).toEqual([
+      BOARD_MESSAGE,
+    ]);
     expect(lastCompilePayload.messages[0].content).toContain(
       BOARD_MESSAGE.body,
     );
   });
 
-  it("skips injection on error status but still marks the attempt consumed", async () => {
+  it("re-fetches after the TTL and accumulates new messages", async () => {
+    const store = createMockStore(getInitialState());
+    const messenger = store.mockIdeMessenger;
+    messenger.responses["board/consumePending"] = BOARD_RESULT;
+    let lastCompilePayload: any;
+    messenger.responseHandlers["llm/compileChat"] = async (data) => {
+      lastCompilePayload = data;
+      return COMPILE_RESPONSE;
+    };
+
+    setupStreaming(messenger);
+    await dispatchTurn(store);
+
+    // second call just outside the TTL window, with a new board message
+    nowMs = NOW + BOARD_FETCH_TTL_MS;
+    messenger.responses["board/consumePending"] = BOARD_RESULT_2;
+    store.clearActions();
+    setupStreaming(messenger);
+    const requestSpy = vi.spyOn(messenger, "request");
+    await dispatchTurn(store);
+
+    const boardCalls = requestSpy.mock.calls.filter(
+      ([messageType]) => messageType === "board/consumePending",
+    );
+    expect(boardCalls).toHaveLength(1);
+
+    // both messages accumulated, oldest first; attempt re-stamped
+    const board = (store.getState() as RootState).session.board;
+    expect(board.lastFetchAt).toBe(NOW + BOARD_FETCH_TTL_MS);
+    expect(board.messages).toEqual([BOARD_MESSAGE, BOARD_MESSAGE_2]);
+
+    // both bodies visible in the system message of the second call
+    expect(lastCompilePayload.messages[0].content).toContain(
+      BOARD_MESSAGE.body,
+    );
+    expect(lastCompilePayload.messages[0].content).toContain(
+      BOARD_MESSAGE_2.body,
+    );
+  });
+
+  it("skips injection on error status but still stamps the attempt", async () => {
     const store = createMockStore(getInitialState());
     const messenger = store.mockIdeMessenger;
     const originalRequest = messenger.request.bind(messenger);
@@ -256,18 +310,13 @@ describe("board auto-topic-injection at run start", () => {
 
     await dispatchTurn(store);
 
-    const actions = store.getActions();
-    expect(actions.some((a) => a.type === setBoardInjectionBlock.type)).toBe(
-      false,
-    );
-    expect((store.getState() as RootState).session.boardInjectionConsumed).toBe(
+    const board = (store.getState() as RootState).session.board;
+    expect(board.lastFetchAt).toBe(NOW);
+    expect(board.messages).toEqual([]);
+    // best-effort: the run itself still completes
+    expect(store.getActions().some((a) => a.type === streamUpdate.type)).toBe(
       true,
     );
-    expect(
-      (store.getState() as RootState).session.boardInjectionBlock,
-    ).toBeUndefined();
-    // best-effort: the run itself still completes
-    expect(actions.some((a) => a.type === streamUpdate.type)).toBe(true);
   });
 
   it("survives a thrown transport error during consumption", async () => {
@@ -280,17 +329,15 @@ describe("board auto-topic-injection at run start", () => {
 
     await dispatchTurn(store);
 
-    const actions = store.getActions();
-    expect((store.getState() as RootState).session.boardInjectionConsumed).toBe(
+    const board = (store.getState() as RootState).session.board;
+    expect(board.lastFetchAt).toBe(NOW);
+    expect(board.messages).toEqual([]);
+    expect(store.getActions().some((a) => a.type === streamUpdate.type)).toBe(
       true,
     );
-    expect(
-      (store.getState() as RootState).session.boardInjectionBlock,
-    ).toBeUndefined();
-    expect(actions.some((a) => a.type === streamUpdate.type)).toBe(true);
   });
 
-  it("marks consumed without injecting a block when there are no new messages", async () => {
+  it("stamps the attempt without injecting a block when there are no new messages", async () => {
     const store = createMockStore(getInitialState());
     const messenger = store.mockIdeMessenger;
     messenger.responses["board/consumePending"] = {
@@ -306,14 +353,11 @@ describe("board auto-topic-injection at run start", () => {
 
     await dispatchTurn(store);
 
-    const actions = store.getActions();
     expect(
-      actions.filter((a) => a.type === setBoardInjectionBlock.type),
-    ).toHaveLength(0);
-    expect((store.getState() as RootState).session.boardInjectionConsumed).toBe(
-      true,
-    );
-    // no board rule in the system message of this turn
+      store.getActions().filter((a) => a.type === appendBoardMessages.type),
+    ).toHaveLength(1);
+    expect((store.getState() as RootState).session.board.lastFetchAt).toBe(NOW);
+    // no board rule in the system message of this call
     expect(compilePayload.messages[0].content).not.toContain("# MsgBoard");
   });
 });
