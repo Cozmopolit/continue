@@ -41,6 +41,17 @@ import { useMainEditor } from "../components/mainInput/TipTapEditor/MainEditorPr
 const wakeMock = streamResponseThunk as unknown as Mock;
 const useMainEditorMock = useMainEditor as unknown as Mock;
 
+type History = RootState["session"]["history"];
+
+// A conversation with at least one user message — wake dispatches are only
+// allowed into started conversations (empty-conversation guard).
+function userHistoryItem(): History[number] {
+  return {
+    message: { id: "u1", role: "user", content: "hello" },
+    contextItems: [],
+  };
+}
+
 const BOARD_MESSAGE: BoardMessage = {
   topic: "board-wake-mode",
   id: 5305000042,
@@ -78,13 +89,20 @@ function Probe() {
   return null;
 }
 
-type SetupOptions = { boardWatchMode?: boolean; isStreaming?: boolean };
+type SetupOptions = {
+  boardWatchMode?: boolean;
+  isStreaming?: boolean;
+  history?: History;
+};
 
 function setup(options: SetupOptions = {}) {
   const messenger = new MockIdeMessenger();
   const state = getEmptyRootState();
   state.ui.boardWatchMode = options.boardWatchMode ?? true;
   state.session.isStreaming = options.isStreaming ?? false;
+  // Default: a started conversation — wake dispatches require at least one
+  // user message (empty-conversation guard, board-wake-mode.md).
+  state.session.history = options.history ?? [userHistoryItem()];
   const store = createMockStore(state, messenger);
   const requestSpy = vi.spyOn(messenger, "request");
   const boardCalls = () =>
@@ -198,6 +216,21 @@ describe("useBoardWatch", () => {
     await tick();
 
     expect(wakeCalls()).toHaveLength(0);
+    expect((store.getState() as RootState).session.board.messages).toEqual([
+      BOARD_MESSAGE,
+    ]);
+  });
+
+  it("does not wake into a conversation without any user message (fresh conversation)", async () => {
+    const { messenger, store } = setup({ history: [] });
+    messenger.responses["board/consumePending"] = EMPTY_RESULT;
+    await renderProbe(store, messenger);
+
+    messenger.responses["board/consumePending"] = PENDING_RESULT;
+    await tick();
+
+    expect(wakeCalls()).toHaveLength(0);
+    // still consumed — the messages render in the first real run's injection
     expect((store.getState() as RootState).session.board.messages).toEqual([
       BOARD_MESSAGE,
     ]);

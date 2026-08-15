@@ -150,4 +150,47 @@ Kontext). Prüfen; bei Nichtbedarf diesen Run sofort beenden.`
       außerhalb des Providers (Rerender-Isolation) und hätte die
       Editor-Instanz nie gesehen
 - [x] `WAKE_DOC`-Konstante + `WAKE_MODIFIERS` (`{useCodebase:false,
-    noContext:true}`) im Hook
+  noContext:true}`) im Hook
+
+## Amendment 2026-08-16: Empty-Conversation-Guard
+
+**Anlass:** Live-Review mit dem User am Tag nach dem Rollout: In einer
+frischen Conversation ohne User-Messages ist `selectIsConversationIdle`
+trivial erfüllt — der erste Tick mit neuen Board-Messages hätte den
+synthetischen `[board-wake]`-Run als **erste „User-Message" der
+Conversation** gestartet und dem User den ersten Slot seines eigenen Themas
+genommen.
+
+**Regel (User-Vorgabe):** Die erste User-Message einer Conversation darf nie
+ein Board-Wake sein.
+
+**Umsetzung:** Neuer Selector `selectConversationHasUserMessage`
+(`gui/src/redux/selectors/selectToolCalls.ts`, neben
+`selectIsConversationIdle`): `history.some(item => item.message.role ===
+"user")`. Im Wake-Dispatch-Pfad von `useBoardWatch` zweiter Recheck neben
+dem Idle-Recheck — beide lesen `store.getState()` frisch unmittelbar vor dem
+Dispatch. Der Watcher pollt und konsumiert in der leeren Phase weiter
+(Priming-Semantik): Die Messages akkumulieren im Session-Puffer und
+erscheinen im Injection-Block des ersten echten Runs; nichts geht verloren.
+
+**Selbstkonsistenz:** Da der Guard vor dem ersten Dispatch blockiert, kann
+ein synthetischer Wake nie der erste History-Eintrag werden — die Regel
+erhält sich selbst.
+
+**Tradeoff (bewusst akzeptiert):** Frische Conversation + User abwesend → in
+diesem Fenster kein Wake, bis irgendeine Conversation mindestens eine
+User-Message hat. VS Code stellt beim Neustart normalerweise die letzte
+Session mit History wieder her, daher ist der Fall schmal. Wake-Mode macht
+einen _etablierten_ Agenten erreichbar; er gründet keine Conversations gegen
+den User-Willen.
+
+**Abgrenzung zur „Keine Guards"-Entscheidung oben:** Jene betrifft
+Rate-Limits/Backoff/Wake-Filter/Caps (Lärm-/Last-Policy). Dieser Guard ist
+eine UX-Invariante (User-Souveränität über den Conversation-Start) und steht
+nicht im Widerspruch dazu.
+
+**Tests:** `selectToolCalls.test.ts` +4 (leer / User-only / User+Assistant /
+Assistant-only), `useBoardWatch.test.tsx` +1 (leere Conversation: kein Wake,
+aber Konsum in den Session-Puffer); das Setup der Hook-Tests seedet jetzt
+per Default eine User-Message (Default-Fall „gestartete Conversation").
+gui-Suite: 525 → 530 Tests.

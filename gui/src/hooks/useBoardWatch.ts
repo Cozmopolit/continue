@@ -6,7 +6,10 @@ import { useMainEditor } from "../components/mainInput/TipTapEditor/MainEditorPr
 import { hasValidEditorContent } from "../components/mainInput/TipTapEditor/utils/editorConfig";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../redux/hooks";
-import { selectIsConversationIdle } from "../redux/selectors/selectToolCalls";
+import {
+  selectConversationHasUserMessage,
+  selectIsConversationIdle,
+} from "../redux/selectors/selectToolCalls";
 import { RootState } from "../redux/store";
 import { fetchBoardPending } from "../redux/thunks/fetchBoardPending";
 import { streamResponseThunk } from "../redux/thunks/streamResponse";
@@ -47,6 +50,10 @@ const WAKE_DOC: JSONContent = {
  *   messages must not wake).
  * - Composer guard: never dispatch while the user has text in the composer;
  *   accumulated messages render in the next run regardless.
+ * - Empty-conversation guard: never dispatch into a conversation without any
+ *   user message — the first message of a fresh conversation belongs to the
+ *   user, not the board. Consuming continues; accumulated messages render in
+ *   the first real run's injection block.
  * - No further guards by design (no backoff/rate-limits/filters): the mode
  *   toggle is the kill switch.
  */
@@ -87,9 +94,15 @@ export function useBoardWatch() {
           // are accumulated and will render in the next run.
           return;
         }
-        // Recheck run state immediately before dispatching: a user-started
-        // run may have begun while the fetch was in flight.
-        if (!selectIsConversationIdle(store.getState())) {
+        // Recheck immediately before dispatching: a user-started run may
+        // have begun while the fetch was in flight, and a conversation
+        // without any user message yet may never receive a synthetic
+        // [board-wake] as its first message (board-wake-mode.md).
+        const state = store.getState();
+        if (
+          !selectIsConversationIdle(state) ||
+          !selectConversationHasUserMessage(state)
+        ) {
           return;
         }
         dispatch(

@@ -2,7 +2,10 @@
 import { describe, expect, it } from "vitest";
 import { getEmptyRootState } from "../../util/test/mockStore";
 import { RootState } from "../store";
-import { selectIsConversationIdle } from "./selectToolCalls";
+import {
+  selectConversationHasUserMessage,
+  selectIsConversationIdle,
+} from "./selectToolCalls";
 
 // Board wake mode (board-wake-mode.md): the watcher may only wake while the
 // conversation is idle. Idle = no stream running AND no tool call in flight —
@@ -95,5 +98,35 @@ describe("selectIsConversationIdle", () => {
   it("is not idle while streaming even when all tool calls are done", () => {
     const history = [userItem(), assistantItem([makeToolCallState("done")])];
     expect(selectIsConversationIdle(stateWith(history, true))).toBe(false);
+  });
+});
+
+// Board wake mode (board-wake-mode.md): a synthetic [board-wake] must never
+// be the first user message of a conversation — a fresh conversation belongs
+// to the user's first word. The watcher uses this to block wake dispatches
+// until the history holds at least one user message.
+describe("selectConversationHasUserMessage", () => {
+  it("is false with an empty history (fresh conversation)", () => {
+    expect(selectConversationHasUserMessage(stateWith([]))).toBe(false);
+  });
+
+  it("is true once a user message exists", () => {
+    expect(selectConversationHasUserMessage(stateWith([userItem()]))).toBe(
+      true,
+    );
+  });
+
+  it("is true with user and assistant messages", () => {
+    expect(
+      selectConversationHasUserMessage(
+        stateWith([userItem(), assistantItem()]),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false with assistant messages only (no user message yet)", () => {
+    expect(selectConversationHasUserMessage(stateWith([assistantItem()]))).toBe(
+      false,
+    );
   });
 });
