@@ -31,6 +31,8 @@ type UIState = {
   ttsActive: boolean;
   /** YOLO Mode: Auto-approve all tool calls without user confirmation */
   autoApproveAllTools: boolean;
+  /** Board Watch: start a run when new MsgBoard messages arrive while idle (board-wake-mode.md) */
+  boardWatchMode: boolean;
 };
 
 export const DEFAULT_TOOL_SETTING: ToolPolicy = "allowedWithPermission";
@@ -52,6 +54,7 @@ export const DEFAULT_UI_SLICE: UIState = {
   ruleSettings: {},
   reasoningSettings: {},
   autoApproveAllTools: false,
+  boardWatchMode: false,
 };
 
 export const uiSlice = createSlice({
@@ -160,6 +163,9 @@ export const uiSlice = createSlice({
     setAutoApproveAllTools: (state, action: PayloadAction<boolean>) => {
       state.autoApproveAllTools = action.payload;
     },
+    setBoardWatchMode: (state, action: PayloadAction<boolean>) => {
+      state.boardWatchMode = action.payload;
+    },
   },
 });
 
@@ -178,6 +184,7 @@ export const {
   setTTSActive,
   setReasoningSetting,
   setAutoApproveAllTools,
+  setBoardWatchMode,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;

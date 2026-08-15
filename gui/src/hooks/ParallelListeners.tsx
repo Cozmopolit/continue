@@ -18,7 +18,11 @@ import {
   setIsSessionMetadataLoading,
 } from "../redux/slices/sessionSlice";
 import { createFreshTab, setTabs } from "../redux/slices/tabsSlice";
-import { setAutoApproveAllTools, setTTSActive } from "../redux/slices/uiSlice";
+import {
+  setAutoApproveAllTools,
+  setBoardWatchMode,
+  setTTSActive,
+} from "../redux/slices/uiSlice";
 
 import { modelSupportsReasoning } from "core/llm/autodetect";
 import { cancelStream } from "../redux/thunks/cancelStream";
@@ -115,6 +119,9 @@ function ParallelListeners() {
           setAutoApproveAllTools(
             ideSettingsResult.content.autoApproveAllTools ?? false,
           ),
+        );
+        dispatch(
+          setBoardWatchMode(ideSettingsResult.content.boardWatchMode ?? false),
         );
       }
 

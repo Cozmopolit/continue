@@ -830,6 +830,8 @@ export interface IdeSettings {
   pauseCodebaseIndexOnStart: boolean;
   /** YOLO Mode: Automatically approve all tool calls without user confirmation */
   autoApproveAllTools?: boolean;
+  /** Board Watch: start a run when new MsgBoard messages arrive while idle (board-wake-mode.md) */
+  boardWatchMode?: boolean;
 }
 
 export interface FileStats {

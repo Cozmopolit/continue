@@ -1,11 +1,13 @@
 import {
   AtSymbolIcon,
   BoltIcon as BoltIconOutline,
+  EnvelopeIcon as EnvelopeIconOutline,
   LightBulbIcon as LightBulbIconOutline,
   PhotoIcon,
 } from "@heroicons/react/24/outline";
 import {
   BoltIcon as BoltIconSolid,
+  EnvelopeIcon as EnvelopeIconSolid,
   LightBulbIcon as LightBulbIconSolid,
 } from "@heroicons/react/24/solid";
 import { InputModifiers } from "core";
@@ -21,6 +23,7 @@ import { selectSelectedChatModel } from "../../redux/slices/configSlice";
 import { setHasReasoningEnabled } from "../../redux/slices/sessionSlice";
 import {
   setAutoApproveAllTools,
+  setBoardWatchMode,
   setReasoningSetting,
 } from "../../redux/slices/uiSlice";
 import { exitEdit } from "../../redux/thunks/edit";
@@ -67,6 +70,7 @@ function InputToolbar(props: InputToolbarProps) {
   const autoApproveAllTools = useAppSelector(
     (store) => store.ui.autoApproveAllTools,
   );
+  const boardWatchMode = useAppSelector((store) => store.ui.boardWatchMode);
   const isEnterDisabled =
     props.disabled || (isInEdit && codeToEdit.length === 0);
 
@@ -197,6 +201,31 @@ function InputToolbar(props: InputToolbarProps) {
                   <BoltIconSolid className="h-3 w-3 text-amber-400 hover:brightness-150" />
                 ) : (
                   <BoltIconOutline className="h-3 w-3 hover:brightness-150" />
+                )}
+              </ToolTip>
+            </HoverItem>
+            <HoverItem
+              onClick={() => {
+                const newValue = !boardWatchMode;
+                dispatch(setBoardWatchMode(newValue));
+                ideMessenger.post("setIdeSettings", {
+                  key: "boardWatchMode",
+                  value: newValue,
+                });
+              }}
+            >
+              <ToolTip
+                place="top"
+                content={
+                  boardWatchMode
+                    ? "Disable Board Watch (ignore new MsgBoard messages while idle)"
+                    : "Enable Board Watch (start a run on new MsgBoard messages while idle)"
+                }
+              >
+                {boardWatchMode ? (
+                  <EnvelopeIconSolid className="h-3 w-3 text-sky-400 hover:brightness-150" />
+                ) : (
+                  <EnvelopeIconOutline className="h-3 w-3 hover:brightness-150" />
                 )}
               </ToolTip>
             </HoverItem>

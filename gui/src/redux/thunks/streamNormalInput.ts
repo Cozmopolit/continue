@@ -8,7 +8,6 @@ import { selectSelectedChatModel } from "../slices/configSlice";
 import {
   abortStream,
   addPromptCompletionPair,
-  appendBoardMessages,
   endActiveReasoning,
   errorToolCall,
   setActive,
@@ -44,6 +43,7 @@ import {
 import { fileUriToNativePath } from "../../util/fileUriToNativePath";
 import { callToolById } from "./callToolById";
 import { evaluateToolPolicies } from "./evaluateToolPolicies";
+import { fetchBoardPending } from "./fetchBoardPending";
 import { preprocessToolCalls } from "./preprocessToolCallArgs";
 import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
 
@@ -184,29 +184,12 @@ export const streamNormalInput = createAsyncThunk<
     // block is re-appended to the system
     // message every call, like AGENTS.md. Best-effort: any failure skips the
     // injection, the run always starts.
+    // Consumption goes through the shared seam (board-wake-mode.md) so the
+    // idle watcher consumes identically; gating/stamping stays in this path.
     const now = Date.now();
     if (shouldFetchBoard(getState().session.board.lastFetchAt, now)) {
       dispatch(setBoardFetchAttempted(now));
-      try {
-        const boardRes = await extra.ideMessenger.request(
-          "board/consumePending",
-          undefined,
-        );
-        if (boardRes.status === "error") {
-          console.warn(`Board injection skipped: ${boardRes.error}`);
-        } else {
-          if (boardRes.content.warning) {
-            console.warn(`MsgBoard: ${boardRes.content.warning}`);
-          }
-          dispatch(appendBoardMessages(boardRes.content));
-        }
-      } catch (e) {
-        console.warn(
-          `Board injection skipped: ${
-            e instanceof Error ? e.message : String(e)
-          }`,
-        );
-      }
+      await fetchBoardPending(dispatch, extra.ideMessenger);
     }
 
     const boardInjectionBlock = renderBoardInjectionBlock(

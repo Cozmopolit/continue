@@ -66,3 +66,16 @@ export const selectDoneApplyStates = createSelector(
   (store: RootState) => store.session.codeBlockApplyStates.states,
   (states) => states.filter((applyState) => applyState.status === "done"),
 );
+
+// Board wake mode (board-wake-mode.md): idle = no stream running and no tool
+// call in flight — "generating"/"calling" (active) or "generated" (awaiting
+// approval; isStreaming is already false in that state).
+export const selectIsConversationIdle = createSelector(
+  (store: RootState) => store.session.history,
+  (store: RootState) => store.session.isStreaming,
+  (history, isStreaming) =>
+    !isStreaming &&
+    !findAllCurToolCallsByStatus(history, "generating").length &&
+    !findAllCurToolCallsByStatus(history, "generated").length &&
+    !findAllCurToolCallsByStatus(history, "calling").length,
+);

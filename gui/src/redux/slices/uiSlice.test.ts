@@ -5,6 +5,7 @@ import uiReducer, {
   addTool,
   DEFAULT_TOOL_SETTING,
   DEFAULT_UI_SLICE,
+  setBoardWatchMode,
   setToolPolicy,
 } from "./uiSlice";
 
@@ -115,6 +116,22 @@ describe("uiSlice", () => {
       );
 
       expect(state.toolSettings["NewTool"]).toBe("disabled");
+    });
+  });
+
+  describe("setBoardWatchMode", () => {
+    // Board wake mode (board-wake-mode.md): toggle persisted via IdeSettings,
+    // boot-loaded in ParallelListeners.
+    it("defaults to off", () => {
+      expect(DEFAULT_UI_SLICE.boardWatchMode).toBe(false);
+    });
+
+    it("toggles the mode", () => {
+      const on = uiReducer(DEFAULT_UI_SLICE, setBoardWatchMode(true));
+      expect(on.boardWatchMode).toBe(true);
+
+      const off = uiReducer(on, setBoardWatchMode(false));
+      expect(off.boardWatchMode).toBe(false);
     });
   });
 });

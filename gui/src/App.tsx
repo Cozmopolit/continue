@@ -1,4 +1,5 @@
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
+import BoardWatch from "./components/BoardWatch";
 import Layout from "./components/Layout";
 import { MainEditorProvider } from "./components/mainInput/TipTapEditor";
 import { SubmenuContextProvidersProvider } from "./context/SubmenuContextProviders";
@@ -54,6 +55,7 @@ function App() {
   return (
     <VscThemeProvider>
       <MainEditorProvider>
+        <BoardWatch />
         <SubmenuContextProvidersProvider>
           <RouterProvider router={router} />
         </SubmenuContextProvidersProvider>
