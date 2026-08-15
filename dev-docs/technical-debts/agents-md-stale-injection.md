@@ -1,6 +1,6 @@
 ﻿# AGENTS.md: Stale Version Injected in New Chat
 
-**Status:** Specified (see `specifications/workspace-filesystem-watcher.md`)
+**Status:** Implemented (see `specifications/workspace-filesystem-watcher.md`; tests pending)
 **Date:** 2026-08-13
 
 ## Problem

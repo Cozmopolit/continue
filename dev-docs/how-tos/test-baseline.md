@@ -6,6 +6,15 @@ Status: **2026-07-25** — vollständige Baseline über alle lauffähigen Suites
 **Zahlen-Refresh 2026-08-15 (workspace-fresh-boot)** (Boot immer in frische Session + Workspace-Aware-Resume: gui 44→45 Files / 485→489 Tests; Abdeckung in `redux/thunks/session.test.ts`).
 **Zahlen-Refresh 2026-08-14 (workspace-scoped-session-history)** (Workspace-Scoping der History-Liste: gui 43→44 Files / 481→485 Tests; Abdeckung in `pages/history/historyWorkspaceScoping.test.tsx`).
 **Zahlen-Refresh 2026-08-14 (Revision 2)** (Board-Injection auf LLM-Call-Level: gui 461→476 Tests. `boardInjectionConsumed` ist ersatzlos entfernt; `getRootStateWithClaude()` setzt stattdessen frisches `board.lastFetchAt` (TTL-Gate zu, Zweite-Turn-Sicht), die Fetch-/TTL-/Akkumulations-Abdeckung liegt in `streamResponse_boardInjection.test.ts` und `util/boardInjection.test.ts`. CodeRabbit-Follow-ups selben Tages: `newSession`-Board-Reset (beide Branches), Fresh-State-Gate-Read im Thunk, Oversized-Drop mit `tooLargeIds` → 476→481 Tests).
+**Zahlen-Refresh 2026-08-15 (workspace-filesystem-watcher)** (Unit-Tests für
+den neuen External-Write-Event-Buffer: ext-vscode 6→7 Files / 86→112 Tests;
+Abdeckung in `util/externalFileEventBuffer.vitest.ts` — Debounce/Forced-Flush,
+TTL-Suppression, Whitelist-vor-Ignore-Filter, Watcher-Folder-Lifecycle).
+**Zahlen-Refresh 2026-08-15 (coderabbit-runde)** (Review-Follow-ups über 5
+Specs: gui 490→496 Tests — refreshSessionMetadata-Scoping-Matrix in
+`redux/thunks/session.test.ts` (+5), redacted-Thinking-Cleanup in
+`redux/slices/sessionSlice.test.ts` (+1); ext-vscode 112→113 Tests —
+Workspace-Gate-Regressionstest in `util/externalFileEventBuffer.vitest.ts`).
 Ziel: Nie wieder "überraschende" pre-existing Test-Failures bei Feature-Arbeit.
 Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen werden.
 
@@ -20,11 +29,11 @@ Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen we
 | -------------------------- | ---------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `core` (Jest)              | jest (ESM) | `cd core; npm test`                           | 52 Suites passed, 7 skipped, 0 failed                                                                                               |
 | `core` (Vitest)            | vitest     | `cd core; npm run vitest`                     | 103 Files (102 passed, 1 skipped), 0 failed (siehe Timing-Hinweis unten)                                                            |
-| `gui`                      | vitest     | `cd gui; npm test`                            | 46 Files / 490 Tests, 0 failed                                                                                                      |
+| `gui`                      | vitest     | `cd gui; npm test`                            | 46 Files / 496 Tests, 0 failed                                                                                                      |
 | `packages/config-yaml`     | jest (ESM) | `cd packages/config-yaml; npm test`           | 15 Suites / 287 passed, 1 skipped                                                                                                   |
 | `packages/fetch`           | vitest     | `cd packages/fetch; npm test`                 | 8 Files / 131 passed (inkl. e2e, siehe OpenSSL)                                                                                     |
 | `packages/openai-adapters` | vitest     | `cd packages/openai-adapters; npx vitest run` | 17 Files / 160 passed, 5 skipped                                                                                                    |
-| `extensions/vscode`        | vitest     | `cd extensions/vscode; npm test`              | 6 Files / 86 passed                                                                                                                 |
+| `extensions/vscode`        | vitest     | `cd extensions/vscode; npm test`              | 7 Files / 113 passed                                                                                                                |
 | `extensions/cli`           | vitest     | `cd extensions/cli; npm test`                 | ~160 Files / ~1720 Tests, 0 failed (siehe FORCE_COLOR)                                                                              |
 | `binary`                   | jest       | —                                             | **nicht teil der Baseline**: einziger Test (`test/binary.test.ts`) ist ein Integrationstest, der das gebaute Binary (`out/`) spawnt |
 

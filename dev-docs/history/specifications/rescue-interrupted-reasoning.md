@@ -33,6 +33,8 @@ dass die Antwort unterbrochen wurde.
   Session-Save nach Rescue.
 - `gui/src/redux/thunks/streamThunkWrapper.tsx` — Skip-Flag an den beiden
   Retry-Call-Sites.
+- `gui/src/hooks/ParallelListeners.tsx` — Skip-Flag an der ON-LOAD-Call-Site
+  (kein Legacy-Rescue beim Boot).
 
 **Out of Scope:**
 
@@ -135,8 +137,12 @@ Algorithmus:
      übersprungen — ihr Content ist nur Boilerplate).
    - Path B: `item.reasoning.text` eines trailing Assistant-Items mit leerem
      Content.
-   - Nichts gefunden → no-op (z.B. Stop vor dem ersten Token; das heutige
-     Input-Restore-Verhalten bleibt so unverändert).
+   - Nichts gefunden → kein Marker (z.B. Stop vor dem ersten Token; das
+     heutige Input-Restore-Verhalten bleibt so unverändert), aber die
+     thinking-Items des Turns werden trotzdem entfernt (Follow-up
+     2026-08-15, CodeRabbit-Review): Cleanup ist von der Rescue-Entscheidung
+     getrennt, damit redacted Items samt ihrer nativen Reasoning-Metadaten
+     nicht in native Resend-Pfade leaken können.
 4. Konsolidieren in das (von `submitEditorAndInitAtIndex` angelegte) leere
    Assistant-Item nach dem letzten User/Tool:
    - `message.content` = Marker-Konstante mit Reasoning-Text (Format unten).
@@ -149,7 +155,9 @@ Algorithmus:
      sie über `findCorrespondingThinking` in native Reasoning-Felder leaken.
      Mit den Items verschwinden auch deren native Reasoning-Metadaten
      (`signature`, `reasoning_details`, `redactedThinking`) — nichts davon
-     darf in native Resend-Pfade gelangen.
+     darf in native Resend-Pfade gelangen. Die Entfernung läuft in beiden
+     Pfaden — auch wenn kein rescubarer Text gefunden wurde (dann ohne
+     Marker, s. Schritt 3).
 
 Anzeige: Das gerettete Reasoning rendert als normaler Assistant-Markdown
 (einmalig, kein zusätzlicher ThinkingBlockPeek — keine Doppelanzeige).
@@ -201,6 +209,7 @@ ist dort ein No-op. Keine Sonderbehandlung nötig.
 | Fehler mitten im Reasoning               | Reasoning nur im GUI sichtbar, beim nächsten Run verloren    | Als Assistant-Turn mit Marker gerettet, persisted, wird mitgesendet |
 | Manueller Stop mitten im Reasoning       | dito                                                         | dito (User-Entscheidung)                                            |
 | Stop/Fehler vor dem ersten Token         | Input wird in den Editor restored                            | Unverändert (Rescue no-op)                                          |
+| Abbruch mit nur redacted/leerem Thinking | Boilerplate blieb in der History, konnte nativ leaken        | Items entfernt, kein Marker (Follow-up 2026-08-15)                  |
 | Overloaded-Retry                         | `cancelStream`, Retry                                        | Unverändert                                                         |
 | Abbruch nach bereits vorhandenem Content | Turn bleibt, Reasoning-Merge via `findCorrespondingThinking` | Unverändert                                                         |
 
@@ -218,4 +227,9 @@ ist dort ein No-op. Keine Sonderbehandlung nötig.
       Call-Sites im Retry-Zweig `{ skipReasoningRescue: true }` übergeben.
 - [x] `gui/src/hooks/ParallelListeners.tsx`: An der ON-LOAD-Call-Site
       `{ skipReasoningRescue: true }` übergeben.
+- [x] `gui/src/redux/slices/sessionSlice.ts` (Follow-up 2026-08-15,
+      CodeRabbit-Review): Thinking-Cleanup von der Rescue-Entscheidung
+      getrennt — trailing thinking-Items (redacted/leer) werden auch ohne
+      rescubaren Text entfernt, ohne dass ein Marker entsteht; Tests in
+      `sessionSlice.test.ts` entsprechend aktualisiert/ergänzt.
 - [x] Build-Verifikation des GUI-Pakets (`tsc`/`npm run build` in `gui/`).

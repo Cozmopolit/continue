@@ -44,9 +44,10 @@ export const refreshSessionMetadata = createAsyncThunk<
   "session/refreshMetadata",
   async ({ offset, limit, allWorkspaces }, { dispatch, extra }) => {
     // Workspace scoping (workspace-scoped-session-history.md): list only the
-    // sessions of the current workspace unless allWorkspaces is set (or
-    // persisted per window via the History toggle). Windows without workspace
-    // folders keep the unfiltered behavior.
+    // sessions of the current workspace unless the effective allWorkspaces
+    // value is true (explicit arg, falling back to the persisted per-window
+    // History toggle). Windows without workspace folders keep the
+    // unfiltered behavior.
     const showAllWorkspaces =
       allWorkspaces ??
       getLocalStorage(`historyAllWorkspaces_${window.windowId}`) ??

@@ -5,7 +5,7 @@ import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { renderWithProviders } from "../../util/test/render";
 import { newSession } from "../slices/sessionSlice";
 import { setupStore } from "../store";
-import { loadLastSession } from "./session";
+import { loadLastSession, refreshSessionMetadata } from "./session";
 
 // Always-boot-into-new-chat + workspace-aware resume
 // (workspace-fresh-boot.md)
@@ -163,5 +163,62 @@ describe("Boot behavior (always a fresh session)", () => {
     expect(session.history).toHaveLength(0);
     // The old id is remembered for the "Last Session" button
     expect(session.lastSessionId).toBe("persisted-session");
+  });
+});
+
+// Workspace scoping of the history list (workspace-scoped-session-history.md):
+// thunk-level coverage of the explicit allWorkspaces values and the
+// persisted-preference fallback.
+describe("refreshSessionMetadata (workspace scoping)", () => {
+  const TOGGLE_KEY = "historyAllWorkspaces_test-window";
+
+  beforeEach(() => {
+    localStorage.clear();
+    window.workspacePaths = [WORKSPACE_1, WORKSPACE_2];
+    window.windowId = "test-window";
+  });
+
+  afterEach(() => {
+    window.workspacePaths = undefined;
+    localStorage.clear();
+  });
+
+  const dispatchRefresh = async (
+    allWorkspaces?: boolean,
+  ): Promise<ListCall[]> => {
+    const listCalls: ListCall[] = [];
+    const mockIdeMessenger = setupMockMessenger(listCalls, []);
+    const store = setupStore({ ideMessenger: mockIdeMessenger });
+    await store.dispatch(refreshSessionMetadata({ allWorkspaces }));
+    return listCalls;
+  };
+
+  it("scopes to the first workspace directory by default", async () => {
+    const listCalls = await dispatchRefresh();
+    expect(listCalls).toHaveLength(1);
+    expect(listCalls[0].workspaceDirectory).toBe(WORKSPACE_1);
+  });
+
+  it("omits the workspace filter when explicit allWorkspaces is true", async () => {
+    const listCalls = await dispatchRefresh(true);
+    expect(listCalls[0].workspaceDirectory).toBeUndefined();
+  });
+
+  it("keeps scoping when explicit allWorkspaces is false, even with a persisted all-workspaces preference", async () => {
+    localStorage.setItem(TOGGLE_KEY, "true");
+    const listCalls = await dispatchRefresh(false);
+    expect(listCalls[0].workspaceDirectory).toBe(WORKSPACE_1);
+  });
+
+  it("falls back to the persisted preference when no explicit arg is given", async () => {
+    localStorage.setItem(TOGGLE_KEY, "true");
+    const listCalls = await dispatchRefresh();
+    expect(listCalls[0].workspaceDirectory).toBeUndefined();
+  });
+
+  it("requests an unfiltered list when no workspace folders are open", async () => {
+    window.workspacePaths = undefined;
+    const listCalls = await dispatchRefresh();
+    expect(listCalls[0].workspaceDirectory).toBeUndefined();
   });
 });

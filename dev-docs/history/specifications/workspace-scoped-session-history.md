@@ -87,8 +87,9 @@ Behavioral notes:
   persisted preference on every refresh, the initial one-shot fetch
   (ParallelListeners) honors it too — no mount-time re-fetch and no race in
   the History page.
-- Windows without workspace folders (`workspacePaths` empty) and surfaces
-  without the global keep today's unfiltered behavior.
+- Windows without workspace folders (`window.workspacePaths` empty) and
+  surfaces where the `window.workspacePaths` global does not exist at all
+  (e.g. CLI) keep today's unfiltered behavior.
 - localStorage is keyed by `window.windowId` so the toggle is per window
   regardless of webview storage sharing; the key follows the
   `LocalStorageTypes` template-key pattern (`inputHistory_${string}`
@@ -97,11 +98,13 @@ Behavioral notes:
 ## Implementation Checklist
 
 - [x] `gui/src/redux/thunks/session.ts`: extend the `refreshSessionMetadata`
-      arg type by optional `allWorkspaces?: boolean`; include
-      `workspaceDirectory: window.workspacePaths?.[0]` in the `history/list`
-      request unless `allWorkspaces` is set — explicit arg falls back to the
-      persisted per-window preference
-      (`historyAllWorkspaces_<window.windowId>` in localStorage).
+      arg type by optional `allWorkspaces?: boolean`; `workspaceDirectory:
+    window.workspacePaths?.[0]` is included in the `history/list` request
+      only when the _effective_ allWorkspaces value is false — explicit arg,
+      falling back to the persisted per-window preference
+      (`historyAllWorkspaces_<window.windowId>` in localStorage) when the
+      arg is omitted (an explicit `false` therefore keeps scoping even with
+      a persisted `true`).
 - [x] `gui/src/util/localStorage.ts`: add typed template key
       `[key: \`historyAllWorkspaces\_${string}\`]: boolean`.
 - [x] `gui/src/components/History/index.tsx`: add the "Show all workspaces"
@@ -110,3 +113,10 @@ Behavioral notes:
       initialized from localStorage (`historyAllWorkspaces_${window.windowId}`),
       persisted on change; dispatch `refreshSessionMetadata` with the new
       toggle state on change.
+- [x] `gui/src/pages/history/historyWorkspaceScoping.test.tsx`: page-level
+      coverage — default scoping, toggle visibility by `workspacePaths`,
+      toggle click persists + re-fetches unscoped, persisted preference.
+- [x] `gui/src/redux/thunks/session.test.ts`: thunk-level coverage of the
+      scoping matrix — explicit `allWorkspaces` true/false (explicit `false`
+      wins over a persisted `true`), persisted-preference fallback, and the
+      empty-`workspacePaths` fallback (CodeRabbit follow-up).

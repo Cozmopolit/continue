@@ -235,6 +235,18 @@ export const defaultIgnoreFileAndDir = ignore()
   .add(defaultIgnoreFile)
   .add(defaultIgnoreDir);
 
+/**
+ * Ignore-rule files (`.gitignore`/`.continueignore`). Creating, editing or
+ * deleting one changes the effective ignore set for the whole workspace, so
+ * the `files/*` handlers in `core.ts` route these to a dedicated
+ * `index/forceReIndex` (`shouldClearIndexes`) branch instead of per-file
+ * refreshes (workspace-filesystem-watcher.md). Suffix match, case-sensitive
+ * — mirrors the historical inline check in `handleFilesChanged`.
+ */
+export function isIgnoreFile(uri: string): boolean {
+  return uri.endsWith(".gitignore") || uri.endsWith(".continueignore");
+}
+
 export function isSecurityConcern(filePathOrUri: string) {
   if (!filePathOrUri) {
     return false;

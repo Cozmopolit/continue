@@ -431,7 +431,31 @@ export const sessionSlice = createSlice({
         }
       }
 
+      // Remove the thinking items of this turn. This also strips their
+      // native reasoning metadata (signature, reasoning_details,
+      // redactedThinking) so nothing of it can leak into native resend
+      // paths (partial blocks are not valid there). Guarded so a turn
+      // without thinking items keeps the same history reference — the
+      // cancelStream save check compares references.
+      const removeTailThinkingItems = () => {
+        const hasTailThinking = state.history.some(
+          (item, i) =>
+            i > lastUserOrToolIdx && item.message.role === "thinking",
+        );
+        if (hasTailThinking) {
+          state.history = state.history.filter(
+            (item, i) =>
+              !(i > lastUserOrToolIdx && item.message.role === "thinking"),
+          );
+        }
+      };
+
       if (reasoningParts.length === 0) {
+        // No rescuable text (e.g. only redacted blocks before the
+        // interruption). Still strip the turn's thinking items — left in
+        // place, their native metadata would leak into native resend paths
+        // on the next run — but create no marker without rescued text.
+        removeTailThinkingItems();
         return;
       }
 
@@ -455,14 +479,7 @@ export const sessionSlice = createSlice({
       // reasoning field so the GUI does not render it twice.
       assistantItem.reasoning = undefined;
 
-      // Remove the thinking items of this turn. This also strips their
-      // native reasoning metadata (signature, reasoning_details,
-      // redactedThinking) so nothing of it can leak into native resend
-      // paths (partial blocks are not valid there).
-      state.history = state.history.filter(
-        (item, i) =>
-          !(i > lastUserOrToolIdx && item.message.role === "thinking"),
-      );
+      removeTailThinkingItems();
     },
 
     // Trigger value picked up by editor with isMainInput to set its content

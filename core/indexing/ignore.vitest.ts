@@ -3,6 +3,8 @@ import {
   DEFAULT_SECURITY_IGNORE_DIRS,
   DEFAULT_SECURITY_IGNORE_FILETYPES,
   defaultFileAndFolderSecurityIgnores,
+  defaultIgnoreFileAndDir,
+  isIgnoreFile,
   isSecurityConcern,
 } from "./ignore";
 
@@ -261,5 +263,54 @@ describe("isSecurityConcern", () => {
         expect(functionResult).toBe(ignoreResult);
       });
     });
+  });
+});
+
+// isIgnoreFile drives the dedicated index/forceReIndex branch in the
+// files/* handlers of core.ts (workspace-filesystem-watcher.md): creating,
+// editing or deleting an ignore-rule file must clear+rebuild the index
+// instead of per-file refreshes.
+describe("isIgnoreFile", () => {
+  describe("matches ignore-rule files", () => {
+    it.each([
+      ["root .gitignore as file URI", "file:///workspace/.gitignore"],
+      ["root .continueignore as file URI", "file:///workspace/.continueignore"],
+      ["nested .gitignore", "file:///workspace/packages/core/.gitignore"],
+      ["nested .continueignore", "/home/user/repo/sub/.continueignore"],
+      ["Windows absolute path", "C:\\Users\\dev\\repo\\.gitignore"],
+      ["bare filename", ".gitignore"],
+      ["prefixed name (foo.gitignore)", "file:///workspace/foo.gitignore"],
+    ])("%s", (_label, uri) => {
+      expect(isIgnoreFile(uri)).toBe(true);
+    });
+  });
+
+  describe("rejects non-ignore files", () => {
+    it.each([
+      ["ordinary file", "file:///workspace/README.md"],
+      ["gitignore backup", "file:///workspace/.gitignore.bak"],
+      ["gitignore with extension", "file:///workspace/.gitignore.txt"],
+      ["missing leading dot", "file:///workspace/gitignore"],
+      ["continueignore temp file", "file:///workspace/.continueignore.tmp"],
+      ["similar-sounding name", "file:///workspace/my.gitignorefile"],
+      [".git directory", "file:///workspace/.git"],
+      ["directory URI with trailing slash", "file:///workspace/.gitignore/"],
+      ["empty string", ""],
+    ])("%s", (_label, uri) => {
+      expect(isIgnoreFile(uri)).toBe(false);
+    });
+  });
+
+  it("is case-sensitive (mirrors the historical inline check)", () => {
+    expect(isIgnoreFile("file:///workspace/.GITIGNORE")).toBe(false);
+    expect(isIgnoreFile("file:///workspace/.ContinueIgnore")).toBe(false);
+  });
+
+  // Invariant the files/created + files/deleted handlers rely on: ignore
+  // files themselves are filtered out of refreshIfNotIgnored by
+  // DEFAULT_IGNORES, so the forceReIndex branch is their only index effect.
+  it("ignore files themselves are covered by DEFAULT_IGNORES", () => {
+    expect(defaultIgnoreFileAndDir.ignores(".gitignore")).toBe(true);
+    expect(defaultIgnoreFileAndDir.ignores(".continueignore")).toBe(true);
   });
 });

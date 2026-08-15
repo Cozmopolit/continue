@@ -72,6 +72,7 @@ import { performAuth, removeMCPAuth } from "./context/mcp/MCPOauth";
 import { myersDiff } from "./diff/myers";
 import { ApplyAbortManager } from "./edit/applyAbortManager";
 import { streamDiffLines } from "./edit/streamDiffLines";
+import { isIgnoreFile } from "./indexing/ignore";
 import { shouldIgnore } from "./indexing/shouldIgnore";
 import { walkDirCache } from "./indexing/walkDir";
 import { LLMLogger } from "./llm/logger";
@@ -853,13 +854,19 @@ export class Core {
       }
 
       walkDirCache.invalidate();
+      // Ignore files change the effective ignore set workspace-wide — route
+      // them to the same clear+rebuild as edits (handleFilesChanged) instead
+      // of per-file refreshes (workspace-filesystem-watcher.md).
+      if (data.uris.some(isIgnoreFile)) {
+        this.invoke("index/forceReIndex", { shouldClearIndexes: true });
+      }
       void refreshIfNotIgnored(data.uris);
 
       const colocatedRulesUris = data.uris.filter(isColocatedRulesFile);
       const nonColocatedRuleUris = data.uris.filter(
         (uri) => !isColocatedRulesFile(uri),
       );
-      if (colocatedRulesUris) {
+      if (colocatedRulesUris.length > 0) {
         const rulesCache = CodebaseRulesCache.getInstance();
         void Promise.all(
           colocatedRulesUris.map((uri) => rulesCache.update(this.ide, uri)),
@@ -884,6 +891,12 @@ export class Core {
       }
 
       walkDirCache.invalidate();
+      // Ignore files change the effective ignore set workspace-wide — route
+      // them to the same clear+rebuild as edits (handleFilesChanged) instead
+      // of per-file refreshes (workspace-filesystem-watcher.md).
+      if (data.uris.some(isIgnoreFile)) {
+        this.invoke("index/forceReIndex", { shouldClearIndexes: true });
+      }
       void refreshIfNotIgnored(data.uris);
 
       const colocatedRulesUris = data.uris.filter(isColocatedRulesFile);
@@ -891,7 +904,7 @@ export class Core {
         (uri) => !isColocatedRulesFile(uri),
       );
 
-      if (colocatedRulesUris) {
+      if (colocatedRulesUris.length > 0) {
         const rulesCache = CodebaseRulesCache.getInstance();
         void Promise.all(
           colocatedRulesUris.map((uri) => rulesCache.remove(uri)),
@@ -1289,10 +1302,7 @@ export class Core {
           await this.configHandler.reloadConfig(
             "Local config-related file updated",
           );
-        } else if (
-          uri.endsWith(".continueignore") ||
-          uri.endsWith(".gitignore")
-        ) {
+        } else if (isIgnoreFile(uri)) {
           // Reindex the workspaces
           this.invoke("index/forceReIndex", {
             shouldClearIndexes: true,

@@ -58,6 +58,7 @@ import {
   handleTextDocumentChange,
   initDocumentContentCache,
 } from "../util/editLoggingUtils";
+import { ExternalFileEventBuffer } from "../util/externalFileEventBuffer";
 import type { VsCodeWebviewProtocol } from "../webviewProtocol";
 
 export class VsCodeExtension {
@@ -78,6 +79,8 @@ export class VsCodeExtension {
   private fileSearch: FileSearch;
   private uriHandler = new UriEventHandler();
   private completionProvider: ContinueCompletionProvider;
+  private externalFileEventBuffer: ExternalFileEventBuffer;
+  private workspaceWatchers = new Map<string, vscode.FileSystemWatcher>();
 
   private ARBITRARY_TYPING_DELAY = 2000;
 
@@ -485,10 +488,60 @@ export class VsCodeExtension {
       if (editInfo) this.core.invoke("files/smallEdit", editInfo);
     });
 
+    // External-write detection (workspace-filesystem-watcher.md): one
+    // FileSystemWatcher per workspace folder feeds debounced/filtered
+    // events into the same files/* entry points the editor events use.
+    this.externalFileEventBuffer = new ExternalFileEventBuffer(
+      (vscode.workspace.workspaceFolders ?? []).map((folder) =>
+        folder.uri.toString(),
+      ),
+      ({ created, changed, deleted }) => {
+        if (changed.length > 0) {
+          this.core.invoke("files/changed", { uris: changed });
+        }
+        if (created.length > 0) {
+          this.core.invoke("files/created", { uris: created });
+        }
+        if (deleted.length > 0) {
+          this.core.invoke("files/deleted", { uris: deleted });
+        }
+      },
+    );
+    context.subscriptions.push({
+      dispose: () => this.externalFileEventBuffer.dispose(),
+    });
+
+    const registerWorkspaceWatcher = (folder: vscode.WorkspaceFolder) => {
+      const key = folder.uri.toString();
+      if (this.workspaceWatchers.has(key)) {
+        return;
+      }
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(folder, "**/*"),
+      );
+      watcher.onDidChange((uri) =>
+        this.externalFileEventBuffer.pushEvent(uri.toString(), "changed"),
+      );
+      watcher.onDidCreate((uri) =>
+        this.externalFileEventBuffer.pushEvent(uri.toString(), "created"),
+      );
+      watcher.onDidDelete((uri) =>
+        this.externalFileEventBuffer.pushEvent(uri.toString(), "deleted"),
+      );
+      this.workspaceWatchers.set(key, watcher);
+      context.subscriptions.push(watcher);
+    };
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      registerWorkspaceWatcher(folder);
+    }
+
     vscode.workspace.onDidSaveTextDocument(async (event) => {
       this.core.invoke("files/changed", {
         uris: [event.uri.toString()],
       });
+      // A save we just reported ourselves must not be double-dispatched
+      // when the watcher's disk event arrives (Decision 7).
+      this.externalFileEventBuffer.noteReportedSave(event.uri.toString());
     });
 
     vscode.workspace.onDidDeleteFiles(async (event) => {
@@ -516,6 +569,25 @@ export class VsCodeExtension {
       );
 
       this.ideUtils.setWokspaceDirectories(dirs);
+
+      // Keep one watcher per workspace folder so folders added later are
+      // not silently left unwatched (workspace-filesystem-watcher.md).
+      for (const folder of event.added) {
+        registerWorkspaceWatcher(folder);
+      }
+      for (const folder of event.removed) {
+        const key = folder.uri.toString();
+        const watcher = this.workspaceWatchers.get(key);
+        if (watcher) {
+          watcher.dispose();
+          this.workspaceWatchers.delete(key);
+        }
+      }
+      this.externalFileEventBuffer.setWorkspaceDirs(
+        (vscode.workspace.workspaceFolders ?? []).map((folder) =>
+          folder.uri.toString(),
+        ),
+      );
 
       this.core.invoke("index/forceReIndex", {
         dirs: [

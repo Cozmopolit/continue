@@ -815,7 +815,7 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
     );
   });
 
-  it("should be a no-op when only redacted thinking is present", () => {
+  it("should remove redacted thinking items without creating a marker when no rescuable text exists", () => {
     const state = createRescueState([
       userItem(),
       emptyAssistantItem(),
@@ -826,8 +826,30 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
 
     const newState = sessionSlice.reducer(state, rescueAction);
 
-    // Immer returns the same reference when nothing changed
-    expect(newState.history).toBe(state.history);
+    // The redacted item is stripped so its native metadata cannot leak into
+    // native resend paths, but no marker is created without rescued text
+    expect(newState.history).toHaveLength(2);
+    expect(
+      newState.history.some((item) => item.message.role === "thinking"),
+    ).toBe(false);
+    expect(newState.history[1].message.role).toBe("assistant");
+    expect(newState.history[1].message.content).toBe("");
+  });
+
+  it("should also strip thinking items with only whitespace text and create no marker", () => {
+    const state = createRescueState([
+      userItem(),
+      emptyAssistantItem(),
+      thinkingItem("   "),
+    ]);
+
+    const newState = sessionSlice.reducer(state, rescueAction);
+
+    expect(newState.history).toHaveLength(2);
+    expect(
+      newState.history.some((item) => item.message.role === "thinking"),
+    ).toBe(false);
+    expect(newState.history[1].message.content).toBe("");
   });
 
   it("should be a no-op when the assistant already has content", () => {

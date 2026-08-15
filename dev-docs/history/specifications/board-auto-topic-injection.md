@@ -186,7 +186,9 @@ every LLM call (streamNormalInput, incl. tool-loop recursion):
                         advance cursor = max(injected ids)
     GUI <- core   {messages, latestByTopic, omitted?, warning?}
     GUI: append messages to sessionSlice.board.messages (capped window)
-         board.lastFetchAt = now
+    note: board.lastFetchAt is the ATTEMPT stamp, set BEFORE the awaited RPC
+          (setBoardFetchAttempted) — a failed/hanging fetch must not retry
+          on the very next LLM call (Doku-Korrektur 2026-08-15)
   every call: render block from boardMessages -> boardRule (always-apply)
               constructMessages(..., [...config.rules, boardRule])
 
@@ -200,8 +202,12 @@ LLM tools (core-side impls, read/write .continue/board-state.json):
 ### Behavior rules
 
 - **Best effort, never run-blocking:** any failure (no CITT server connected,
-  missing capability, timeout 5 s, RPC error, missing state file) => skip
-  injection with a console warning; the run starts.
+  missing capability, timeout 5 s, RPC error) => skip injection with a
+  console warning; the run starts. A missing state file (or zero subscribed
+  topics) is **not** a failure — the feature is simply inactive: silent
+  no-op returning `{messages: []}` without RPC and without warning
+  (Doku-Korrektur 2026-08-15, CodeRabbit-Review; matched
+  `consumeBoardPending` von Anfang an, inkl. Tests für beide Fälle).
 - **Handle identity:** passed explicitly by the LLM (session context /
   AGENTS.md, per board convention — never inferred). Conflict against an
   existing handle in the state file => visible tool error.
