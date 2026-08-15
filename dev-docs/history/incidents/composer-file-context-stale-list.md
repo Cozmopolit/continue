@@ -1,6 +1,6 @@
 ﻿# Composer File-Context: Repo Files Missing from Selection List
 
-**Status:** Implemented (see `specifications/workspace-filesystem-watcher.md`; tests pending)
+**Status:** Resolved (workspace-filesystem-watcher.md; tests green 2026-08-15)
 **Date:** 2026-08-13
 
 ## Problem
@@ -111,7 +111,7 @@ refetches.
 ### Fix
 
 Solution decided and specced — see
-`dev-docs/specifications/workspace-filesystem-watcher.md`. Decisions taken:
+`workspace-filesystem-watcher.md`. Decisions taken:
 general workspace watcher (covers create+change+delete), CITT-side
 self-notification **rejected** (coupling), '@'-menu refetch **deferred**
 (revisit only if stale lists observed after the watcher ships).
@@ -120,4 +120,4 @@ self-notification **rejected** (coupling), '@'-menu refetch **deferred**
 
 - `agents-md-stale-injection.md` — first defect, same root cause
   (stale event source), same fix.
-- `specifications/workspace-filesystem-watcher.md` — the fix spec.
+- `workspace-filesystem-watcher.md` — the fix spec.

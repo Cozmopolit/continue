@@ -1,6 +1,6 @@
 # Preserve OpenAI Responses Output-Item Order
 
-**Status:** Ready for implementation  
+**Status:** Implementiert (2026-08-13)  
 **Date:** 2026-08-13
 
 ## Problem / Motivation
@@ -143,9 +143,9 @@ This postcondition covers both the reproduced ordering defect and histories in w
 
 ## Implementation Checklist
 
-- [ ] `core/llm/openaiTypeConverters.ts`: introduce a pure assistant-to-Responses-items helper.
-- [ ] `core/llm/openaiTypeConverters.ts`: preserve the authoritative mixed order of `responsesOutputItemIds` for text-plus-tool turns.
-- [ ] `core/llm/openaiTypeConverters.ts`: retain positional parallel-tool ID association and ID-less fallback behavior.
-- [ ] `core/llm/openaiTypeConverters.ts`: deduplicate repeated output-item IDs without duplicating generated items.
-- [ ] `core/llm/openaiTypeConverters.ts`: enforce the final reasoning-group ID safety invariant.
-- [ ] Core build verification after implementation.
+- [x] `core/llm/openaiTypeConverters.ts`: introduce a pure assistant-to-Responses-items helper.
+- [x] `core/llm/openaiTypeConverters.ts`: preserve the authoritative mixed order of `responsesOutputItemIds` for text-plus-tool turns.
+- [x] `core/llm/openaiTypeConverters.ts`: retain positional parallel-tool ID association and ID-less fallback behavior.
+- [x] `core/llm/openaiTypeConverters.ts`: deduplicate repeated output-item IDs without duplicating generated items.
+- [x] `core/llm/openaiTypeConverters.ts`: enforce the final reasoning-group ID safety invariant.
+- [x] Core build verification after implementation.

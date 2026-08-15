@@ -1,6 +1,6 @@
 ﻿# Workspace Filesystem Watcher (External Write Detection)
 
-**Status:** Implementiert (Rev 4)
+**Status:** Implementiert (Rev 5)
 **Date:** 2026-08-13 (Rev 2: 2026-08-15; Rev 3: 2026-08-15 — DQ1/DQ2 und
 Korrekturen aus dem zweiten Recon-Durchlauf eingearbeitet; Implementierung
 abgeschlossen 2026-08-15; Rev 4: 2026-08-15 — Ignore-File-Parität in den
@@ -19,11 +19,11 @@ Alles, was an VS Code vorbei auf die Platte schreibt — CITT-MCP-Tools
 
 Drei dokumentierte Defekte haben dieselbe Ursache:
 
-1. **Stale AGENTS.md-Injection** (`technical-debts/agents-md-stale-injection.md`):
+1. **Stale AGENTS.md-Injection** (`agents-md-stale-injection.md`):
    Extern editiertes AGENTS.md triggert kein `reloadConfig`; der
    `ProfileLifecycleManager`-Config-Cache bleibt für die gesamte
    Fenster-Lebensdauer veraltet. Neuer Chat ≠ Config-Reload.
-2. **File-Picker zeigt neue Dateien nicht** (`technical-debts/composer-file-context-stale-list.md`):
+2. **File-Picker zeigt neue Dateien nicht** (`composer-file-context-stale-list.md`):
    Die GUI refetcht Submenu-Items nur auf `refreshSubmenuItems`-Signal;
    ohne `files/created`-Event kein Signal.
 3. **Codebase-Index veraltet** (in der Recon mitentdeckt):
@@ -398,7 +398,7 @@ externes AGENTS.md-Edit → neuer Chat injiziert neue Version.
       abgelaufene TTL-Einträge lazily; Regressionstest (whitelisted
       `rules.md`/`.continue/config.yaml` eines entfernten Folders) in
       `externalFileEventBuffer.vitest.ts`.
-- [x] `dev-docs/technical-debts/agents-md-stale-injection.md` und
+- [x] `agents-md-stale-injection.md` und
       `composer-file-context-stale-list.md`: auf diesen Spec verweisen,
       Status aktualisieren (beim Implementierungs-Abschluss gemacht →
       Move nach history per Workflow nach Test-Abschluss).

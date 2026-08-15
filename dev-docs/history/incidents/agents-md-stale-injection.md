@@ -1,6 +1,6 @@
 ﻿# AGENTS.md: Stale Version Injected in New Chat
 
-**Status:** Implemented (see `specifications/workspace-filesystem-watcher.md`; tests pending)
+**Status:** Resolved (workspace-filesystem-watcher.md; tests green 2026-08-15)
 **Date:** 2026-08-13
 
 ## Problem
@@ -102,7 +102,7 @@ cache.
 ### Fix
 
 Solution decided and specced — see
-`dev-docs/specifications/workspace-filesystem-watcher.md`. Decisions taken:
+`workspace-filesystem-watcher.md`. Decisions taken:
 general workspace watcher (no AGENTS.md special path), CITT-side
 self-notification **rejected** (coupling), chat-start re-stat **deferred**.
 
@@ -110,4 +110,4 @@ self-notification **rejected** (coupling), chat-start re-stat **deferred**.
 
 - `composer-file-context-stale-list.md` — second defect, same root cause
   (stale event source), same fix.
-- `specifications/workspace-filesystem-watcher.md` — the fix spec.
+- `workspace-filesystem-watcher.md` — the fix spec.
