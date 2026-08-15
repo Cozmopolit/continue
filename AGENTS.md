@@ -86,11 +86,28 @@ irgendetwas anderes passiert. Kein stilles Weiterarbeiten ohne CITT.
    alles Dirty committen — keine Dateiauswahl, keine Diskussion
    (Piggyback, Regel 8).
 7. **Push ist selten und Absicht** (1–3×/Tag, „Ende der Schicht") — nicht
-   nach einzelnen Commits vorschlagen. Vor Push: **risikobasiertes Test-Gate** —
-   die von der Änderung betroffenen Suites müssen seit der Änderung grün sein
-   (ein gezielter Lauf genügt); ein voller Runner-Lauf ist nur nötig bei
-   paketübergreifenden Änderungen oder längeren Einheiten
-   (`dev-docs/coding-guidelines.md` §3).
+   nach einzelnen Commits vorschlagen. Vor Push: **risikobasiertes Test-Gate,
+   delta-basiert, nicht zeremoniell**: Hatte jeder Workstream-Commit seine
+   gezielten Suiten _seit seinen Änderungen_ grün und kam seither kein
+   ungetesteter Code dazu, gilt das Gate als erfüllt — direkt pushen, kein
+   neuer Lauf. Nicht-testbare Deltas (Doku, Versionsstempel,
+   Lockfile-Metadaten, Formatter-Nachzüge) und Test-only-Deltas lösen
+   keinen Lauf aus (gezielter Lauf genügt). **Der volle Runner ist
+   ausschließlich ein Tranchen-/Meilenstein-Gate**: genau 1× vom
+   beteiligten Agenten, nur wenn seit dem letzten Voll-Grün Production-Code
+   geändert wurde — niemals pro Prod-Code-Commit, niemals „wegen der
+   Commit-Anzahl", niemals als Ritual. Ausnahme: konkreter
+   Integrationsverdacht (paketübergreifende/shared Änderungen ohne
+   passende gezielte Suite, lange Einheit _ohne_ pro-Commit-Gates).
+   Gate-Kosten sind der Maßstab, nicht das Label: schnelle gezielte Suiten
+   (vitest gui/core, Sekunden bis wenige Minuten) sichern jeden
+   Workstream-Commit ab, der 13-min-Gesamtrunner ist das Meilenstein-
+   Instrument. Voll-Läufe sind **maschinenweit exklusiv und dedupliziert**,
+   getragen vom Seltenheitsprinzip — keine Board-Ansagen; optional
+   maschinenlokale Lock-Datei in `%TEMP%` (Zeitstempel+Agent+TTL). Ein
+   grüner Voll-Run auf HEAD X zählt für alle Agents auf HEAD X. Details,
+   Logfile- und Flake-Konvention: `dev-docs/coding-guidelines.md` §3,
+   `dev-docs/how-tos/test-baseline.md`.
 8. **Commit-Granularität: grob, niemals pro Datei. PIGGYBACK: alle pending
    Änderungen fahren mit — immer, in jeder Größe, zero deliberation.** Wenn
    committet wird, nimmt der Commit alles Dirty mit (Regel 6): keine

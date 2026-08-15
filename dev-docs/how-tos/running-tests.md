@@ -6,7 +6,7 @@ und das Repair-Log stehen in [test-baseline.md](test-baseline.md).
 ## Schnellstart
 
 ```powershell
-# Alles (sequentiell, ~13 Minuten) — der Standard-Gate vor Commits/Push
+# Alles (sequentiell, ~13 Minuten) — Meilenstein-Gate, kein Routine-Lauf
 npm run test:all
 
 # Nur bestimmte Suites
@@ -31,6 +31,22 @@ Am Ende steht eine Summary-Tabelle; Details pro Suite im Report-Dir
   im Suite-Verzeichnis). `binary` wird immer geskipt (Integrationstest
   braucht das gebaute Binary).
 - Pro Suite 20 min Timeout (`--timeout <min>` änderbar).
+- **Junction-Regel**: Nach Änderungen an `packages/fetch` /
+  `packages/openai-adapters` zuerst dort `npm run build` — sonst laufen
+  auch gefilterte Suites gegen stale `dist/` und beweisen nichts.
+
+## Ad-hoc-Einzelläufe (Logs)
+
+Manuelle Läufe außerhalb des Runners schreiben ihre Ausgabe in eine
+zeitgestempelte Datei (UTF-16-Falle beachten, environment-gotchas.md):
+
+```powershell
+cd <suite-dir>; npx vitest run <datei> 2>&1 | Out-File -Encoding utf8 "$env:TEMP\continue-test-report\manual\<yyyyMMdd-HHmmss>-<suite>.log"
+Get-Content "$env:TEMP\continue-test-report\manual\<...>.log" -Tail 40
+```
+
+Kein Tee-Object, kein nacktes `>`; Volltext auf Platte, Tail im Chat.
+Flake-Disziplin und Gate-Modell: coding-guidelines.md §3.
 
 ## Bei Failures
 

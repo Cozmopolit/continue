@@ -6,8 +6,10 @@ Gesammelte Fallstricke, die wiederholt Zeit gekostet haben. Referenziert von
 ## PowerShell
 
 - `&&` ist ungültig → `;` zur Verkettung verwenden.
-- `>` / `Out-File` schreibt UTF-16 → Dateien, die Tools als UTF-8 erwarten,
-  nie per Redirect schreiben.
+- `>` / `Out-File` / `Tee-Object` schreiben UTF-16 (PS 5.1) → Dateien, die
+  Tools als UTF-8 erwarten, nie per Redirect schreiben. Kanonische Form für
+  Logs: `… 2>&1 | Out-File -Encoding utf8 <datei>.log`, Tail per
+  `Get-Content -Tail` (s. running-tests.md „Ad-hoc-Einzelläufe").
 
 ## Git / Commits
 
