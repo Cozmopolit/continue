@@ -56,3 +56,52 @@ export const useDeleteCompaction = () => {
     );
   };
 };
+
+export const useForkWithSummary = () => {
+  const dispatch = useAppDispatch();
+  const ideMessenger = useContext(IdeMessengerContext);
+  const currentSessionId = useAppSelector((state) => state.session.id);
+  const isStreaming = useAppSelector((state) => state.session.isStreaming);
+
+  return async (index: number) => {
+    if (!currentSessionId || isStreaming) {
+      return;
+    }
+
+    try {
+      // Set loading state (source session shows the summary spinner panel)
+      dispatch(setCompactionLoading({ index, loading: true }));
+
+      // conversation-fork-with-summary.md: the source session stays untouched;
+      // errors are surfaced via toast instead of being swallowed.
+      const result = await ideMessenger.request(
+        "conversation/forkWithSummary",
+        {
+          index,
+          sessionId: currentSessionId,
+        },
+      );
+
+      if (result.status === "error") {
+        throw new Error(result.error);
+      }
+
+      // Switch to the freshly created fork session
+      dispatch(
+        loadSession({
+          sessionId: result.content.newSessionId,
+          saveCurrentSession: false,
+        }),
+      );
+    } catch (error) {
+      console.error("Error forking conversation:", error);
+      ideMessenger.post("showToast", [
+        "error",
+        "Failed to start new conversation with summary",
+      ]);
+    } finally {
+      // Clear loading state
+      dispatch(setCompactionLoading({ index, loading: false }));
+    }
+  };
+};

@@ -1,12 +1,16 @@
 import {
   ArrowsPointingInIcon,
+  ArrowTopRightOnSquareIcon,
   BarsArrowDownIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { ChatHistoryItem } from "core";
 import { renderChatMessage } from "core/util/messageContent";
 import { useAppSelector } from "../../redux/hooks";
-import { useCompactConversation } from "../../util/compactConversation";
+import {
+  useCompactConversation,
+  useForkWithSummary,
+} from "../../util/compactConversation";
 import { CopyIconButton } from "../gui/CopyIconButton";
 import HeaderButtonWithToolTip from "../gui/HeaderButtonWithToolTip";
 
@@ -41,6 +45,7 @@ export default function ResponseActions({
   const showLabel = isLast && (isPruned || percent >= 60);
 
   const compactConversation = useCompactConversation();
+  const forkWithSummary = useForkWithSummary();
 
   return (
     <div className="text-description-muted mx-2 flex cursor-default items-center justify-end space-x-1 bg-transparent pb-0 text-xs">
@@ -67,6 +72,17 @@ export default function ResponseActions({
           )}
         </div>
       </HeaderButtonWithToolTip>
+
+      {!item.continuedFromSessionId && (
+        <HeaderButtonWithToolTip
+          testId={`fork-button-${index}`}
+          text="Start new conversation with summary up to here"
+          tabIndex={-1}
+          onClick={() => forkWithSummary(index)}
+        >
+          <ArrowTopRightOnSquareIcon className="text-description-muted h-3.5 w-3.5" />
+        </HeaderButtonWithToolTip>
+      )}
 
       {isTruncated && (
         <HeaderButtonWithToolTip

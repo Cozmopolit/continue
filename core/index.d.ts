@@ -542,6 +542,12 @@ export interface ChatHistoryItem {
   reasoning?: Reasoning;
   appliedRules?: RuleMetadata[];
   conversationSummary?: string;
+  /** conversation-fork-with-summary.md: id of the predecessor session this
+      item was forked from (set only on the synthetic fork item) */
+  continuedFromSessionId?: string;
+  /** conversation-fork-with-summary.md: history index in the predecessor
+      session up to which (inclusive) the summary reaches */
+  forkedFromIndex?: number;
 }
 
 export interface LLMFullCompletionOptions extends BaseCompletionOptions {

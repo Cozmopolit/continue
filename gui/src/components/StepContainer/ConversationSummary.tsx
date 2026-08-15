@@ -2,7 +2,8 @@ import { TrashIcon } from "@heroicons/react/24/outline";
 import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/solid";
 import { ChatHistoryItem } from "core";
 import { useState } from "react";
-import { useAppSelector } from "../../redux/hooks";
+import { useAppDispatch, useAppSelector } from "../../redux/hooks";
+import { loadSession } from "../../redux/thunks/session";
 import { useDeleteCompaction } from "../../util/compactConversation";
 import { AnimatedEllipsis } from "../AnimatedEllipsis";
 import HeaderButtonWithToolTip from "../gui/HeaderButtonWithToolTip";
@@ -19,6 +20,9 @@ export default function ConversationSummary(props: ConversationSummaryProps) {
     (state) => state.session.compactionLoading[props.index] || false,
   );
   const deleteCompaction = useDeleteCompaction();
+  const dispatch = useAppDispatch();
+  // conversation-fork-with-summary.md: set only on the synthetic fork item
+  const continuedFrom = props.item.continuedFromSessionId;
 
   if (!props.item.conversationSummary && !isLoading) {
     return null;
@@ -52,6 +56,24 @@ export default function ConversationSummary(props: ConversationSummaryProps) {
             <ChevronDownIcon className="h-3 w-3" />
           )}
           <span className="flex-1">Conversation Summary</span>
+          {continuedFrom && (
+            <HeaderButtonWithToolTip
+              text="Open previous session"
+              onClick={(e) => {
+                e.stopPropagation();
+                void dispatch(
+                  loadSession({
+                    sessionId: continuedFrom,
+                    saveCurrentSession: true,
+                  }),
+                );
+              }}
+            >
+              <span className="hover:text-link text-xs underline">
+                ← Previous session
+              </span>
+            </HeaderButtonWithToolTip>
+          )}
           <HeaderButtonWithToolTip
             text="Delete summary"
             onClick={(e) => {

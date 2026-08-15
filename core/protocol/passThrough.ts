@@ -62,6 +62,7 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     "streamDiffLines",
     "chatDescriber/describe",
     "conversation/compact",
+    "conversation/forkWithSummary",
     // Board auto-topic-injection (board-auto-topic-injection.md): run-start
     // consumption of MsgBoard messages. Without this entry the request is
     // silently dropped by VsCodeMessenger (no webview listener registered)

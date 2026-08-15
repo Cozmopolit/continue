@@ -1,4 +1,4 @@
-import { ChatHistoryItem, ILLM, ToolResultChatMessage } from "..";
+import { ChatHistoryItem, ILLM, Session, ToolResultChatMessage } from "..";
 import { HistoryManager } from "./history";
 import { stripImages } from "./messageContent";
 
@@ -10,20 +10,24 @@ export interface CompactionParams {
 }
 
 /**
- * Compacts conversation history up to a specified index by generating a summary.
- * This helper function extracts the compaction logic from the main core handler.
+ * Generates a summary of the session's history up to (and including) index.
+ * Shared by in-place compaction (compactConversation) and session forking
+ * (conversation-fork-with-summary.md): incremental re-compaction (integrates
+ * the most recent previous summary, excluding one on the target item itself),
+ * explicit "Tool cancelled" results for dangling tool calls, fixed 6-point
+ * prompt, single non-streaming chat call, images stripped from the result.
  *
- * @param params - Object containing sessionId, index, historyManager, and currentModel
- * @returns Promise<void> - Updates the session with the conversation summary
+ * @param session - The already loaded session (read-only here)
+ * @param index - Summarize history up to and including this index
+ * @param currentModel - The chat model used to generate the summary
+ * @returns The generated summary text (images stripped)
+ * @throws Error when the effective summarize input contains no non-empty message
  */
-export async function compactConversation({
-  sessionId,
-  index,
-  historyManager,
-  currentModel,
-}: CompactionParams): Promise<void> {
-  // Get the current session
-  const session = historyManager.load(sessionId);
+export async function generateConversationSummary(
+  session: Session,
+  index: number,
+  currentModel: ILLM,
+): Promise<string> {
   const historyUpToIndex = session.history.slice(0, index + 1);
 
   // Apply the same filtering logic as in constructMessages, but exclude the target message
@@ -74,6 +78,21 @@ export async function compactConversation({
     }
   });
 
+  // conversation-fork-with-summary.md: refuse degenerate inputs (e.g. forking
+  // at the synthetic fork item, whose only message is empty and whose own
+  // summary is excluded from the re-compaction search above)
+  const hasNonEmptyMessage = filteredHistory.some((item) => {
+    const content = item.message.content;
+    return typeof content === "string"
+      ? content.trim().length > 0
+      : Array.isArray(content) && content.length > 0;
+  });
+  if (!hasNonEmptyMessage && !summaryContent) {
+    throw new Error(
+      "Cannot generate summary: effective input contains no non-empty messages",
+    );
+  }
+
   // If there's a previous summary, include it as a user message at the beginning
   if (summaryContent) {
     messages.unshift({
@@ -95,11 +114,36 @@ export async function compactConversation({
     {},
   );
 
+  return stripImages(response.content);
+}
+
+/**
+ * Compacts conversation history up to a specified index by generating a
+ * summary and storing it on the target history item (non-destructive; the
+ * history itself is kept).
+ *
+ * @param params - Object containing sessionId, index, historyManager, and currentModel
+ * @returns Promise<void> - Updates the session with the conversation summary
+ */
+export async function compactConversation({
+  sessionId,
+  index,
+  historyManager,
+  currentModel,
+}: CompactionParams): Promise<void> {
+  // Get the current session
+  const session = historyManager.load(sessionId);
+  const summary = await generateConversationSummary(
+    session,
+    index,
+    currentModel,
+  );
+
   // Update the target message with the conversation summary
   const updatedHistory = [...session.history];
   updatedHistory[index] = {
     ...updatedHistory[index],
-    conversationSummary: stripImages(response.content),
+    conversationSummary: summary,
   };
 
   // Update the session with the new history

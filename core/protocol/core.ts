@@ -258,6 +258,13 @@ export type ToCoreFromIdeOrWebviewProtocol = {
     },
     string | undefined,
   ];
+  "conversation/forkWithSummary": [
+    {
+      index: number;
+      sessionId: string;
+    },
+    { newSessionId: string },
+  ];
   "stats/getTokensPerDay": [
     undefined,
     { day: string; promptTokens: number; generatedTokens: number }[],

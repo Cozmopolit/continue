@@ -22,6 +22,7 @@ import { createNewPromptFileV2 } from "./promptFiles/createNewPromptFile";
 import { callTool } from "./tools/callTool";
 import { ChatDescriber } from "./util/chatDescriber";
 import { compactConversation } from "./util/conversationCompaction";
+import { forkSessionWithSummary } from "./util/conversationFork";
 import { GlobalContext } from "./util/GlobalContext";
 import historyManager from "./util/history";
 import { editConfigFile, migrateV1DevDataFiles } from "./util/paths";
@@ -646,6 +647,25 @@ export class Core {
         Logger.error(`Error compacting conversation: ${error}`);
         return undefined;
       }
+    });
+
+    on("conversation/forkWithSummary", async (msg) => {
+      const currentModel = (await this.configHandler.loadConfig()).config
+        ?.selectedModelByRole.chat;
+
+      if (!currentModel) {
+        throw new Error("No chat model selected");
+      }
+
+      // conversation-fork-with-summary.md: errors propagate to the GUI
+      // (toast) — unlike conversation/compact, nothing is swallowed here.
+      const newSessionId = await forkSessionWithSummary({
+        sessionId: msg.data.sessionId,
+        index: msg.data.index,
+        historyManager,
+        currentModel,
+      });
+      return { newSessionId };
     });
 
     // Autocomplete
