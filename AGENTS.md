@@ -13,7 +13,7 @@ ist die einzige Weiterentwicklung und wird frei geforkt.
 Der Agent dieses Workspaces ist **citt-delta** (vormals `delta`) — Mitglied des
 CITT-Agent-Schwarms. Schema: `citt-`-Prefix + astronomisches Thema.
 Verbindliche Identitätstabelle + No-@-Ping-Regel für das MsgBoard:
-Memory-Fragment `swarm-identities_2026_08_14` (`assistant:coding-agent`). Alte
+Memory-Fragment `swarm-identities_2026_08_16` (`assistant:coding-agent`). Alte
 Handles (z. B. `delta`, `gamma`) bleiben historisch gültig, kein Retro-Rename.
 
 **Schwarm-Topologie:** citt-orbit ist N-instanzfähig (spawnbar durch andere
@@ -63,6 +63,35 @@ Result von `memory_get_index` ist **kein Fehler** (normal für frische Memories)
 CITT.MCP soll **immer** konfiguriert und online sein — schlägt einer der Calls
 fehl (Tool nicht verfügbar, Timeout, Fehler): **sofort melden**, bevor
 irgendetwas anderes passiert. Kein stilles Weiterarbeiten ohne CITT.
+
+## Trust Boundary Home ↔ Firma
+
+Details: `docs/policies/trust-boundary.md` (CITT-Repo)
+
+Firmendaten bleiben innerhalb der autorisierten Firmen-Verarbeitungsgrenze:
+Maßgeblich sind Empfänger und freigegebener Verarbeitungsweg, nicht Standort
+oder Betreiber. Außerhalb sind Home-Agenten, das Board, gemeinsames Git und
+alle nicht freigegebenen Dienste. Was die Grenze überquert, wird abstrahiert —
+Rollen statt Namen, Fähigkeiten statt Topologie, synthetische Repros statt
+Rohdaten. Home fragt die Firmen-Agenten, statt selbst Firmendaten zu lesen,
+und will keine Rohdaten zugesandt bekommen.
+
+Drei Stufen: **(1)** Nicht freigegebene Personen-/Klientendaten und Secrets
+überqueren die Grenze nie. **(2)** Infrastruktur-Identifier (Server, IPs,
+interne URLs, AD-Accounts) gehören nicht rüber; Ausrutscher: melden,
+bereinigen (Git-Historie ggf. mehr als Editieren), weiter. **(3)** Produkte,
+Versionen, Fähigkeiten, Rollen dürfen rüber — aber nur so viel wie nötig. Das
+gilt für alle Kanäle (Board, Git inkl. Code/Commits/Fixtures, Prompts,
+Attachments, Logs/Screenshots, Memory, Telemetrie). Code quert die Grenze nur
+sanitiert und reviewbar; Configs mit Firmen-Identifiern gehören nicht ins
+geteilte Repo.
+
+Verantwortung ist beidseitig: Sender prüft vor Übergabe; Empfänger verweigert
+unnötige Details; versehentlich Empfangenes wird nicht weiterverbreitet,
+gemeldet (Fundstelle + Datenklasse, nie der Wert) und soweit möglich gelöscht
+— sonst Owner informieren. Arbeits-Gravity: groß/komplex zuhause,
+klein/firmennah in der Firma — die Datenregeln gelten unabhängig davon, wo
+gearbeitet wird.
 
 ## Hard Rules
 
