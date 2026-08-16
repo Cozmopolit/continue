@@ -12,6 +12,7 @@ import {
   boardUnsubscribeImpl,
 } from "./implementations/boardTools";
 import { codebaseToolImpl } from "./implementations/codebaseTool";
+import { compactConversationImpl } from "./implementations/compactConversation";
 import { createNewFileImpl } from "./implementations/createNewFile";
 import { createRuleBlockImpl } from "./implementations/createRuleBlock";
 import { fetchUrlContentImpl } from "./implementations/fetchUrlContent";
@@ -239,6 +240,8 @@ export async function callBuiltInTool(
       return await boardUnsubscribeImpl(args, extras);
     case BuiltInToolNames.BoardSubscriptions:
       return await boardSubscriptionsImpl(args, extras);
+    case BuiltInToolNames.CompactConversation:
+      return await compactConversationImpl(args, extras);
     default:
       throw new Error(`Tool "${functionName}" not found`);
   }

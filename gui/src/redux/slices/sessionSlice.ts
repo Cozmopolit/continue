@@ -1,10 +1,4 @@
-import {
-  ActionReducerMapBuilder,
-  AsyncThunk,
-  PayloadAction,
-  createSelector,
-  createSlice,
-} from "@reduxjs/toolkit";
+import { PayloadAction, createSelector, createSlice } from "@reduxjs/toolkit";
 import { JSONContent } from "@tiptap/react";
 import {
   ApplyState,
@@ -249,6 +243,13 @@ type SessionState = {
   contextTokens?: { inputTokens: number; availableTokens: number };
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
+  // Agent self-compaction (agent-self-compaction.md): a successful
+  // compact_conversation tool call schedules a Type-1 compaction for the end
+  // of the current run.
+  pendingSelfCompaction: boolean;
+  // Set by abortStream (every abort/error path), cleared by setActive (run
+  // start) — the run-end compaction trigger drops pending requests when set.
+  streamAborted: boolean;
   // Board auto-topic-injection (board-auto-topic-injection.md, revision 2):
   // accumulated consumed MsgBoard messages of this session (bounded window)
   // plus the TTL throttle timestamp; rendered into an always-apply rule on
@@ -274,6 +275,8 @@ export const INITIAL_SESSION_STATE: SessionState = {
   lastSessionId: undefined,
   newestToolbarPreviewForInput: {},
   compactionLoading: {},
+  pendingSelfCompaction: false,
+  streamAborted: false,
   board: { ...EMPTY_BOARD_SESSION_STATE },
 };
 
@@ -313,6 +316,7 @@ export const sessionSlice = createSlice({
     },
     setActive: (state) => {
       state.isStreaming = true;
+      state.streamAborted = false;
     },
     setIsGatheringContext: (state, { payload }: PayloadAction<boolean>) => {
       const curMessage = state.history.at(-1);
@@ -678,6 +682,7 @@ export const sessionSlice = createSlice({
     abortStream: (state) => {
       state.streamAborter.abort();
       state.streamAborter = new AbortController();
+      state.streamAborted = true;
     },
     streamUpdate: (state, action: PayloadAction<ChatMessage[]>) => {
       if (state.history.length) {
@@ -851,6 +856,9 @@ export const sessionSlice = createSlice({
       state.symbols = {};
       // Board accumulation/throttle is per session (board-auto-topic-injection.md)
       state.board = { ...EMPTY_BOARD_SESSION_STATE };
+      // A scheduled self-compaction belongs to the previous session
+      // (agent-self-compaction.md).
+      state.pendingSelfCompaction = false;
 
       state.inlineErrorMessage = undefined;
       state.isPruned = false;
@@ -1156,6 +1164,9 @@ export const sessionSlice = createSlice({
         delete state.compactionLoading[index];
       }
     },
+    setPendingSelfCompaction: (state, action: PayloadAction<boolean>) => {
+      state.pendingSelfCompaction = action.payload;
+    },
     setInlineErrorMessage: (
       state,
       action: PayloadAction<SessionState["inlineErrorMessage"]>,
@@ -1194,21 +1205,16 @@ export const sessionSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    addPassthroughCases(builder, [streamResponseThunk]);
+    builder
+      .addCase(streamResponseThunk.pending, (_state, _action) => {})
+      .addCase(streamResponseThunk.fulfilled, (_state, _action) => {})
+      .addCase(streamResponseThunk.rejected, (state) => {
+        // Agent self-compaction (agent-self-compaction.md): rejected runs
+        // never compact (belt-and-suspenders next to the streamAborted gate).
+        state.pendingSelfCompaction = false;
+      });
   },
 });
-
-function addPassthroughCases(
-  builder: ActionReducerMapBuilder<SessionState>,
-  thunks: AsyncThunk<any, any, any>[],
-) {
-  thunks.forEach((thunk) => {
-    builder
-      .addCase(thunk.fulfilled, (_state, _action) => {})
-      .addCase(thunk.rejected, (_state, _action) => {})
-      .addCase(thunk.pending, (_state, _action) => {});
-  });
-}
 
 export const selectApplyStateByStreamId = createSelector(
   [
@@ -1279,6 +1285,7 @@ export const {
   setIsPruned,
   setContextPercentage,
   setCompactionLoading,
+  setPendingSelfCompaction,
 } = sessionSlice.actions;
 
 export const { selectIsGatheringContext } = sessionSlice.selectors;

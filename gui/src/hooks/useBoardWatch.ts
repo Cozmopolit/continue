@@ -49,6 +49,10 @@ const WAKE_DOC: JSONContent = {
  * - Priming: on entering the active state, consume once WITHOUT waking
  *   (cursor hygiene — the just-finished run's own posts and already-injected
  *   messages must not wake).
+ * - Compaction pause: while a compaction runs OR a self-compaction is
+ *   pending, the watcher is fully paused — priming included. The finishing
+ *   loadSession resets the board buffer, so no consume may race it
+ *   (agent-self-compaction.md, board-wake-mode.md).
  * - Composer guard: never dispatch while the user has text in the composer;
  *   accumulated messages render in the next run regardless.
  * - Empty-conversation guard: never dispatch into a conversation without any
@@ -71,7 +75,11 @@ export function useBoardWatch() {
   const { mainEditor } = useMainEditor();
   const boardWatchMode = useAppSelector((store) => store.ui.boardWatchMode);
   const isIdle = useAppSelector(selectIsConversationIdle);
-  const active = boardWatchMode && isIdle;
+  // Compaction pause (agent-self-compaction.md): pending counts as running —
+  // neither priming nor ticks may race the loadSession that resets the board
+  // buffer.
+  const compactionRunning = useAppSelector(selectIsCompactionRunning);
+  const active = boardWatchMode && isIdle && !compactionRunning;
 
   // The editor can mount after the watcher starts — mirror into a ref so the
   // interval callback always reads the current instance.

@@ -85,6 +85,8 @@ describe("sessionSlice streamUpdate", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
+    pendingSelfCompaction: false,
+    streamAborted: false,
     board: {
       messages: [],
       droppedCount: 0,
@@ -489,6 +491,8 @@ describe("sessionSlice setContextPercentage", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
+    pendingSelfCompaction: false,
+    streamAborted: false,
     board: {
       messages: [],
       droppedCount: 0,
@@ -587,6 +591,8 @@ describe("sessionSlice endActiveReasoning", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
+    pendingSelfCompaction: false,
+    streamAborted: false,
     board: {
       messages: [],
       droppedCount: 0,
@@ -702,6 +708,8 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
+    pendingSelfCompaction: false,
+    streamAborted: false,
     board: {
       messages: [],
       droppedCount: 0,
@@ -969,6 +977,8 @@ describe("sessionSlice newSession board reset", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
+    pendingSelfCompaction: false,
+    streamAborted: false,
     board: {
       messages: [
         {

@@ -7,10 +7,12 @@ import { resolveEditorContent } from "../../components/mainInput/TipTapEditor/ut
 import { selectSelectedChatModel } from "../slices/configSlice";
 import {
   resetNextCodeBlockToApplyIndex,
+  setPendingSelfCompaction,
   submitEditorAndInitAtIndex,
   updateHistoryItemAtIndex,
 } from "../slices/sessionSlice";
 import { ThunkApiType } from "../store";
+import { compactConversationThunk } from "./compactConversation";
 import { streamNormalInput } from "./streamNormalInput";
 import { streamThunkWrapper } from "./streamThunkWrapper";
 import { updateFileSymbolsFromFiles } from "./updateFileSymbols";
@@ -100,5 +102,27 @@ export const streamResponseThunk = createAsyncThunk<
         );
       }),
     );
+
+    // Agent self-compaction (agent-self-compaction.md): a successful
+    // compact_conversation call during the run scheduled a Type-1 compaction
+    // for right here — after the run finished and the session was saved by
+    // the wrapper. Aborted runs (D1), edit mode, and already-running
+    // compactions drop the request instead. The pending flag doubles as the
+    // board-wake gate (selectIsCompactionRunning) for the whole window.
+    const state = getState();
+    if (state.session.pendingSelfCompaction) {
+      const sessionId = state.session.id;
+      const lastIndex = state.session.history.length - 1;
+      const compactable =
+        !state.session.streamAborted &&
+        !state.session.isInEdit &&
+        !Object.values(state.session.compactionLoading).some(Boolean);
+      dispatch(setPendingSelfCompaction(false));
+      if (compactable && sessionId && lastIndex >= 0) {
+        await dispatch(
+          compactConversationThunk({ sessionId, index: lastIndex }),
+        );
+      }
+    }
   },
 );

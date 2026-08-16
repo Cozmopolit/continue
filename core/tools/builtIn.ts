@@ -18,6 +18,9 @@ export enum BuiltInToolNames {
   CodebaseTool = "codebase",
   ReadSkill = "read_skill",
 
+  // Agent self-compaction (agent-self-compaction.md)
+  CompactConversation = "compact_conversation",
+
   // Board auto-topic-injection (board-auto-topic-injection.md)
   BoardSubscribe = "board_subscribe",
   BoardUnsubscribe = "board_unsubscribe",

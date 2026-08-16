@@ -5,11 +5,11 @@ import {
   setCompactionLoading,
   deleteCompaction,
 } from "../redux/slices/sessionSlice";
+import { compactConversationThunk } from "../redux/thunks/compactConversation";
 import { loadSession, saveCurrentSession } from "../redux/thunks/session";
 
 export const useCompactConversation = () => {
   const dispatch = useAppDispatch();
-  const ideMessenger = useContext(IdeMessengerContext);
   const currentSessionId = useAppSelector((state) => state.session.id);
 
   return async (index: number) => {
@@ -17,31 +17,12 @@ export const useCompactConversation = () => {
       return;
     }
 
-    try {
-      // Set loading state
-      dispatch(setCompactionLoading({ index, loading: true }));
-
-      await ideMessenger.request("conversation/compact", {
-        index,
-        sessionId: currentSessionId,
-      });
-
-      // Reload the current session to refresh the conversation state.
-      // Awaited: the compactionLoading flag doubles as the board-wake gate
-      // and must only clear once the state swap (which resets the board
-      // buffer) is done (board-wake-mode.md, amendment 2026-08-16 II).
-      await dispatch(
-        loadSession({
-          sessionId: currentSessionId,
-          saveCurrentSession: false,
-        }),
-      );
-    } catch (error) {
-      console.error("Error compacting conversation:", error);
-    } finally {
-      // Clear loading state
-      dispatch(setCompactionLoading({ index, loading: false }));
-    }
+    // Agent self-compaction (agent-self-compaction.md): shared hook-free
+    // runner — identical semantics for the UI button and the run-end
+    // trigger (streamResponseThunk).
+    await dispatch(
+      compactConversationThunk({ sessionId: currentSessionId, index }),
+    );
   };
 };
 

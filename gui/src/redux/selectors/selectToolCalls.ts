@@ -98,8 +98,12 @@ export const selectConversationHasUserMessage = createSelector(
 // consumed mid-compaction would advance the board cursor and then vanish
 // from the context window. Both compaction hooks set/clear compactionLoading
 // around the whole operation (including the awaited state swap), so any
-// truthy entry means "compaction in progress".
+// truthy entry means "compaction in progress". A pending self-compaction
+// (compact_conversation tool call, agent-self-compaction.md) gates the same
+// way: from the tool call until the post-run compaction finishes.
 export const selectIsCompactionRunning = createSelector(
   (store: RootState) => store.session.compactionLoading,
-  (compactionLoading) => Object.values(compactionLoading).some(Boolean),
+  (store: RootState) => store.session.pendingSelfCompaction,
+  (compactionLoading, pendingSelfCompaction) =>
+    pendingSelfCompaction || Object.values(compactionLoading).some(Boolean),
 );

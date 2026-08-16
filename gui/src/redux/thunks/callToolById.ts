@@ -1,6 +1,6 @@
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { ContextItem, McpUiState } from "core";
-import { CLIENT_TOOLS_IMPLS } from "core/tools/builtIn";
+import { BuiltInToolNames, CLIENT_TOOLS_IMPLS } from "core/tools/builtIn";
 import { ContinueError, ContinueErrorReason } from "core/util/errors";
 
 import { callClientTool } from "../../util/clientTools/callClientTool";
@@ -9,6 +9,7 @@ import {
   acceptToolCall,
   errorToolCall,
   setInactive,
+  setPendingSelfCompaction,
   setToolCallCalling,
   updateToolCallOutput,
 } from "../slices/sessionSlice";
@@ -134,6 +135,16 @@ export const callToolById = createAsyncThunk<
           toolCallId,
         }),
       );
+
+      // Agent self-compaction (agent-self-compaction.md): a successful
+      // compact_conversation call schedules the compaction for the end of the
+      // current run (triggered post-wrapper by streamResponseThunk).
+      if (
+        toolCallState.toolCall.function.name ===
+        BuiltInToolNames.CompactConversation
+      ) {
+        dispatch(setPendingSelfCompaction(true));
+      }
     }
 
     // Send to the LLM to continue the conversation
