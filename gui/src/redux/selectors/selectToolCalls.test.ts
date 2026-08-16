@@ -4,6 +4,7 @@ import { getEmptyRootState } from "../../util/test/mockStore";
 import { RootState } from "../store";
 import {
   selectConversationHasUserMessage,
+  selectIsCompactionRunning,
   selectIsConversationIdle,
 } from "./selectToolCalls";
 
@@ -126,6 +127,48 @@ describe("selectConversationHasUserMessage", () => {
 
   it("is false with assistant messages only (no user message yet)", () => {
     expect(selectConversationHasUserMessage(stateWith([assistantItem()]))).toBe(
+      false,
+    );
+  });
+});
+
+// Board wake mode (board-wake-mode.md, amendment 2026-08-16 II): while a
+// compaction is in flight the watcher must skip the whole tick — the
+// finishing loadSession resets the per-session board buffer, so consuming
+// mid-compaction would lose messages after the cursor already advanced.
+describe("selectIsCompactionRunning", () => {
+  function stateWithCompactionLoading(loading: Record<number, boolean>) {
+    const state = stateWith([]);
+    state.session.compactionLoading = loading;
+    return state;
+  }
+
+  it("is false when no compaction is running", () => {
+    expect(selectIsCompactionRunning(stateWithCompactionLoading({}))).toBe(
+      false,
+    );
+  });
+
+  it("is true while a compaction is loading", () => {
+    expect(
+      selectIsCompactionRunning(stateWithCompactionLoading({ 2: true })),
+    ).toBe(true);
+  });
+
+  it("is true when any of multiple compactions is loading", () => {
+    expect(
+      selectIsCompactionRunning(
+        stateWithCompactionLoading({ 0: true, 4: true }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false after the loading flag was cleared", () => {
+    // Mirrors the reducer: clearing deletes the entry instead of storing
+    // false — both shapes must read as "not running".
+    const cleared: Record<number, boolean> = { 2: true };
+    delete cleared[2];
+    expect(selectIsCompactionRunning(stateWithCompactionLoading(cleared))).toBe(
       false,
     );
   });

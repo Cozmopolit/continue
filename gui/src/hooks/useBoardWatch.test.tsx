@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { MockIdeMessenger } from "../context/MockIdeMessenger";
-import { setActive } from "../redux/slices/sessionSlice";
+import { setActive, setCompactionLoading } from "../redux/slices/sessionSlice";
 import { setBoardWatchMode } from "../redux/slices/uiSlice";
 import { RootState } from "../redux/store";
 import { createMockStore, getEmptyRootState } from "../util/test/mockStore";
@@ -93,6 +93,7 @@ type SetupOptions = {
   boardWatchMode?: boolean;
   isStreaming?: boolean;
   history?: History;
+  compactionLoading?: Record<number, boolean>;
 };
 
 function setup(options: SetupOptions = {}) {
@@ -103,6 +104,9 @@ function setup(options: SetupOptions = {}) {
   // Default: a started conversation — wake dispatches require at least one
   // user message (empty-conversation guard, board-wake-mode.md).
   state.session.history = options.history ?? [userHistoryItem()];
+  if (options.compactionLoading) {
+    state.session.compactionLoading = options.compactionLoading;
+  }
   const store = createMockStore(state, messenger);
   const requestSpy = vi.spyOn(messenger, "request");
   const boardCalls = () =>
@@ -231,6 +235,58 @@ describe("useBoardWatch", () => {
 
     expect(wakeCalls()).toHaveLength(0);
     // still consumed — the messages render in the first real run's injection
+    expect((store.getState() as RootState).session.board.messages).toEqual([
+      BOARD_MESSAGE,
+    ]);
+  });
+
+  it("skips ticks while a compaction runs and wakes once it completes", async () => {
+    const { messenger, store, boardCalls } = setup({
+      compactionLoading: { 2: true },
+    });
+    messenger.responses["board/consumePending"] = EMPTY_RESULT;
+    await renderProbe(store, messenger);
+    expect(boardCalls()).toHaveLength(1); // priming only
+
+    // compaction in flight: the tick is skipped entirely — no consume, no
+    // wake; the messages stay on the board (cursor untouched)
+    messenger.responses["board/consumePending"] = PENDING_RESULT;
+    await tick();
+    expect(boardCalls()).toHaveLength(1);
+    expect(wakeCalls()).toHaveLength(0);
+    expect((store.getState() as RootState).session.board.messages).toEqual([]);
+
+    // compaction done: the next tick picks the message up and wakes
+    await act(async () => {
+      store.dispatch(setCompactionLoading({ index: 2, loading: false }));
+    });
+    await tick();
+    expect(boardCalls()).toHaveLength(2);
+    expect(wakeCalls()).toHaveLength(1);
+    expect((store.getState() as RootState).session.board.messages).toEqual([
+      BOARD_MESSAGE,
+    ]);
+  });
+
+  it("does not wake when a compaction starts while the fetch is in flight", async () => {
+    const { messenger, store } = setup();
+    let calls = 0;
+    messenger.responseHandlers["board/consumePending"] = async () => {
+      calls += 1;
+      if (calls === 2) {
+        // the user starts a compaction while the tick's fetch is in flight
+        store.dispatch(setCompactionLoading({ index: 0, loading: true }));
+        return PENDING_RESULT;
+      }
+      return EMPTY_RESULT;
+    };
+    await renderProbe(store, messenger);
+
+    await tick();
+
+    expect(wakeCalls()).toHaveLength(0);
+    // consumed anyway (consume happens before the re-check) — the messages
+    // render in the next run's injection block
     expect((store.getState() as RootState).session.board.messages).toEqual([
       BOARD_MESSAGE,
     ]);

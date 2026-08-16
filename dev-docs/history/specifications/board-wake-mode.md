@@ -150,7 +150,7 @@ Kontext). Prüfen; bei Nichtbedarf diesen Run sofort beenden.`
       außerhalb des Providers (Rerender-Isolation) und hätte die
       Editor-Instanz nie gesehen
 - [x] `WAKE_DOC`-Konstante + `WAKE_MODIFIERS` (`{useCodebase:false,
-  noContext:true}`) im Hook
+noContext:true}`) im Hook
 
 ## Amendment 2026-08-16: Empty-Conversation-Guard
 
@@ -194,3 +194,66 @@ Assistant-only), `useBoardWatch.test.tsx` +1 (leere Conversation: kein Wake,
 aber Konsum in den Session-Puffer); das Setup der Hook-Tests seedet jetzt
 per Default eine User-Message (Default-Fall „gestartete Conversation").
 gui-Suite: 525 → 530 Tests.
+
+## Amendment 2026-08-16 (II): Compaction-Gate
+
+**Anlass:** Feature Request des Users nach beobachtetem Chaos: Während eine
+Compaction läuft (inline `conversation/compact` oder „trim in eine neue
+Conversation" = `conversation/forkWithSummary`) darf der Board-Watcher
+weder konsumieren noch wecken.
+
+**Befund (Evaluation):** Das Problem ist real, mit drei Mechanismen:
+
+1. **Verlust der Session-Fenster-Inhalte (Hauptgrund):** Der Watcher
+   konsumiert zuerst (Cursor im `board-state.json` wird sofort
+   weitergeschoben). Beide Compaction-Modi beenden mit `loadSession`, das
+   durch den `newSession`-Reducer geht — der setzt explizit
+   `state.board = { ...EMPTY_BOARD_SESSION_STATE }`. Messages, die während
+   der Compaction konsumiert wurden, sind danach dauerhaft aus dem
+   Kontext-Fenster weg (Cursor schon vorgerückt, kein Re-Consume).
+2. **Wake-Injektion überlebt den History-Umbau:** `insertMessageAtNextRunStart`
+   wird vom `newSession`-Reducer nicht angefasst; ein während der Compaction
+   gesetzter Wake landet im nächsten Run in der umgeschriebenen Conversation.
+3. **Flag-Race in den Compaction-Hooks:** `dispatch(loadSession(...))` wurde
+   in `useCompactConversation`/`useForkWithSummary` nicht awaited — das
+   `finally` räumte das Loading-Flag ab, bevor der State-Swap durch war.
+
+**Umsetzung:**
+
+- Neuer Selector `selectIsCompactionRunning`
+  (`gui/src/redux/selectors/selectToolCalls.ts`):
+  `Object.values(state.session.compactionLoading).some(Boolean)` — dasselbe
+  Redux-Flag, das auch der Compaction-Spinner nutzt; beide Compaction-Hooks
+  setzen/räumen es per `setCompactionLoading` in try/finally, daher kein
+  Stuck-Flag (auch nicht bei Fork-Mode: das Flag wird nach dem
+  Session-Wechsel auf der neuen, leeren Session gelöscht).
+- `useBoardWatch`: **ganzer Tick wird geskippt** (kein Consume, kein Wake),
+  solange eine Compaction läuft — Gate am Tick-Anfang vor
+  `fetchBoardPending` plus Recheck unmittelbar vor dem Wake-Dispatch (deckt
+  den Fall „Compaction beginnt, während der Fetch in flight ist"; dort ist
+  der Konsum bereits passiert, nur der Wake wird blockiert — akzeptiertes
+  Restrisiko, dieselbe Klasse wie der bestehende „Run beginnt in
+  flight"-Guard). Die Messages bleiben auf dem Board und werden im ersten
+  Tick nach Abschluss abgeholt — kein Verlust, nur Delay.
+- `compactConversation.ts`: beide `loadSession`-Dispatches werden jetzt
+  awaited, damit das Loading-Flag exakt „fertig inkl. State-Swap" bedeutet.
+  Nebeneffekt: der Spinner bleibt korrekt stehen, bis die UI den neuen
+  Zustand zeigt.
+- Priming (Mount/Toggle-on) bleibt bewusst ungegatet: es aktiviert nur,
+  wenn der User den Toggle setzt — da läuft keine Compaction. Ein
+  Webview-Reload mitten in einer Compaction verliert das Flag
+  (in-memory) — derselbe Rand, an dem heute auch der Compaction-Spinner
+  verloren geht.
+
+**Interaktion mit Amendment I:** Nach Fork-Mode ist die neue Conversation
+leer (keine User-Message) → zusätzlich greift der Empty-Conversation-Guard,
+d. h. kein Wake in die frische Conversation bis zur ersten echten
+User-Message. Konsistente Semantik.
+
+**Abgrenzung zur „Keine Guards"-Entscheidung:** wie bei Amendment I —
+dies ist Korrektheit (State-Konsistenz), keine Lärm-/Last-Policy.
+
+**Tests:** `selectToolCalls.test.ts` +4 (leer / ein Index / mehrere Indizes /
+cleared per delete), `useBoardWatch.test.tsx` +2 (Tick-Skip während
+Compaction + Wake nach Abschluss; Compaction beginnt in flight → kein Wake,
+aber Konsum). gui-Suite: 530 → 536 Tests.

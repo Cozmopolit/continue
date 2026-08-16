@@ -26,8 +26,11 @@ export const useCompactConversation = () => {
         sessionId: currentSessionId,
       });
 
-      // Reload the current session to refresh the conversation state
-      dispatch(
+      // Reload the current session to refresh the conversation state.
+      // Awaited: the compactionLoading flag doubles as the board-wake gate
+      // and must only clear once the state swap (which resets the board
+      // buffer) is done (board-wake-mode.md, amendment 2026-08-16 II).
+      await dispatch(
         loadSession({
           sessionId: currentSessionId,
           saveCurrentSession: false,
@@ -86,8 +89,11 @@ export const useForkWithSummary = () => {
         throw new Error(result.error);
       }
 
-      // Switch to the freshly created fork session
-      dispatch(
+      // Switch to the freshly created fork session. Awaited for the same
+      // reason as in useCompactConversation: the compactionLoading flag is
+      // the board-wake gate and must outlive the state swap
+      // (board-wake-mode.md, amendment 2026-08-16 II).
+      await dispatch(
         loadSession({
           sessionId: result.content.newSessionId,
           saveCurrentSession: false,

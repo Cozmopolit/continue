@@ -90,3 +90,16 @@ export const selectConversationHasUserMessage = createSelector(
   (store: RootState) => store.session.history,
   (history) => history.some((item) => item.message.role === "user"),
 );
+
+// Board wake mode (board-wake-mode.md, amendment 2026-08-16 II): while a
+// compaction is in flight (inline compact or fork-with-summary), the watcher
+// must neither consume nor wake — the finishing loadSession runs through the
+// newSession reducer, which resets the per-session board buffer; messages
+// consumed mid-compaction would advance the board cursor and then vanish
+// from the context window. Both compaction hooks set/clear compactionLoading
+// around the whole operation (including the awaited state swap), so any
+// truthy entry means "compaction in progress".
+export const selectIsCompactionRunning = createSelector(
+  (store: RootState) => store.session.compactionLoading,
+  (compactionLoading) => Object.values(compactionLoading).some(Boolean),
+);
