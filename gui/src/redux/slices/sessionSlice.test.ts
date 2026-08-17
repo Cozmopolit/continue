@@ -1039,3 +1039,173 @@ describe("sessionSlice newSession board reset", () => {
     expect(newState.title).toBe("Restored");
   });
 });
+
+describe("Thinking reasoning_details stream accumulation (resent-user-messages incident)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    let callCount = 0;
+    mockUuidv4.mockImplementation(() => `mock-uuid-${++callCount}`);
+    mockRenderChatMessage.mockImplementation((message: ChatMessage) => {
+      if (typeof message.content === "string") {
+        return message.content;
+      }
+      return "";
+    });
+    mockAddToolCallDeltaToState.mockImplementation((delta, state) => {
+      return {
+        status: "generating" as const,
+        toolCall: {
+          id: delta.id || "mock-tool-id",
+          type: "function" as const,
+          function: {
+            name: delta.function?.name || "mock-function",
+            arguments: delta.function?.arguments || "{}",
+          },
+        },
+        toolCallId: delta.id || "mock-tool-id",
+        parsedArgs: {},
+      };
+    });
+  });
+
+  // Self-contained state factory (the createInitialState above is scoped to
+  // the streamUpdate describe). Shape mirrors "sessionSlice newSession board
+  // reset" below.
+  const createInitialState = (): any => ({
+    lastSessionId: undefined,
+    allSessionMetadata: [],
+    history: [
+      {
+        message: {
+          role: "user" as const,
+          content: "This is a test.",
+          id: "initial-user-message",
+        },
+        contextItems: [],
+      },
+    ] as ChatHistoryItemWithMessageId[],
+    isStreaming: false,
+    title: "Test Session",
+    id: "test-session-id",
+    streamAborter: new AbortController(),
+    symbols: {},
+    mode: "chat" as const,
+    isInEdit: false,
+    codeBlockApplyStates: { states: [], curIndex: 0 },
+    newestToolbarPreviewForInput: {},
+    isSessionMetadataLoading: false,
+    compactionLoading: {},
+    pendingSelfCompaction: false,
+    streamAborted: false,
+    board: {
+      messages: [],
+      droppedCount: 0,
+      omittedTotal: 0,
+      omittedOldestId: undefined,
+      tooLargeIds: [],
+      lastFetchAt: undefined,
+    },
+  });
+
+  // OpenRouter-style thinking chunks: every chunk carries both content and a
+  // reasoning_details block for the same delta.
+  const thinkingChunk = (text: string): ChatMessage => ({
+    role: "thinking",
+    content: text,
+    reasoning_details: [
+      { type: "reasoning_text", text, format: "unknown", index: 0 },
+    ],
+  });
+
+  const applyChunks = (
+    state: ReturnType<typeof sessionSlice.reducer>,
+    payload: ChatMessage[],
+  ) =>
+    sessionSlice.reducer(state, {
+      type: "session/streamUpdate",
+      payload,
+    });
+
+  it("does not duplicate the first reasoning delta in reasoning_details", () => {
+    let state = createInitialState();
+    for (const text of ["The", " user", " wants this."]) {
+      state = applyChunks(state, [thinkingChunk(text)]);
+    }
+
+    const thinking = state.history[1].message as ThinkingChatMessage;
+    expect(thinking.role).toBe("thinking");
+    expect(thinking.content).toBe("The user wants this.");
+    // Regression: before the fix, the first chunk's reasoning_details were
+    // carried into the new history item via spread AND merged again in the
+    // same reducer pass, producing "TheThe user wants this." — the stutter
+    // signature found in all 62 thinking items of incident session
+    // 9d6a6c41 (zenith).
+    expect(thinking.reasoning_details).toHaveLength(1);
+    expect(thinking.reasoning_details![0].text).toBe("The user wants this.");
+  });
+
+  it("keeps every thinking phase clean across a tool loop", () => {
+    let state = createInitialState();
+    // Phase 1: thinking -> assistant tool call
+    state = applyChunks(state, [thinkingChunk("Check")]);
+    state = applyChunks(state, [thinkingChunk(" the files.")]);
+    state = applyChunks(state, [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_1",
+            type: "function",
+            function: { name: "readFile", arguments: "{}" },
+          },
+        ],
+      },
+    ]);
+    state = applyChunks(state, [
+      { role: "tool", content: "ok", toolCallId: "call_1" },
+    ]);
+    // Phase 2: new thinking phase right after the tool result — exactly the
+    // transition where the "user sent the same message again" belief formed.
+    state = applyChunks(state, [thinkingChunk("Done")]);
+    state = applyChunks(state, [thinkingChunk(" now.")]);
+
+    const thinkingItems = state.history.filter(
+      (item: ChatHistoryItemWithMessageId) => item.message.role === "thinking",
+    );
+    expect(thinkingItems).toHaveLength(2);
+    const [first, second] = thinkingItems.map(
+      (item: ChatHistoryItemWithMessageId) =>
+        item.message as ThinkingChatMessage,
+    );
+    expect(first.content).toBe("Check the files.");
+    expect(first.reasoning_details![0].text).toBe("Check the files.");
+    expect(second.content).toBe("Done now.");
+    expect(second.reasoning_details![0].text).toBe("Done now.");
+  });
+
+  it("still records signature-only chunks and merges later deltas once", () => {
+    let state = createInitialState();
+    state = applyChunks(state, [
+      { role: "thinking", content: "", signature: "sig-1" },
+    ]);
+    state = applyChunks(state, [thinkingChunk("Think.")]);
+
+    const thinking = state.history[1].message as ThinkingChatMessage;
+    expect(thinking.signature).toBe("sig-1");
+    expect(thinking.content).toBe("Think.");
+    expect(thinking.reasoning_details).toHaveLength(1);
+    expect(thinking.reasoning_details![0].text).toBe("Think.");
+  });
+
+  it("survives chunks whose reasoning_details arrive only on the first chunk", () => {
+    let state = createInitialState();
+    state = applyChunks(state, [thinkingChunk("Only")]);
+    state = applyChunks(state, [{ role: "thinking", content: " first." }]);
+
+    const thinking = state.history[1].message as ThinkingChatMessage;
+    expect(thinking.content).toBe("Only first.");
+    expect(thinking.reasoning_details).toHaveLength(1);
+    expect(thinking.reasoning_details![0].text).toBe("Only");
+  });
+});

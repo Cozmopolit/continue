@@ -1,6 +1,7 @@
 import {
   fromChatCompletionChunk,
   isItemType,
+  mergeReasoningDetails,
   toResponsesInput,
 } from "./openaiTypeConverters";
 import { AssistantChatMessage, ChatMessage } from "..";
@@ -1385,5 +1386,103 @@ describe("fromChatCompletionChunk usage mapping (token-counting-hot-path.md)", (
   it("still returns undefined for empty chunks without usage", () => {
     const chunk = { ...baseChunk, choices: [] };
     expect(fromChatCompletionChunk(chunk as any)).toBeUndefined();
+  });
+});
+
+describe("mergeReasoningDetails", () => {
+  it("returns undefined when both inputs are undefined", () => {
+    expect(mergeReasoningDetails(undefined, undefined)).toBeUndefined();
+  });
+
+  it("returns existing untouched when delta is undefined", () => {
+    const existing = [{ type: "reasoning_text", text: "keep me" }];
+    expect(mergeReasoningDetails(existing, undefined)).toBe(existing);
+  });
+
+  it("returns copies (not references) when existing is undefined", () => {
+    const delta = [{ type: "reasoning_text", text: "first delta", index: 0 }];
+    const result = mergeReasoningDetails(undefined, delta);
+    expect(result).toEqual(delta);
+    expect(result).not.toBe(delta);
+    expect(result![0]).not.toBe(delta[0]);
+  });
+
+  it("concatenates text of same-type blocks", () => {
+    const result = mergeReasoningDetails(
+      [{ type: "reasoning_text", text: "The" }],
+      [{ type: "reasoning_text", text: " user" }],
+    );
+    expect(result).toEqual([{ type: "reasoning_text", text: "The user" }]);
+  });
+
+  it("does not mutate its inputs (copy-on-write)", () => {
+    const existingItem = { type: "reasoning_text", text: "The" };
+    const deltaItem = { type: "reasoning_text", text: " user" };
+    mergeReasoningDetails([existingItem], [deltaItem]);
+    expect(existingItem.text).toBe("The");
+    expect(deltaItem.text).toBe(" user");
+  });
+
+  it("tolerates frozen existing items (immer-frozen redux state)", () => {
+    const frozenItem = Object.freeze({
+      type: "reasoning_text",
+      text: "The",
+      format: "unknown",
+      index: 0,
+    });
+    const existing = Object.freeze([frozenItem]);
+    const result = mergeReasoningDetails(existing as any, [
+      { type: "reasoning_text", text: " user", format: "unknown", index: 0 },
+    ]);
+    expect(result).toEqual([
+      { type: "reasoning_text", text: "The user", format: "unknown", index: 0 },
+    ]);
+    expect(frozenItem.text).toBe("The");
+  });
+
+  it("appends blocks of a new type as copies", () => {
+    const deltaItem = { type: "encrypted_content", encrypted_content: "abc" };
+    const result = mergeReasoningDetails(
+      [{ type: "reasoning_text", text: "x" }],
+      [deltaItem],
+    );
+    expect(result).toHaveLength(2);
+    expect(result![1]).toEqual(deltaItem);
+    expect(result![1]).not.toBe(deltaItem);
+  });
+
+  it("skips delta items without a type", () => {
+    const result = mergeReasoningDetails(
+      [{ type: "reasoning_text", text: "x" }],
+      [{ text: "no type here" } as any],
+    );
+    expect(result).toEqual([{ type: "reasoning_text", text: "x" }]);
+  });
+
+  it("ignores null/undefined delta values and never overwrites type", () => {
+    const result = mergeReasoningDetails(
+      [{ type: "reasoning_text", text: "a", format: "unknown" }],
+      [
+        {
+          type: "reasoning_text",
+          text: null,
+          signature: undefined,
+          format: "markdown",
+        } as any,
+      ],
+    );
+    expect(result).toEqual([
+      { type: "reasoning_text", text: "a", format: "markdown" },
+    ]);
+  });
+
+  it("concatenates signature and summary fields like text", () => {
+    const result = mergeReasoningDetails(
+      [{ type: "thinking_signature", signature: "sig1" }],
+      [{ type: "thinking_signature", signature: "sig2" }],
+    );
+    expect(result).toEqual([
+      { type: "thinking_signature", signature: "sig1sig2" },
+    ]);
   });
 });

@@ -761,6 +761,14 @@ export const sessionSlice = createSlice({
               },
               contextItems: [],
             };
+            if (historyItem.message.role === "thinking") {
+              // Do not carry the first chunk's reasoning_details into the new
+              // item: the merge branch at the end of this loop iteration
+              // processes this same chunk again, so carrying them would record
+              // the first reasoning delta twice — the "TheThe…" stutter
+              // signature of the resent-user-messages incident family.
+              historyItem.message.reasoning_details = undefined;
+            }
             state.history.push(historyItem);
             lastItem = state.history[state.history.length - 1];
             lastMessage = lastItem.message;

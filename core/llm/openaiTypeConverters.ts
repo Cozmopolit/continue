@@ -814,7 +814,9 @@ export function mergeReasoningDetails(
   delta: any[] | undefined,
 ): any[] | undefined {
   if (!delta) return existing;
-  if (!existing) return delta;
+  // Copy-on-write: callers assign the result into (immer-frozen) Redux
+  // state; never return objects shared with action payloads by reference.
+  if (!existing) return delta.map((item) => ({ ...item }));
 
   const result = [...existing];
 
@@ -833,8 +835,11 @@ export function mergeReasoningDetails(
       // No existing item with this type, add new item
       result.push({ ...deltaItem });
     } else {
-      // Merge with existing item of the same type
-      const existingItem = result[existingIndex];
+      // Merge with existing item of the same type. Copy-on-write: the
+      // existing item may be shared with an action payload or frozen state,
+      // never mutate it in place.
+      const existingItem = { ...result[existingIndex] };
+      result[existingIndex] = existingItem;
 
       for (const [key, value] of Object.entries(deltaItem)) {
         if (value === null || value === undefined) continue;
