@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { getEmptyRootState } from "../../util/test/mockStore";
 import { RootState } from "../store";
 import {
-  selectConversationHasUserMessage,
+  selectConversationIsStarted,
   selectIsCompactionRunning,
   selectIsConversationIdle,
 } from "./selectToolCalls";
@@ -103,30 +103,49 @@ describe("selectIsConversationIdle", () => {
 });
 
 // Board wake mode (board-wake-mode.md): a synthetic [board-wake] must never
-// be the first user message of a conversation — a fresh conversation belongs
-// to the user's first word. The watcher uses this to block wake dispatches
-// until the history holds at least one user message.
-describe("selectConversationHasUserMessage", () => {
+// open a fresh conversation — the first message of a fresh conversation
+// belongs to the user. The watcher uses this to block wake dispatches until
+// the conversation has started: a user message OR an item carrying a
+// conversation summary — a fork-with-summary session is a continuation, not
+// a fresh conversation (amendment 2026-08-17).
+describe("selectConversationIsStarted", () => {
+  function forkSummaryItem(summary: string): History[number] {
+    return {
+      message: { id: "fork-1", role: "assistant", content: "" },
+      contextItems: [],
+      conversationSummary: summary,
+      continuedFromSessionId: "source-session",
+    };
+  }
+
   it("is false with an empty history (fresh conversation)", () => {
-    expect(selectConversationHasUserMessage(stateWith([]))).toBe(false);
+    expect(selectConversationIsStarted(stateWith([]))).toBe(false);
   });
 
   it("is true once a user message exists", () => {
-    expect(selectConversationHasUserMessage(stateWith([userItem()]))).toBe(
-      true,
-    );
+    expect(selectConversationIsStarted(stateWith([userItem()]))).toBe(true);
   });
 
   it("is true with user and assistant messages", () => {
     expect(
-      selectConversationHasUserMessage(
-        stateWith([userItem(), assistantItem()]),
-      ),
+      selectConversationIsStarted(stateWith([userItem(), assistantItem()])),
     ).toBe(true);
   });
 
   it("is false with assistant messages only (no user message yet)", () => {
-    expect(selectConversationHasUserMessage(stateWith([assistantItem()]))).toBe(
+    expect(selectConversationIsStarted(stateWith([assistantItem()]))).toBe(
+      false,
+    );
+  });
+
+  it("is true with only a fork-with-summary item (continuation, not fresh)", () => {
+    expect(
+      selectConversationIsStarted(stateWith([forkSummaryItem("SUMMARY")])),
+    ).toBe(true);
+  });
+
+  it("is false with an empty-string summary (nothing to continue from)", () => {
+    expect(selectConversationIsStarted(stateWith([forkSummaryItem("")]))).toBe(
       false,
     );
   });

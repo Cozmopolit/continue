@@ -80,15 +80,20 @@ export const selectIsConversationIdle = createSelector(
     !findAllCurToolCallsByStatus(history, "calling").length,
 );
 
-// Board wake mode (board-wake-mode.md): the first user message of a
-// conversation must never be the synthetic [board-wake] message — a fresh
-// conversation belongs to the user's first word. The watcher keeps polling
-// and consuming while blocked (accumulated messages render in the first real
-// run's injection block), but never dispatches a wake until the history
-// holds at least one user message.
-export const selectConversationHasUserMessage = createSelector(
+// Board wake mode (board-wake-mode.md): a synthetic [board-wake] must never
+// open a fresh conversation — the first message of a fresh conversation
+// belongs to the user. "Started" means: at least one user message OR at
+// least one item carrying a conversation summary — a fork-with-summary
+// session holds only the synthetic summary item and is a continuation, not
+// a fresh conversation (amendment 2026-08-17). The watcher keeps polling
+// and consuming while blocked (accumulated messages render in the first
+// real run's injection block), but never dispatches a wake into a
+// conversation that has not started yet.
+export const selectConversationIsStarted = createSelector(
   (store: RootState) => store.session.history,
-  (history) => history.some((item) => item.message.role === "user"),
+  (history) =>
+    history.some((item) => item.message.role === "user") ||
+    history.some((item) => Boolean(item.conversationSummary)),
 );
 
 // Board wake mode (board-wake-mode.md, amendment 2026-08-16 II): while a

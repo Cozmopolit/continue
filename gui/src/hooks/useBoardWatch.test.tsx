@@ -44,7 +44,7 @@ const useMainEditorMock = useMainEditor as unknown as Mock;
 type History = RootState["session"]["history"];
 
 // A conversation with at least one user message — wake dispatches are only
-// allowed into started conversations (empty-conversation guard).
+// allowed into started conversations (fresh-conversation guard).
 function userHistoryItem(): History[number] {
   return {
     message: { id: "u1", role: "user", content: "hello" },
@@ -101,8 +101,8 @@ function setup(options: SetupOptions = {}) {
   const state = getEmptyRootState();
   state.ui.boardWatchMode = options.boardWatchMode ?? true;
   state.session.isStreaming = options.isStreaming ?? false;
-  // Default: a started conversation — wake dispatches require at least one
-  // user message (empty-conversation guard, board-wake-mode.md).
+  // Default: a started conversation — wake dispatches are only allowed into
+  // started conversations (fresh-conversation guard, board-wake-mode.md).
   state.session.history = options.history ?? [userHistoryItem()];
   if (options.compactionLoading) {
     state.session.compactionLoading = options.compactionLoading;
@@ -225,7 +225,7 @@ describe("useBoardWatch", () => {
     ]);
   });
 
-  it("does not wake into a conversation without any user message (fresh conversation)", async () => {
+  it("does not wake into a fresh conversation (no user message, no summary)", async () => {
     const { messenger, store } = setup({ history: [] });
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
     await renderProbe(store, messenger);
@@ -238,6 +238,29 @@ describe("useBoardWatch", () => {
     expect((store.getState() as RootState).session.board.messages).toEqual([
       BOARD_MESSAGE,
     ]);
+  });
+
+  it("wakes into a forked conversation whose only item carries a summary", async () => {
+    // conversation-fork-with-summary.md + board-wake-mode.md amendment
+    // 2026-08-17: a fork session holds a single synthetic assistant item
+    // with the summary — it is a continuation, so wakes are allowed even
+    // though it has no user message yet.
+    const { messenger, store } = setup({
+      history: [
+        {
+          message: { id: "fork-1", role: "assistant", content: "" },
+          contextItems: [],
+          conversationSummary: "Summary of the source session.",
+        },
+      ],
+    });
+    messenger.responses["board/consumePending"] = EMPTY_RESULT;
+    await renderProbe(store, messenger);
+
+    messenger.responses["board/consumePending"] = PENDING_RESULT;
+    await tick();
+
+    expect(wakeCalls()).toHaveLength(1);
   });
 
   it("skips ticks while a compaction runs and wakes once it completes", async () => {

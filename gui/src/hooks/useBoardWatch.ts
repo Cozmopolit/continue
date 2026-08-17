@@ -7,7 +7,7 @@ import { hasValidEditorContent } from "../components/mainInput/TipTapEditor/util
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../redux/hooks";
 import {
-  selectConversationHasUserMessage,
+  selectConversationIsStarted,
   selectIsCompactionRunning,
   selectIsConversationIdle,
 } from "../redux/selectors/selectToolCalls";
@@ -55,10 +55,13 @@ const WAKE_DOC: JSONContent = {
  *   (agent-self-compaction.md, board-wake-mode.md).
  * - Composer guard: never dispatch while the user has text in the composer;
  *   accumulated messages render in the next run regardless.
- * - Empty-conversation guard: never dispatch into a conversation without any
- *   user message — the first message of a fresh conversation belongs to the
- *   user, not the board. Consuming continues; accumulated messages render in
- *   the first real run's injection block.
+ * - Fresh-conversation guard: never dispatch into a conversation that has
+ *   not started yet (no user message and no conversation summary) — the
+ *   first message of a fresh conversation belongs to the user, not the
+ *   board. A fork-with-summary session counts as started: it is a
+ *   continuation, not a fresh conversation (amendment 2026-08-17).
+ *   Consuming continues; accumulated messages render in the first real
+ *   run's injection block.
  * - Compaction gate: while a compaction is in flight (inline compact or
  *   fork-with-summary), skip the whole tick — no consume, no wake. The
  *   finishing loadSession runs through the newSession reducer and resets the
@@ -117,12 +120,13 @@ export function useBoardWatch() {
         }
         // Recheck immediately before dispatching: a user-started run or a
         // compaction may have begun while the fetch was in flight, and a
-        // conversation without any user message yet may never receive a
-        // synthetic [board-wake] as its first message (board-wake-mode.md).
+        // conversation that has not started yet (no user message, no
+        // summary) may never receive a synthetic [board-wake] as its first
+        // message (board-wake-mode.md).
         const state = store.getState();
         if (
           !selectIsConversationIdle(state) ||
-          !selectConversationHasUserMessage(state) ||
+          !selectConversationIsStarted(state) ||
           selectIsCompactionRunning(state)
         ) {
           return;

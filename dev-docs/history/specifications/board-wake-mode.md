@@ -257,3 +257,42 @@ dies ist Korrektheit (State-Konsistenz), keine Lärm-/Last-Policy.
 cleared per delete), `useBoardWatch.test.tsx` +2 (Tick-Skip während
 Compaction + Wake nach Abschluss; Compaction beginnt in flight → kein Wake,
 aber Konsum). gui-Suite: 530 → 536 Tests.
+
+## Amendment 2026-08-17: Summary zählt als „gestartet" (Ausnahme vom Empty-Conversation-Guard)
+
+**Anlass:** Detail-Wunsch des Users nach Live-Erfahrung mit der
+Self-Compaction: Nach einem Fork-mit-Summary (`conversation/forkWithSummary`,
+auch der Run-Ende-Pfad von `compact_conversation`) ist die neue Conversation
+aus Sicht des Empty-Conversation-Guards „frisch" — die History besteht aus
+genau einem synthetischen Assistant-Item (`conversationSummary` +
+`continuedFromSessionId`, keine User-Message). Der Watcher pollt und
+konsumiert zwar weiter, dispatcht aber nie einen Wake. Damit ist ausgerechnet
+die für den Langzeitbetrieb kompactierte Conversation taub fürs Board, bis
+der User von Hand tippt.
+
+**Bewertung:** Der Guard schützt die Invariante „die erste Nachricht einer
+frischen Conversation gehört dem User". Eine Fork-Session ist aber keine
+frische Conversation: sie trägt `continuedFromSessionId`, den Titel-Suffix
+„(continued)" und die Summary des Vorgängers. „Es gibt eine Summary" ist das
+korrekte Kriterium für „Fortsetzung" — die Ausnahme von der Ausnahme weicht
+das Prinzip nicht auf, sie korrigiert nur einen zu groben Proxy
+(`role === "user"`). Dies revidiert die Einschätzung aus Amendment II
+(„Interaktion mit Amendment I … Konsistente Semantik"): das damalige
+Verhalten war nicht konsistent, sondern ein faktischer Wake-Deadlock für
+Langzeit-Sessions. Type-1-Compaction (inline, `conversation/compact`) war nie
+betroffen — dort bleibt die History erhalten, User-Messages existieren
+weiter.
+
+**Umsetzung:** `selectConversationHasUserMessage` →
+`selectConversationIsStarted` (Rename; einziger Konsument ist
+`useBoardWatch`):
+`history.some(item => item.message.role === "user") ||
+history.some(item => Boolean(item.conversationSummary))`.
+Ein leerer String zählt nicht als Summary. Frische Conversations (leere
+History) bleiben geschützt; der Wake in eine Fork-Session ist unproblematisch,
+weil die Summary beim Request-Aufbau in den Kontext geht und der geweckte Run
+den Injection-Block sieht.
+
+**Tests:** `selectToolCalls.test.ts` +2 (nur Fork-Summary-Item → true;
+Summary als Leerstring → false), `useBoardWatch.test.tsx` +1 (Wake in die
+Fork-Conversation; der bestehende Frisch-Conversation-Fall bleibt grün).
