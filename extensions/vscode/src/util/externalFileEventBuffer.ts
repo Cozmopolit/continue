@@ -84,7 +84,7 @@ export function isInWorkspaceDirs(
   uri: string,
   workspaceDirUris: string[],
 ): boolean {
-  return findUriInDirs(uri, workspaceDirUris).foundInDir;
+  return Boolean(findUriInDirs(uri, workspaceDirUris).foundInDir);
 }
 
 /**

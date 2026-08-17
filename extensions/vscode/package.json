@@ -103,6 +103,11 @@
           "default": false,
           "description": "Disable the quick fix feature."
         },
+        "continue.boardWatchMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Board Watch: start a run when new MsgBoard messages arrive while the conversation is idle (board-wake-mode.md)."
+        },
         "continue.enableQuickActions": {
           "type": "boolean",
           "default": false,

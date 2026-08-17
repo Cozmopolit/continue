@@ -852,9 +852,16 @@ export class Core {
     const refreshIfNotIgnored = async (uris: string[]) => {
       const toRefresh: string[] = [];
       for (const uri of uris) {
-        const ignore = await shouldIgnore(uri, this.ide);
-        if (!ignore) {
-          toRefresh.push(uri);
+        try {
+          const ignore = await shouldIgnore(uri, this.ide);
+          if (!ignore) {
+            toRefresh.push(uri);
+          }
+        } catch {
+          // FS events race the filesystem: files/deleted URIs no longer
+          // exist by the time we handle them, and shouldIgnore walks up
+          // with listDir. A vanished path is nothing to index — skip it
+          // instead of rejecting the whole batch.
         }
       }
       if (toRefresh.length > 0) {
@@ -880,7 +887,12 @@ export class Core {
       if (data.uris.some(isIgnoreFile)) {
         this.invoke("index/forceReIndex", { shouldClearIndexes: true });
       }
-      void refreshIfNotIgnored(data.uris);
+      void refreshIfNotIgnored(data.uris).catch((e) => {
+        // Never let a file-event refresh become an unhandled rejection
+        Logger.warn(
+          `refreshIfNotIgnored failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      });
 
       const colocatedRulesUris = data.uris.filter(isColocatedRulesFile);
       const nonColocatedRuleUris = data.uris.filter(
@@ -917,7 +929,12 @@ export class Core {
       if (data.uris.some(isIgnoreFile)) {
         this.invoke("index/forceReIndex", { shouldClearIndexes: true });
       }
-      void refreshIfNotIgnored(data.uris);
+      void refreshIfNotIgnored(data.uris).catch((e) => {
+        // Never let a file-event refresh become an unhandled rejection
+        Logger.warn(
+          `refreshIfNotIgnored failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      });
 
       const colocatedRulesUris = data.uris.filter(isColocatedRulesFile);
       const nonColocatedRuleUris = data.uris.filter(

@@ -1,14 +1,14 @@
-﻿# Board-Watch-Follow-ups: boardWatchMode-Persistenz + veralteter Injection-Block
+﻿# Board-Watch-Follow-ups: ~~boardWatchMode-Persistenz~~ + veralteter Injection-Block
 
-**Status:** Open
+**Status:** Open (Problem 2); Problem 1 gefixt 2026-08-17
 **Date:** 2026-08-17
 
 Zwei offene Probleme aus dem Board-Wake-Mode-Workstream
 (Spezifikation: dev-docs/history/specifications/board-wake-mode.md).
-Beide sind analysiert, aber ungefixt; geparkt am 2026-08-17, um den Kopf
-für den Reasoning-Resend-Testplan frei zu haben.
+Beide waren analysiert und ungefixt geparkt; Problem 1 wurde am
+2026-08-17 behoben (Registrations- + Read-Pfad), Problem 2 bleibt offen.
 
-## Problem 1: Toggle „Board Watch" überlebt keinen Fenster-Neustart
+## Problem 1 (GEFIXT): Toggle „Board Watch" überlebt keinen Fenster-Neustart
 
 Der Toggle `boardWatchMode` folgt dem Yolo-Pfad (`setIdeSettings`-Persistenz
 
@@ -28,6 +28,13 @@ Der Toggle `boardWatchMode` folgt dem Yolo-Pfad (`setIdeSettings`-Persistenz
 Nettoeffekt: Der Modus funktioniert nur innerhalb einer Fenster-Lebensdauer
 und wird bei jedem Neustart still auf „aus" zurückgesetzt; zusätzlich
 Log-Rauschen bei jedem Toggle.
+
+**Fix (2026-08-17):** `continue.boardWatchMode` ist jetzt in
+`contributes.configuration` von extensions/vscode/package.json registriert
+(behebt die CodeExpectedError beim Schreiben), und
+`VsCodeIde.getIdeSettingsSync()` liest den Schlüssel mit Default `false`
+aus (Boot-Load bekommt jetzt den persistierten Wert). Verbatim-Evidenz
+für den Fehler kam aus der zenith-Session-Triage (to-delta #5318390706).
 
 ## Problem 2: Board-Injection-Block zeigt verarbeitete Nachrichten erneut
 

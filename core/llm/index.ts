@@ -59,6 +59,7 @@ import {
   LLMConfigurationStatuses,
 } from "./constants.js";
 import { captureStreamFailureForensics } from "./streamForensics.js";
+import { enrichErrorWithProviderBody } from "./providerError.js";
 import {
   compileChatMessages,
   countTokens,
@@ -745,6 +746,8 @@ export abstract class BaseLLM implements ILLM {
         undefined,
       );
     } catch (e) {
+      enrichErrorWithProviderBody(e);
+
       Logger.error(e as Error, {
         context: "llm_stream_fim",
         model: completionOptions.model,
@@ -909,6 +912,8 @@ export abstract class BaseLLM implements ILLM {
         "streamComplete",
       );
 
+      enrichErrorWithProviderBody(e);
+
       Logger.error(e as Error, {
         context: "llm_stream_complete",
         model: completionOptions.model,
@@ -1017,6 +1022,8 @@ export abstract class BaseLLM implements ILLM {
         undefined,
       );
     } catch (e) {
+      enrichErrorWithProviderBody(e);
+
       Logger.error(e as Error, {
         context: "llm_complete",
         model: completionOptions.model,
@@ -1448,6 +1455,8 @@ export abstract class BaseLLM implements ILLM {
         completionOptions,
         "streamChat",
       );
+
+      enrichErrorWithProviderBody(e);
 
       Logger.error(e as Error, {
         context: "llm_stream_chat",
