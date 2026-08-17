@@ -14,6 +14,7 @@ import type {
 
 import {
   collectDiagnosticHeaders,
+  createResponseError,
   detectCompletionSignal,
   formatPrematureStreamEndMessage,
   isPrematureStreamEndError,
@@ -24,7 +25,11 @@ import {
   streamSse,
   toAsyncIterable,
 } from "./stream.js";
-import type { StreamForensics, StreamSseOptions } from "./stream.js";
+import type {
+  ResponseError,
+  StreamForensics,
+  StreamSseOptions,
+} from "./stream.js";
 
 import { fetchwithRequestOptions } from "./fetch.js";
 import patchedFetch from "./node-fetch-patch.js";
@@ -32,6 +37,7 @@ import patchedFetch from "./node-fetch-patch.js";
 export {
   analyzeHeadersForMiddlebox,
   collectDiagnosticHeaders,
+  createResponseError,
   detectCompletionSignal,
   fetchwithRequestOptions,
   formatPrematureStreamEndMessage,
@@ -52,6 +58,7 @@ export {
 
 export type {
   FetchRequestDiagnostics,
+  ResponseError,
   StreamForensics,
   StreamSseOptions,
   TlsCertChainEntry,

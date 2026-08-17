@@ -3,6 +3,7 @@ import {
   fetchwithRequestOptions,
   isPrematureStreamEndError,
 } from "@continuedev/fetch";
+import type { ResponseError } from "@continuedev/fetch";
 import { findLlmInfo } from "@continuedev/llm-info";
 import {
   BaseLlmApi,
@@ -71,6 +72,8 @@ import {
   toCompleteBody,
   toFimBody,
 } from "./openaiTypeConverters.js";
+import { RATE_LIMIT_RETRY, retryStream } from "./utils/retry.js";
+import type { RetryOptions } from "./utils/retry.js";
 
 export class LLMError extends Error {
   constructor(
@@ -412,20 +415,21 @@ export abstract class BaseLLM implements ILLM {
     }
   }
 
-  private async parseError(resp: any): Promise<Error> {
+  private async parseError(resp: any): Promise<ResponseError> {
     let text = await resp.text();
+    let error: Error | undefined;
 
     if (resp.status === 404 && !resp.url.includes("/v1")) {
       const parsedError = JSON.parse(text);
       const errorMessageRaw = parsedError?.error ?? parsedError?.message;
-      const error =
+      const parsedMessage =
         typeof errorMessageRaw === "string"
           ? errorMessageRaw.replace(/"/g, "'")
           : undefined;
-      let model = error?.match(/model '(.*)' not found/)?.[1];
+      let model = parsedMessage?.match(/model '(.*)' not found/)?.[1];
       if (model && resp.url.match("127.0.0.1:11434")) {
         text = `The model "${model}" was not found. To download it, run \`ollama run ${model}\`.`;
-        return new LLMError(text, this); // No need to add HTTP status details
+        error = new LLMError(text, this);
       } else if (text.includes("/api/chat")) {
         text =
           "The /api/chat endpoint was not found. This may mean that you are using an older version of Ollama that does not support /api/chat. Upgrading to the latest version will solve the issue.";
@@ -442,18 +446,46 @@ export abstract class BaseLLM implements ILLM {
         resp.url.includes("codestral.mistral.ai"))
     ) {
       if (resp.url.includes("codestral.mistral.ai")) {
-        return new Error(
+        error = new Error(
           "You are using a Mistral API key, which is not compatible with the Codestral API. Please either obtain a Codestral API key, or use the Mistral API by setting 'apiBase' to 'https://api.mistral.ai/v1' in config.json.",
         );
       } else {
-        return new Error(
+        error = new Error(
           "You are using a Codestral API key, which is not compatible with the Mistral API. Please either obtain a Mistral API key, or use the the Codestral API by setting 'apiBase' to 'https://codestral.mistral.ai/v1' in config.json.",
         );
       }
     }
-    return new Error(
-      `HTTP ${resp.status} ${resp.statusText} from ${resp.url}\n\n${text}`,
-    );
+
+    if (!error) {
+      error = new Error(
+        `HTTP ${resp.status} ${resp.statusText} from ${resp.url}\n\n${text}`,
+      );
+    }
+
+    // Preserve status + headers so upstream layers (retryStream) can detect
+    // rate limiting (HTTP 429) and honor Retry-After, even when the body
+    // carries no numeric status/code. See rate-limit-retry.md.
+    return this.attachHttpStatusAndHeaders(error, resp);
+  }
+
+  /**
+   * Attaches the HTTP status and normalized (lowercased) response headers to
+   * an error. See rate-limit-retry.md.
+   */
+  private attachHttpStatusAndHeaders<T extends Error>(
+    error: T,
+    resp: any,
+  ): T & ResponseError {
+    const headers: Record<string, string> = {};
+    if (resp?.headers && typeof resp.headers.forEach === "function") {
+      resp.headers.forEach((value: string, key: string) => {
+        headers[key.toLowerCase()] = value;
+      });
+    }
+    const enriched = error as T & ResponseError;
+    enriched.status = resp.status;
+    enriched.headers = headers;
+    return enriched;
   }
 
   fetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -791,22 +823,47 @@ export abstract class BaseLLM implements ILLM {
     try {
       if (this.shouldUseOpenAIAdapter("streamComplete") && this.openaiAdapter) {
         if (completionOptions.stream === false) {
-          // Stream false
-          const response = await this.openaiAdapter.completionNonStream(
-            { ...toCompleteBody(prompt, completionOptions), stream: false },
-            signal,
-          );
-          this.lastRequestId = response.id ?? this.lastRequestId;
-          completion = response.choices[0]?.text ?? "";
-          yield completion;
+          // Stream false: the single "chunk" is the full response; the
+          // factory re-issues the call on rate limits (rate-limit-retry.md)
+          for await (const response of retryStream(
+            () => {
+              const adapter = this.openaiAdapter!;
+              return (async function* () {
+                yield await adapter.completionNonStream(
+                  {
+                    ...toCompleteBody(prompt, completionOptions),
+                    stream: false,
+                  },
+                  signal,
+                );
+              })();
+            },
+            this.rateLimitRetryOptions(
+              "streamComplete",
+              completionOptions.model,
+              signal,
+            ),
+          )) {
+            this.lastRequestId = response.id ?? this.lastRequestId;
+            completion = response.choices[0]?.text ?? "";
+            yield completion;
+          }
         } else {
           // Stream true
-          for await (const chunk of this.openaiAdapter.completionStream(
-            {
-              ...toCompleteBody(prompt, completionOptions),
-              stream: true,
-            },
-            signal,
+          for await (const chunk of retryStream(
+            () =>
+              this.openaiAdapter!.completionStream(
+                {
+                  ...toCompleteBody(prompt, completionOptions),
+                  stream: true,
+                },
+                signal,
+              ),
+            this.rateLimitRetryOptions(
+              "streamComplete",
+              completionOptions.model,
+              signal,
+            ),
           )) {
             if (!this.lastRequestId && typeof (chunk as any).id === "string") {
               this.lastRequestId = (chunk as any).id;
@@ -821,10 +878,13 @@ export abstract class BaseLLM implements ILLM {
           }
         }
       } else {
-        for await (const chunk of this._streamComplete(
-          prompt,
-          signal,
-          completionOptions,
+        for await (const chunk of retryStream(
+          () => this._streamComplete(prompt, signal, completionOptions),
+          this.rateLimitRetryOptions(
+            "streamComplete",
+            completionOptions.model,
+            signal,
+          ),
         )) {
           completion += chunk;
           interaction?.logItem({
@@ -1148,6 +1208,27 @@ export abstract class BaseLLM implements ILLM {
     yield msg as ChatMessage;
   }
 
+  /**
+   * Rate-limit retry options for a streaming LLM call: 429-only retries
+   * with Retry-After-aware backoff, abortable waits, and one log line per
+   * attempt. See rate-limit-retry.md.
+   */
+  private rateLimitRetryOptions(
+    context: string,
+    model: string,
+    signal: AbortSignal,
+  ): RetryOptions & { signal?: AbortSignal } {
+    return {
+      ...RATE_LIMIT_RETRY,
+      signal,
+      onRetry: (error: any, attempt: number, delay: number) => {
+        Logger.warn(
+          `Rate limited (${context}, provider=${this.providerName}, model=${model}): attempt ${attempt} failed (${(error as Error)?.message ?? error}), retrying in ${delay}ms`,
+        );
+      },
+    };
+  }
+
   // Update the streamChat method:
   async *streamChat(
     _messages: ChatMessage[],
@@ -1230,10 +1311,13 @@ export abstract class BaseLLM implements ILLM {
 
     try {
       if (this.templateMessages) {
-        for await (const chunk of this._streamComplete(
-          prompt,
-          signal,
-          completionOptions,
+        for await (const chunk of retryStream(
+          () => this._streamComplete(prompt, signal, completionOptions),
+          this.rateLimitRetryOptions(
+            "streamChat",
+            completionOptions.model,
+            signal,
+          ),
         )) {
           completion.push(chunk);
           interaction?.logItem({
@@ -1269,20 +1353,34 @@ export abstract class BaseLLM implements ILLM {
           const canUseResponses = this.canUseOpenAIResponses(completionOptions);
           const useStream = completionOptions.stream !== false;
 
-          let iterable: AsyncIterable<ChatMessage>;
-          if (canUseResponses) {
-            iterable = useStream
-              ? this.responsesStream(messages, signal, completionOptions)
-              : this.responsesNonStream(messages, signal, completionOptions);
-          } else {
-            iterable = useStream
-              ? this.openAIAdapterStream(body, signal, (c) => {
-                  if (!citations) {
-                    citations = c;
-                  }
-                })
-              : this.openAIAdapterNonStream(body, signal);
-          }
+          // Rate-limit retry wraps the lazy provider iterable: each attempt
+          // re-issues the call until the first chunk flows; once content is
+          // being yielded, errors pass through (see rate-limit-retry.md).
+          const iterable: AsyncIterable<ChatMessage> = retryStream(
+            () => {
+              if (canUseResponses) {
+                return useStream
+                  ? this.responsesStream(messages, signal, completionOptions)
+                  : this.responsesNonStream(
+                      messages,
+                      signal,
+                      completionOptions,
+                    );
+              }
+              return useStream
+                ? this.openAIAdapterStream(body, signal, (c) => {
+                    if (!citations) {
+                      citations = c;
+                    }
+                  })
+                : this.openAIAdapterNonStream(body, signal);
+            },
+            this.rateLimitRetryOptions(
+              "streamChat",
+              completionOptions.model,
+              signal,
+            ),
+          );
 
           for await (const chunk of iterable) {
             const result = this.processChatChunk(chunk, interaction);
@@ -1306,10 +1404,13 @@ export abstract class BaseLLM implements ILLM {
             }
           }
 
-          for await (const chunk of this._streamChat(
-            messages,
-            signal,
-            completionOptions,
+          for await (const chunk of retryStream(
+            () => this._streamChat(messages, signal, completionOptions),
+            this.rateLimitRetryOptions(
+              "streamChat",
+              completionOptions.model,
+              signal,
+            ),
           )) {
             const result = this.processChatChunk(chunk, interaction);
             completion.push(...result.completion);

@@ -1,4 +1,11 @@
-import { retryAsync, withLLMRetry, withRetry } from "./retry";
+import {
+  isRateLimitError,
+  RATE_LIMIT_RETRY,
+  retryAsync,
+  retryStream,
+  withLLMRetry,
+  withRetry,
+} from "./retry";
 
 // Mock console.warn to avoid noise in tests
 const consoleSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
@@ -546,5 +553,300 @@ describe("Retry Functionality", () => {
       expect(delays[0]).toBeGreaterThan(284);
       expect(delays[0]).toBeLessThan(316);
     });
+  });
+});
+
+describe("isRateLimitError", () => {
+  it("detects 429 via error.status", () => {
+    const error = new Error("Too Many Requests");
+    (error as any).status = 429;
+    expect(isRateLimitError(error)).toBe(true);
+  });
+
+  it("detects 429 via error.statusCode", () => {
+    const error = new Error("Too Many Requests");
+    (error as any).statusCode = 429;
+    expect(isRateLimitError(error)).toBe(true);
+  });
+
+  it("detects AWS Bedrock ThrottlingException by name", () => {
+    const error = new Error("Rate exceeded");
+    error.name = "ThrottlingException";
+    expect(isRateLimitError(error)).toBe(true);
+  });
+
+  it("detects the BaseLLM.parseError message prefix", () => {
+    // The body carries no numeric status/code — detection must not
+    // depend on it (rate-limit-retry.md, Phase 3 amendment)
+    const error = new Error(
+      'HTTP 429 Too Many Requests from https://api.example.com/v1/chat/completions\n\n{"error":{"message":"Rate limit exceeded"}}',
+    );
+    expect(isRateLimitError(error)).toBe(true);
+  });
+
+  it("does not match other HTTP status message prefixes", () => {
+    expect(isRateLimitError(new Error("HTTP 4290 from somewhere"))).toBe(false);
+    expect(isRateLimitError(new Error("HTTP 500 Internal Server Error"))).toBe(
+      false,
+    );
+    expect(isRateLimitError(new Error("HTTP 400 Bad Request"))).toBe(false);
+  });
+
+  it("detects 429 embedded in the body as number or string", () => {
+    expect(isRateLimitError(new Error('{"error":{"code":429}}'))).toBe(true);
+    expect(isRateLimitError(new Error('{"error":{"code": 429}}'))).toBe(true);
+    expect(isRateLimitError(new Error('{"status":"429"}'))).toBe(true);
+  });
+
+  it("does not flag other statuses or plain errors", () => {
+    const badRequest = new Error("Bad Request");
+    (badRequest as any).status = 400;
+    expect(isRateLimitError(badRequest)).toBe(false);
+
+    const serverError = new Error("Internal Server Error");
+    (serverError as any).status = 500;
+    expect(isRateLimitError(serverError)).toBe(false);
+
+    expect(isRateLimitError(new Error("boom"))).toBe(false);
+  });
+
+  it("handles null/undefined input without throwing", () => {
+    expect(isRateLimitError(null)).toBe(false);
+    expect(isRateLimitError(undefined)).toBe(false);
+  });
+});
+
+describe("RATE_LIMIT_RETRY preset", () => {
+  it("has the documented backoff shape and retries 429 only", () => {
+    expect(RATE_LIMIT_RETRY.maxAttempts).toBe(5);
+    expect(RATE_LIMIT_RETRY.baseDelay).toBe(2000);
+    expect(RATE_LIMIT_RETRY.maxDelay).toBe(90000);
+    expect(RATE_LIMIT_RETRY.jitterFactor).toBe(0.4);
+    expect(RATE_LIMIT_RETRY.shouldRetry).toBe(isRateLimitError);
+
+    const rateLimited = new Error("Too Many Requests");
+    (rateLimited as any).status = 429;
+    expect(RATE_LIMIT_RETRY.shouldRetry!(rateLimited, 1)).toBe(true);
+
+    // 5xx and other errors are deliberately NOT retried by this preset
+    const serverError = new Error("Internal Server Error");
+    (serverError as any).status = 500;
+    expect(RATE_LIMIT_RETRY.shouldRetry!(serverError, 1)).toBe(false);
+  });
+});
+
+describe("retryStream", () => {
+  async function collect<T>(gen: AsyncGenerator<T>): Promise<T[]> {
+    const out: T[] = [];
+    for await (const value of gen) {
+      out.push(value);
+    }
+    return out;
+  }
+
+  function rateLimitError(headers?: Record<string, string>): Error {
+    const error = new Error("Too Many Requests");
+    (error as any).status = 429;
+    if (headers) {
+      (error as any).headers = headers;
+    }
+    return error;
+  }
+
+  it("passes values through unchanged", async () => {
+    const gen = retryStream(
+      async function* () {
+        yield 1;
+        yield 2;
+        yield 3;
+      },
+      { shouldRetry: () => true },
+    );
+    expect(await collect(gen)).toEqual([1, 2, 3]);
+  });
+
+  it("retries when the stream fails before yielding anything", async () => {
+    let calls = 0;
+    const gen = retryStream(
+      () =>
+        (async function* () {
+          calls++;
+          if (calls === 1) {
+            throw rateLimitError();
+          }
+          yield "a";
+          yield "b";
+        })(),
+      { ...RATE_LIMIT_RETRY, baseDelay: 1, jitterFactor: 0 },
+    );
+
+    expect(await collect(gen)).toEqual(["a", "b"]);
+    expect(calls).toBe(2);
+  });
+
+  it("does not retry after a chunk was yielded (no duplication)", async () => {
+    let calls = 0;
+    const gen = retryStream(
+      () =>
+        (async function* () {
+          calls++;
+          yield "a";
+          throw rateLimitError();
+        })(),
+      { ...RATE_LIMIT_RETRY, baseDelay: 1 },
+    );
+
+    let thrown: unknown;
+    const received: string[] = [];
+    try {
+      for await (const value of gen) {
+        received.push(value);
+      }
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(received).toEqual(["a"]);
+    expect((thrown as Error).message).toBe("Too Many Requests");
+    expect(calls).toBe(1);
+  });
+
+  it("propagates non-retryable errors immediately", async () => {
+    let calls = 0;
+    const gen = retryStream(
+      () =>
+        (async function* () {
+          calls++;
+          const error = new Error("Bad Request");
+          (error as any).status = 400;
+          throw error;
+        })(),
+      RATE_LIMIT_RETRY,
+    );
+
+    let thrown: unknown;
+    try {
+      await collect(gen);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect((thrown as Error).message).toBe("Bad Request");
+    expect(calls).toBe(1);
+  });
+
+  it("exhausts maxAttempts and throws the last error", async () => {
+    let calls = 0;
+    const gen = retryStream(
+      () =>
+        (async function* () {
+          calls++;
+          throw rateLimitError();
+        })(),
+      { ...RATE_LIMIT_RETRY, maxAttempts: 3, baseDelay: 1, jitterFactor: 0 },
+    );
+
+    let thrown: unknown;
+    try {
+      await collect(gen);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(calls).toBe(3);
+    expect((thrown as Error).message).toBe("Too Many Requests");
+  });
+
+  it("prefers the Retry-After header over exponential backoff", async () => {
+    const delays: number[] = [];
+    let calls = 0;
+    const gen = retryStream(
+      () =>
+        (async function* () {
+          calls++;
+          if (calls === 1) {
+            throw rateLimitError({ "retry-after": "0.05" });
+          }
+          yield "ok";
+        })(),
+      {
+        ...RATE_LIMIT_RETRY,
+        // baseDelay far above the header value: the header must win
+        baseDelay: 30000,
+        onRetry: (_error, _attempt, delay) => {
+          delays.push(delay);
+        },
+      },
+    );
+
+    expect(await collect(gen)).toEqual(["ok"]);
+    expect(delays).toHaveLength(1);
+    // 50ms with the ±5% header jitter applied in calculateDelay
+    expect(delays[0]).toBeGreaterThanOrEqual(45);
+    expect(delays[0]).toBeLessThanOrEqual(55);
+  });
+
+  it("resolves backoff sleep immediately when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    let calls = 0;
+    const started = Date.now();
+    const gen = retryStream(
+      () =>
+        (async function* () {
+          calls++;
+          throw rateLimitError();
+        })(),
+      {
+        ...RATE_LIMIT_RETRY,
+        maxAttempts: 3,
+        baseDelay: 60000, // would take minutes without interruptible sleeps
+        signal: controller.signal,
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      await collect(gen);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(calls).toBe(3);
+    expect(thrown).toBeDefined();
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it("aborts a running backoff sleep early", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 100);
+
+    let calls = 0;
+    const started = Date.now();
+    const gen = retryStream(
+      () =>
+        (async function* () {
+          calls++;
+          throw rateLimitError();
+        })(),
+      {
+        ...RATE_LIMIT_RETRY,
+        maxAttempts: 3,
+        baseDelay: 60000, // two waits of 60s unless the abort interrupts
+        signal: controller.signal,
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      await collect(gen);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(calls).toBe(3);
+    expect(thrown).toBeDefined();
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 });

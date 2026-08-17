@@ -263,6 +263,43 @@ export function wasAborted(response: unknown): boolean {
   );
 }
 
+/**
+ * Error for a non-OK HTTP response, carrying the status code and
+ * response headers so upstream layers can detect rate limiting (HTTP 429)
+ * and honor Retry-After. See rate-limit-retry.md.
+ */
+export interface ResponseError extends Error {
+  status: number;
+  headers: Record<string, string>;
+}
+
+/**
+ * Builds a {@link ResponseError} from a non-OK response: the message is the
+ * response body text (unchanged from the previous bare-Error behavior),
+ * with `.status` and `.headers` (lowercased keys) attached. See
+ * rate-limit-retry.md.
+ */
+export async function createResponseError(
+  response: Response,
+): Promise<ResponseError> {
+  const message = await response.text();
+
+  const headers: Record<string, string> = {};
+  const h = response.headers as unknown as {
+    forEach?: (cb: (value: string, key: string) => void) => void;
+  };
+  if (h && typeof h.forEach === "function") {
+    h.forEach((value, key) => {
+      headers[key.toLowerCase()] = value;
+    });
+  }
+
+  const error = new Error(message) as ResponseError;
+  error.status = response.status;
+  error.headers = headers;
+  return error;
+}
+
 export async function* streamResponse(
   response: Response,
 ): AsyncGenerator<string> {
@@ -271,7 +308,7 @@ export async function* streamResponse(
   }
 
   if (response.status !== 200) {
-    throw new Error(await response.text());
+    throw await createResponseError(response);
   }
 
   if (!response.body) {

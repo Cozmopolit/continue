@@ -184,10 +184,32 @@ function calculateDelay(
 }
 
 /**
- * Sleep for the specified number of milliseconds
+ * Sleep for the specified number of milliseconds. When a signal is given,
+ * the sleep resolves early on abort — the caller then continues so the
+ * abort is observed through the normal request path (see `retryStream` and
+ * rate-limit-retry.md).
  */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+
+    const timer = setTimeout(finish, ms);
+
+    function onAbort() {
+      finish();
+    }
+
+    function finish() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }
+
+    signal?.addEventListener("abort", onAbort);
+  });
 }
 
 /**
@@ -472,4 +494,116 @@ export function withLLMRetry(options: Partial<RetryOptions> = {}) {
     jitterFactor: 0.4, // Slightly more jitter to spread load
     ...options,
   });
+}
+
+/**
+ * Detects rate-limit errors across provider error shapes:
+ * - HTTP 429 status carried on the error (`error.status` /
+ *   `error.statusCode`) — SDK errors and errors enriched by
+ *   `createResponseError` (@continuedev/fetch) or `BaseLLM.parseError`
+ * - the `HTTP 429 ...` message prefix produced by `BaseLLM.parseError`
+ * - 429 reported inside an embedded JSON body, number or string form
+ *   (e.g. Gemini/VertexAI or Azure response bodies)
+ * - AWS Bedrock throttling (`ThrottlingException`)
+ *
+ * See rate-limit-retry.md.
+ */
+export function isRateLimitError(error: any): boolean {
+  const status = error?.status ?? error?.statusCode;
+  if (status === 429) {
+    return true;
+  }
+
+  if (error?.name === "ThrottlingException") {
+    return true;
+  }
+
+  const message = error?.message ?? "";
+
+  // Errors produced by BaseLLM.parseError start with "HTTP <status>"
+  if (/^HTTP 429\b/.test(message)) {
+    return true;
+  }
+
+  return /"(?:code|status)"\s*:\s*"?429"?/.test(message);
+}
+
+/**
+ * Retry preset for rate-limited LLM requests: five attempts with
+ * exponential backoff (2 s base, 90 s cap per wait) and generous jitter to
+ * spread clients competing for the same quota. Server-provided Retry-After
+ * headers take precedence over the exponential schedule (see
+ * `calculateDelay`). See rate-limit-retry.md.
+ */
+export const RATE_LIMIT_RETRY: RetryOptions = {
+  maxAttempts: 5,
+  baseDelay: 2000,
+  maxDelay: 90000,
+  jitterFactor: 0.4,
+  shouldRetry: isRateLimitError,
+};
+
+/**
+ * Wraps a lazily created stream with retry logic. The factory is invoked
+ * fresh on every attempt (streams are lazy — no HTTP happens before the
+ * first `next()`).
+ *
+ * Retries only while **zero chunks have been yielded** to the consumer:
+ * rate limits arrive before any response body, and retrying after content
+ * was emitted would duplicate it. Once a chunk has been yielded, errors
+ * propagate unchanged.
+ *
+ * The optional `signal` makes backoff waits interruptible: on abort the
+ * wait resolves early and the next attempt runs, letting the abort flow
+ * through the normal request path (e.g. the 499 translation in
+ * @continuedev/fetch). See rate-limit-retry.md.
+ */
+export function retryStream<T>(
+  factory: () => AsyncGenerator<T> | AsyncIterable<T>,
+  options: RetryOptions & { signal?: AbortSignal } = {},
+): AsyncGenerator<T> {
+  const config = { ...DEFAULT_RETRY_OPTIONS, ...options };
+  const signal = options.signal;
+
+  async function* retried(): AsyncGenerator<T> {
+    let yieldedAny = false;
+    let lastError: any;
+
+    for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
+      try {
+        for await (const value of factory()) {
+          yieldedAny = true;
+          yield value;
+        }
+        return;
+      } catch (error) {
+        lastError = error;
+
+        // Never retry once content reached the consumer, or for
+        // non-retryable errors
+        if (yieldedAny || !config.shouldRetry(error, attempt)) {
+          throw error;
+        }
+
+        // Don't delay on the last attempt
+        if (attempt === config.maxAttempts) {
+          break;
+        }
+
+        const delay = calculateDelay(
+          attempt,
+          config.baseDelay,
+          config.maxDelay,
+          config.jitterFactor,
+          error,
+        );
+        config.onRetry(error, attempt, delay);
+        await sleep(delay, signal);
+      }
+    }
+
+    throw lastError;
+  }
+
+  return retried();
 }

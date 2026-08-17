@@ -3,7 +3,7 @@ import {
   ChatCompletionMessageParam,
 } from "openai/resources/index";
 
-import { streamSse } from "@continuedev/fetch";
+import { createResponseError, streamSse } from "@continuedev/fetch";
 import {
   ResponseCreateParamsBase,
   ResponseInputItem,
@@ -557,6 +557,11 @@ class OpenAI extends BaseLLM {
     if (body.stream === false) {
       if (response.status === 499) {
         return; // Aborted by user
+      }
+      if (!response.ok) {
+        // Carries status + headers so rate limits can be retried upstream
+        // (see rate-limit-retry.md)
+        throw await createResponseError(response);
       }
       const data = await response.json();
       yield data.choices[0].message;

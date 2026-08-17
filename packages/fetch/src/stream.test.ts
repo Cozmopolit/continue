@@ -2,12 +2,14 @@
 import { describe, expect, it, test } from "vitest";
 import {
   collectDiagnosticHeaders,
+  createResponseError,
   detectCompletionSignal,
   formatPrematureStreamEndMessage,
   isPrematureStreamEndError,
   parseDataLine,
   PrematureStreamEndError,
   StreamForensics,
+  streamResponse,
   streamSse,
 } from "./stream.js";
 
@@ -447,5 +449,89 @@ describe("parseDataLine", () => {
     const line = 'data: {"user":{"name":"John","age":30}}';
     const result = parseDataLine(line);
     expect(result).toEqual({ user: { name: "John", age: 30 } });
+  });
+});
+
+describe("createResponseError", () => {
+  function mockErrorResponse(overrides: {
+    status: number;
+    body: string;
+    headers?: Record<string, string>;
+  }): Response {
+    const headersMap = new Map<string, string>(
+      Object.entries(overrides.headers ?? {}),
+    );
+    return {
+      status: overrides.status,
+      text: async () => overrides.body,
+      headers: {
+        forEach: (cb: (value: string, key: string) => void) => {
+          headersMap.forEach((v, k) => cb(v, k));
+        },
+      },
+    } as unknown as Response;
+  }
+
+  test("uses the body text as message and attaches status + lowercased headers", async () => {
+    const response = mockErrorResponse({
+      status: 429,
+      body: '{"error":"rate limited"}',
+      headers: { "Retry-After": "0.5", "Content-Type": "application/json" },
+    });
+
+    const error = await createResponseError(response);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toBe('{"error":"rate limited"}');
+    expect(error.status).toBe(429);
+    expect(error.headers).toEqual({
+      "retry-after": "0.5",
+      "content-type": "application/json",
+    });
+  });
+
+  test("handles responses without forEach-able headers", async () => {
+    const response = {
+      status: 503,
+      text: async () => "unavailable",
+      headers: {},
+    } as unknown as Response;
+
+    const error = await createResponseError(response);
+
+    expect(error.message).toBe("unavailable");
+    expect(error.status).toBe(503);
+    expect(error.headers).toEqual({});
+  });
+});
+
+describe("streamResponse error enrichment (rate-limit-retry.md)", () => {
+  test("throws a ResponseError with status and headers on non-200", async () => {
+    const response = createMockResponse([], {
+      status: 429,
+      headers: { "Retry-After": "1" },
+    });
+    // The mock body text is empty — the message stays the body text,
+    // but status/headers must be preserved for rate-limit detection.
+    let thrown: unknown;
+    try {
+      for await (const _ of streamResponse(response)) {
+        // no chunks expected
+      }
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as any).status).toBe(429);
+    expect((thrown as any).headers).toEqual({ "retry-after": "1" });
+  });
+
+  test("499 (client cancellation) completes silently without throwing", async () => {
+    const response = createMockResponse([], { status: 499 });
+
+    const results = await collect(streamResponse(response));
+
+    expect(results).toEqual([]);
   });
 });
