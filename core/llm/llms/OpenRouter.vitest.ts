@@ -234,3 +234,128 @@ describe("OpenRouter Anthropic Caching", () => {
     expect(modifiedBody.messages).toEqual(body.messages);
   });
 });
+
+describe("OpenRouter reasoning resend policy (reasoning-resend-policy.md)", () => {
+  const flagsOf = (llm: OpenRouter) => ({
+    reasoning: llm["supportsReasoningField"],
+    details: llm["supportsReasoningDetailsField"],
+    content: llm["supportsReasoningContentField"],
+  });
+
+  it.each([
+    ["moonshotai/kimi-k3", { reasoning: false, details: false, content: true }],
+    [
+      "deepseek/deepseek-r1",
+      { reasoning: false, details: false, content: true },
+    ],
+    ["qwen/qwen3-max", { reasoning: true, details: false, content: false }],
+    [
+      "anthropic/claude-opus-5",
+      { reasoning: false, details: true, content: false },
+    ],
+    ["claude-sonnet-4-5", { reasoning: false, details: true, content: false }],
+    [
+      "google/gemini-2.5-pro",
+      { reasoning: false, details: false, content: false },
+    ],
+    ["openai/gpt-4o", { reasoning: true, details: true, content: false }],
+  ])("sets exclusive flags for %s", (model, expected) => {
+    const openRouter = new OpenRouter({ model, apiKey: "test-key" });
+    expect(flagsOf(openRouter)).toEqual(expected);
+  });
+
+  it("matches families case-insensitively", () => {
+    expect(flagsOf(new OpenRouter({ model: "Google/Gemini-2.5-Pro" }))).toEqual(
+      { reasoning: false, details: false, content: false },
+    );
+    expect(flagsOf(new OpenRouter({ model: "Qwen/Qwen3-Max" }))).toEqual({
+      reasoning: true,
+      details: false,
+      content: false,
+    });
+  });
+
+  // End-to-end through the real body conversion path (_convertArgs builds
+  // providerFlags from the instance flags, exactly like streamChat does).
+  const historyWithThinking = (thinking: any): any[] => [
+    { role: "user", content: "hi" },
+    thinking,
+    { role: "assistant", content: "answer" },
+  ];
+
+  const convertedAssistant = (llm: OpenRouter, messages: any[]): any => {
+    const body = llm["_convertArgs"](
+      { model: llm.model } as any,
+      messages as any,
+    );
+    return (body.messages as any[]).find((m) => m.role === "assistant");
+  };
+
+  it("qwen sends plain reasoning only", () => {
+    const llm = new OpenRouter({ model: "qwen/qwen3.8-max" });
+    const msg = convertedAssistant(
+      llm,
+      historyWithThinking({ role: "thinking", content: "thought text" }),
+    );
+    expect(msg.reasoning).toBe("thought text");
+    expect(msg.reasoning_details).toBeUndefined();
+    expect(msg.reasoning_content).toBeUndefined();
+  });
+
+  it("kimi sends reasoning_content only", () => {
+    const llm = new OpenRouter({ model: "moonshotai/kimi-k3" });
+    const msg = convertedAssistant(
+      llm,
+      historyWithThinking({ role: "thinking", content: "thought text" }),
+    );
+    expect(msg.reasoning_content).toBe("thought text");
+    expect(msg.reasoning).toBeUndefined();
+    expect(msg.reasoning_details).toBeUndefined();
+  });
+
+  it("claude sends signed reasoning_details only", () => {
+    const llm = new OpenRouter({ model: "anthropic/claude-opus-5" });
+    const msg = convertedAssistant(
+      llm,
+      historyWithThinking({
+        role: "thinking",
+        content: "encrypted",
+        signature: "SIG123",
+        reasoning_details: [
+          { type: "thinking_signature", signature: "SIG123" },
+        ],
+      }),
+    );
+    expect(msg.reasoning_details).toEqual([
+      { type: "thinking_signature", signature: "SIG123" },
+    ]);
+    expect(msg.reasoning).toBeUndefined();
+    expect(msg.reasoning_content).toBeUndefined();
+  });
+
+  it("claude omits reasoning fields entirely when unsigned", () => {
+    const llm = new OpenRouter({ model: "anthropic/claude-opus-5" });
+    const msg = convertedAssistant(
+      llm,
+      historyWithThinking({ role: "thinking", content: "plain thinking" }),
+    );
+    expect(msg.reasoning).toBeUndefined();
+    expect(msg.reasoning_details).toBeUndefined();
+    expect(msg.reasoning_content).toBeUndefined();
+  });
+
+  it("gemini sends no reasoning fields at all", () => {
+    const llm = new OpenRouter({ model: "google/gemini-2.5-pro" });
+    const msg = convertedAssistant(
+      llm,
+      historyWithThinking({
+        role: "thinking",
+        content: "thought text",
+        reasoning_details: [{ type: "reasoning_text", text: "thought text" }],
+      }),
+    );
+    expect(msg.reasoning).toBeUndefined();
+    expect(msg.reasoning_details).toBeUndefined();
+    expect(msg.reasoning_content).toBeUndefined();
+  });
+});

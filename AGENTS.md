@@ -229,6 +229,22 @@ Naturgewalten. Bei folgenden Situationen **sofort abbrechen und melden**:
 
 **Nicht:** Workarounds bauen und weitermachen — das verschleiert Bugs.
 
+## Conversation compaction
+
+Use the fork-side `compact_conversation` on this chat's history (NOT `citt_compact_conversation` —
+the CITT runtime knows nothing about Continue conversations) regularly at semantically safe
+boundaries to control context cost. Compact after a completed, durably recorded workstream—
+especially after a successful approved commit—or when work is explicitly paused, abandoned,
+or switches to an unrelated topic.
+
+Do not compact while details remain active working material: between reconnaissance and its
+implementation, during implementation, testing, review or debugging, or while awaiting approval
+for the analyzed approach. Closely coupled follow-up work belongs to the same uncompacted block.
+
+Before compacting, ensure that outcomes, decisions, test results and open items can be preserved
+in the summary or already exist in a durable artifact. When uncertain whether the next step needs
+exact context, postpone compaction.
+
 ## Session-Ende ist Sache des Users
 
 Niemals annehmen, der User möchte aufhören, nur weil es spät ist. Kein

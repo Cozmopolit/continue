@@ -1,6 +1,6 @@
 ﻿# Resent / duplicated user messages without user action
 
-**Status:** Partially fixed — root cause of the main variant found and fixed 2026-08-17; follow-ups open
+**Status:** Fixed — capture root cause fixed 2026-08-17; resend policy implemented 2026-08-17 (reasoning-resend-policy.md); one follow-up open (corrupted sessions)
 **Date:** 2026-08-14 (updated 2026-08-17)
 
 ## Problem
@@ -74,14 +74,21 @@ Resend path involved: `core/llm/openaiTypeConverters.ts` (toChatBody /
 appendReasoningFieldsIfSupported), `core/llm/llms/OpenRouter.ts` (reasoning
 flags).
 
+## Follow-ups
+
+- **Resend policy decision — RESOLVED 2026-08-17.** Empirical probe matrix
+  (testbed `openrouter-reasoning-probe`, spec `reasoning-resend-policy.md`)
+  showed the Stufe-1 confusion was a payload/corruption artifact: genuine,
+  intact self-reasoning is correctly attributed and recallable by qwen.
+  Implemented per-family policy in `OpenRouter.ts`: qwen keeps plain
+  `reasoning` (dead `reasoning_details` removed), Kimi/DeepSeek
+  `reasoning_content` only, Claude signed `reasoning_details` only,
+  Google/Gemini resend stopped entirely. Tests: `OpenRouter.vitest.ts`
+  ("reasoning resend policy"), `openaiTypeConverters.test.ts`
+  ("toChatBody reasoning resend gating").
+
 ## Open follow-ups (2026-08-17)
 
-- **Resend policy decision:** plain-text reasoning replay confuses
-  qwen3.8-max even when uncorrupted (attribution problems, wasted
-  reasoning tokens). Candidate: only resend `reasoning_details` blocks that
-  carry a signature/encrypted payload (Anthropic-style), skip plain `reasoning`
-  strings for OpenRouter non-Anthropic models. Needs a design decision —
-  affects all swarm agents (all run qwen via OpenRouter).
 - **Corrupted existing sessions:** sessions written before the fix carry
   corrupted `reasoning_details` permanently; affected agents should start
   fresh sessions rather than continuing them.

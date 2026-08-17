@@ -32,16 +32,34 @@ class OpenRouter extends OpenAI {
       },
     });
 
-    // Kimi & DeepSeek require preserved thinking: reasoning_content from previous
-    // assistant turns must be sent back in the chat history (Kimi K3 rejects
-    // requests without it). OpenRouter accepts reasoning_content as a full alias
-    // for reasoning and forwards it to Moonshot/DeepSeek.
-    // Set it EXCLUSIVELY (disable reasoning/reasoning_details) so long thinking
-    // blocks are not sent multiple times per historical assistant message.
+    // Per-family reasoning resend policy (reasoning-resend-policy.md):
+    // measured against OpenRouter on 2026-08-17 (openrouter-reasoning-probe
+    // testbed) which assistant-thinking field actually reaches each upstream
+    // family. Only the working channel is sent — everything else is silently
+    // dropped by OpenRouter (dead bytes, and for Claude plain fields risk
+    // confusion). Channels are set EXCLUSIVELY so long thinking blocks are
+    // not sent multiple times per historical assistant message.
+    // - Kimi/DeepSeek: reasoning_content only (K3 rejects requests without
+    //   it; plain reasoning/reasoning_details are dropped).
+    // - Qwen: plain reasoning only (reasoning_details dropped).
+    // - Claude: signed reasoning_details only (guard in
+    //   appendReasoningFieldsIfSupported omits the fields when no signature
+    //   is present; plain reasoning dropped).
+    // - Google/Gemini: every resend channel is dropped, so send nothing
+    //   (thought_signature on tool calls is handled in modifyChatBody).
     // See: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
     const model = this.model?.toLowerCase() ?? "";
     if (model.includes("kimi") || model.includes("deepseek")) {
       this.supportsReasoningContentField = true;
+      this.supportsReasoningField = false;
+      this.supportsReasoningDetailsField = false;
+    } else if (model.includes("qwen")) {
+      this.supportsReasoningField = true;
+      this.supportsReasoningDetailsField = false;
+    } else if (model.includes("claude")) {
+      this.supportsReasoningField = false;
+      this.supportsReasoningDetailsField = true;
+    } else if (this.isGeminiModel(model)) {
       this.supportsReasoningField = false;
       this.supportsReasoningDetailsField = false;
     }

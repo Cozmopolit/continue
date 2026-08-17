@@ -2,9 +2,10 @@ import {
   fromChatCompletionChunk,
   isItemType,
   mergeReasoningDetails,
+  toChatBody,
   toResponsesInput,
 } from "./openaiTypeConverters";
-import { AssistantChatMessage, ChatMessage } from "..";
+import { AssistantChatMessage, ChatMessage, CompletionOptions } from "..";
 import type {
   EasyInputMessage,
   ResponseInputItem,
@@ -1484,5 +1485,121 @@ describe("mergeReasoningDetails", () => {
     expect(result).toEqual([
       { type: "thinking_signature", signature: "sig1sig2" },
     ]);
+  });
+});
+
+describe("toChatBody reasoning resend gating (reasoning-resend-policy.md)", () => {
+  const user: ChatMessage = { role: "user", content: "hi" };
+  const thinking: ChatMessage = { role: "thinking", content: "thought text" };
+  const assistant: ChatMessage = { role: "assistant", content: "answer" };
+
+  type ResendFlags = {
+    includeReasoningField?: boolean;
+    includeReasoningDetailsField?: boolean;
+    includeReasoningContentField?: boolean;
+  };
+
+  function lastAssistantMsg(
+    options: CompletionOptions,
+    flags?: ResendFlags,
+    messages: ChatMessage[] = [user, thinking, assistant],
+  ): any {
+    const body = toChatBody(messages, options, flags);
+    const assistantMsgs = body.messages.filter(
+      (m) => m.role === "assistant",
+    ) as any[];
+    return assistantMsgs[assistantMsgs.length - 1];
+  }
+
+  it("sends no reasoning fields when all flags are off", () => {
+    const msg = lastAssistantMsg({ model: "qwen/qwen3.8-max" });
+    expect(msg.reasoning).toBeUndefined();
+    expect(msg.reasoning_details).toBeUndefined();
+    expect(msg.reasoning_content).toBeUndefined();
+  });
+
+  it("sends plain reasoning when includeReasoningField is set", () => {
+    const msg = lastAssistantMsg(
+      { model: "qwen/qwen3.8-max" },
+      { includeReasoningField: true },
+    );
+    expect(msg.reasoning).toBe("thought text");
+    expect(msg.reasoning_details).toBeUndefined();
+    expect(msg.reasoning_content).toBeUndefined();
+  });
+
+  it("sends reasoning_details when includeReasoningDetailsField is set and thinking carries details", () => {
+    const details = [{ type: "reasoning_text", text: "thought text" }];
+    const thinkingWithDetails: ChatMessage = {
+      role: "thinking",
+      content: "thought text",
+      reasoning_details: details,
+    } as ChatMessage;
+    const msg = lastAssistantMsg(
+      { model: "openai/gpt-4o" },
+      { includeReasoningDetailsField: true },
+      [user, thinkingWithDetails, assistant],
+    );
+    expect(msg.reasoning_details).toEqual(details);
+    expect(msg.reasoning).toBeUndefined();
+  });
+
+  it("sends reasoning_content when includeReasoningContentField is set", () => {
+    const msg = lastAssistantMsg(
+      { model: "moonshotai/kimi-k3" },
+      { includeReasoningContentField: true },
+    );
+    expect(msg.reasoning_content).toBe("thought text");
+    expect(msg.reasoning).toBeUndefined();
+    expect(msg.reasoning_details).toBeUndefined();
+  });
+
+  it("falls back to a single space reasoning_content without preceding thinking", () => {
+    const msg = lastAssistantMsg(
+      { model: "moonshotai/kimi-k3" },
+      { includeReasoningContentField: true },
+      [user, assistant],
+    );
+    expect(msg.reasoning_content).toBe(" ");
+  });
+
+  it("Claude guard omits all reasoning fields when no signature is present", () => {
+    const msg = lastAssistantMsg(
+      { model: "anthropic/claude-opus-5" },
+      { includeReasoningField: true, includeReasoningDetailsField: true },
+    );
+    expect(msg.reasoning).toBeUndefined();
+    expect(msg.reasoning_details).toBeUndefined();
+  });
+
+  it("Claude guard passes signed reasoning_details through", () => {
+    const details = [{ type: "thinking_signature", signature: "SIG123" }];
+    const signedThinking: ChatMessage = {
+      role: "thinking",
+      content: "encrypted thinking",
+      signature: "SIG123",
+      reasoning_details: details,
+    } as ChatMessage;
+    const msg = lastAssistantMsg(
+      { model: "anthropic/claude-opus-5" },
+      { includeReasoningDetailsField: true },
+      [user, signedThinking, assistant],
+    );
+    expect(msg.reasoning_details).toEqual(details);
+    expect(msg.reasoning).toBeUndefined();
+  });
+
+  it("signature-only thinking falls back to a reasoning_details signature block", () => {
+    const signedThinking: ChatMessage = {
+      role: "thinking",
+      content: "encrypted thinking",
+      signature: "SIG456",
+    } as ChatMessage;
+    const msg = lastAssistantMsg(
+      { model: "openai/gpt-4o" },
+      { includeReasoningDetailsField: true },
+      [user, signedThinking, assistant],
+    );
+    expect(msg.reasoning_details).toEqual([{ signature: "SIG456" }]);
   });
 });
