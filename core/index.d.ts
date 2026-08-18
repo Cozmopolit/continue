@@ -1470,6 +1470,11 @@ export interface ProxyCapabilities {
    * supports the stateless `board/pending` RPC. Absent on older builds.
    */
   board?: boolean;
+  /**
+   * continue-transcript-dump.md: server supports the `transcript/dump` RPC.
+   * Absent on older builds.
+   */
+  transcript?: boolean;
 }
 
 export type MCPServerStatus = InternalMcpOptions & {
@@ -1882,6 +1887,7 @@ export interface ContinueConfig {
   ui?: ContinueUIConfig;
   experimental?: ExperimentalConfig;
   analytics?: AnalyticsConfig;
+  transcriptDump?: TranscriptDumpConfig;
   docs?: SiteIndexingConfig[];
   tools: Tool[];
   mcpServerStatuses: MCPServerStatus[];
@@ -1995,6 +2001,37 @@ export interface BoardPendingResult {
   emptyTopics?: string[];
   omitted?: { count: number; oldestOmittedId: number };
   warning?: string;
+}
+
+// continue-transcript-dump.md: top-level config.yaml block for transcript
+// dumps to CITT memory.
+export interface TranscriptDumpConfig {
+  /** Target memory override; default is `transcripts:<board-state handle>`. */
+  memory?: string;
+  /** Kill-switch (default true; absent server capability also disables). */
+  enabled?: boolean;
+}
+
+// Payload of `transcript/dump` (continue-transcript-dump.md): the fork
+// renders the transcript; CITT owns replace-by-name, chunking, header and
+// storage.
+export interface TranscriptDumpPayload {
+  memory: string;
+  /** Fragment name, e.g. `transcript-continue-<sessionId>`. */
+  name: string;
+  text: string;
+  meta?: {
+    workspace?: string;
+    agent?: string;
+    title?: string;
+  };
+}
+
+export interface TranscriptDumpResult {
+  ok: boolean;
+  fragmentName: string;
+  chunks: number;
+  bytes: number;
 }
 
 export interface RuleMetadata {

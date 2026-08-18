@@ -34,6 +34,8 @@ import {
   MCPTool,
   ProxyCapabilities,
   ProxyEndpoint,
+  TranscriptDumpPayload,
+  TranscriptDumpResult,
 } from "../..";
 import { resolveRelativePathInDir } from "../../util/ideUtils";
 import { getEnvPathFromUserShell } from "../../util/shellPath";
@@ -56,12 +58,25 @@ const ProxyCapabilitiesSchema = z.object({
   // `board/pending` support here. Optional so older CITT builds (and other
   // servers) stay compatible; Zod strips the key on older fork schemas.
   board: z.boolean().optional(),
+  // continue-transcript-dump.md: CITT signals `transcript/dump` support here.
+  transcript: z.boolean().optional(),
 });
 
 // Timeout for the run-start board fetch; mirrors PROXY_METHOD_TIMEOUT.
 // Best-effort by contract: on timeout the injection is skipped, the run starts.
 // Exported for test assertions.
 export const BOARD_PENDING_TIMEOUT = 5_000; // 5 seconds
+
+// continue-transcript-dump.md: transcript payloads are larger than
+// board/pending responses — dedicated, slightly higher timeout.
+const TRANSCRIPT_DUMP_TIMEOUT = 10_000; // 10 seconds
+
+const TranscriptDumpResultSchema = z.object({
+  ok: z.boolean(),
+  fragmentName: z.string(),
+  chunks: z.number(),
+  bytes: z.number(),
+});
 
 // Contract v1.2 (stateless CITT board gateway). sinceId omitted = init mode.
 const BoardPendingSchema = z.object({
@@ -416,6 +431,35 @@ class MCPConnection {
       signal: options?.signal,
       timeout: BOARD_PENDING_TIMEOUT,
     });
+  }
+
+  /**
+   * Dumps a rendered conversation transcript to CITT memory
+   * (`transcript/dump`, contract in continue-transcript-dump.md). CITT owns
+   * replace-by-name, chunking and storage. Best-effort: callers must handle
+   * errors and never block session saving on this.
+   */
+  async transcriptDump(
+    payload: TranscriptDumpPayload,
+    options?: { signal?: AbortSignal },
+  ): Promise<TranscriptDumpResult> {
+    const params: Record<string, unknown> = {
+      memory: payload.memory,
+      name: payload.name,
+      text: payload.text,
+    };
+    if (payload.meta) {
+      params.meta = payload.meta;
+    }
+    return await this.callMethod(
+      "transcript/dump",
+      params,
+      TranscriptDumpResultSchema,
+      {
+        signal: options?.signal,
+        timeout: TRANSCRIPT_DUMP_TIMEOUT,
+      },
+    );
   }
 
   /**

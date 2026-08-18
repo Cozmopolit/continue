@@ -110,6 +110,13 @@ const modelsUsesSchema = z
   .string()
   .or(z.enum(commonModelSlugs as [string, ...string[]]));
 
+// continue-transcript-dump.md: fork-local top-level block (transcript dump
+// to CITT memory). Deliberately not part of blockSchema — top-level only.
+const transcriptDumpSchema = z.object({
+  memory: z.string().optional(),
+  enabled: z.boolean().optional(),
+});
+
 export const configYamlSchema = baseConfigYamlSchema.extend({
   models: z
     .array(
@@ -150,6 +157,7 @@ export const configYamlSchema = baseConfigYamlSchema.extend({
     .optional(),
   prompts: z.array(blockOrSchema(promptSchema)).optional(),
   docs: z.array(blockOrSchema(docSchema)).optional(),
+  transcriptDump: transcriptDumpSchema.optional(),
 });
 
 export type ConfigYaml = z.infer<typeof configYamlSchema>;
@@ -162,6 +170,7 @@ export const assistantUnrolledSchema = baseConfigYamlSchema.extend({
   rules: z.array(ruleSchema.nullable()).optional(),
   prompts: z.array(promptSchema.nullable()).optional(),
   docs: z.array(docSchema.nullable()).optional(),
+  transcriptDump: transcriptDumpSchema.optional(),
 });
 
 export type AssistantUnrolled = z.infer<typeof assistantUnrolledSchema>;
@@ -174,6 +183,7 @@ export const assistantUnrolledSchemaNonNullable = baseConfigYamlSchema.extend({
   rules: z.array(ruleSchema).optional(),
   prompts: z.array(promptSchema).optional(),
   docs: z.array(docSchema).optional(),
+  transcriptDump: transcriptDumpSchema.optional(),
 });
 
 export type AssistantUnrolledNonNullable = z.infer<

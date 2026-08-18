@@ -3,10 +3,12 @@
 Nach dem Bauen + Installieren einer neuen VSIX und dem VSC-Restart: schnelle
 Checks, dass der Fork-Build gesund ist. Wiederverwendbar bei jedem Deploy.
 
-**Identität des Builds:** Die Extension-Version bleibt `2.1.0` (wird nicht
-gebumpt) — die Versionsanzeige kann Builds nicht unterscheiden. Identität =
-installierte VSIX-Datei (Name/Zeitstempel) + Verhaltensmarker unten. Beim
-Bauen Commit notieren (`git rev-parse HEAD`).
+**Identität des Builds:** Version (`version` in `extensions/vscode/package.json`,
+sichtbar im VSIX-Dateinamen `continue-<version>.vsix` und in der
+VS-Code-Anzeige) + annotated Tag `vX.Y.Z` beantworten „welcher Commit steckt
+in diesem Build?" — siehe
+[versioning-and-releases.md](versioning-and-releases.md). Die
+Verhaltensmarker unten bleiben der funktionale Check.
 
 ## 1. Baseline-Gesundheit (immer)
 

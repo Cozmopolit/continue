@@ -378,6 +378,8 @@ export async function unrollBlocks(
     name: assistant.name,
     version: assistant.version,
     requestOptions: assistant.requestOptions,
+    // continue-transcript-dump.md: not a block section — plain passthrough.
+    transcriptDump: assistant.transcriptDump,
   };
 
   if (injectRequestOptions) {
@@ -398,6 +400,7 @@ export async function unrollBlocks(
     | "metadata"
     | "env"
     | "requestOptions"
+    | "transcriptDump" // continue-transcript-dump.md: not a block section
   >)[] = ["models", "context", "data", "mcpServers", "prompts", "docs"];
 
   // Process all sections in parallel

@@ -85,6 +85,7 @@ import { NextEditProvider } from "./nextEdit/NextEditProvider";
 import type { FromCoreProtocol, ToCoreProtocol } from "./protocol";
 import { OnboardingModes } from "./protocol/core";
 import type { IMessenger, Message } from "./protocol/messenger";
+import { dumpTranscript } from "./transcriptDump";
 import { ContinueError, ContinueErrorReason } from "./util/errors";
 import { shareSession } from "./util/historyUtils";
 import { Logger } from "./util/Logger.js";
@@ -321,6 +322,9 @@ export class Core {
 
     on("history/save", (msg) => {
       historyManager.save(msg.data);
+      // continue-transcript-dump.md: cumulative dump to CITT memory,
+      // fire-and-forget — never blocks the save path.
+      void dumpTranscript(msg.data, this.ide, this.configHandler);
     });
 
     on("history/share", async (msg) => {
