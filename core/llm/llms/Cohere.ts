@@ -148,6 +148,10 @@ class Cohere extends BaseLLM {
   ): AsyncGenerator<string> {
     const messages = [{ role: "user" as const, content: prompt }];
     for await (const update of this._streamChat(messages, signal, options)) {
+      // thinking chunks are internal reasoning — must not leak into completion text
+      if (update.role === "thinking") {
+        continue;
+      }
       yield renderChatMessage(update);
     }
   }

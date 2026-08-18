@@ -176,6 +176,58 @@ describe("BaseLLM", () => {
     // TODO: Implement tests for *streamChat method
   });
 
+  describe("chat", () => {
+    // Reasoning models interleave `thinking` chunks with assistant text.
+    // chat() must collapse the stream to visible content only — the thinking
+    // monologue must not leak into the accumulated result (compaction
+    // summaries, titles, ...). See conversationCompaction.vitest.ts context.
+    class ChatStubLLM extends DummyLLM {
+      public stubbedChunks: ChatMessage[] = [];
+
+      async *streamChat(): AsyncGenerator<ChatMessage> {
+        yield* this.stubbedChunks;
+        return undefined as any;
+      }
+    }
+
+    const runChat = async (chunks: ChatMessage[]) => {
+      const llm = new ChatStubLLM({ model: "dummy-model" });
+      llm.stubbedChunks = chunks;
+      return llm.chat(
+        [{ role: "user", content: "hi" }],
+        new AbortController().signal,
+      );
+    };
+
+    it("excludes thinking messages from the accumulated content", async () => {
+      const result = await runChat([
+        {
+          role: "thinking",
+          content: "Let me carefully reconstruct everything.",
+        },
+        { role: "assistant", content: "Hello " },
+        { role: "thinking", content: "Length: comprehensive. Let me write." },
+        { role: "assistant", content: "world" },
+      ]);
+      expect(result).toEqual({ role: "assistant", content: "Hello world" });
+    });
+
+    it("accumulates assistant chunks unchanged when no thinking is present", async () => {
+      const result = await runChat([
+        { role: "assistant", content: "foo" },
+        { role: "assistant", content: "bar" },
+      ]);
+      expect(result.content).toBe("foobar");
+    });
+
+    it("returns empty content for a thinking-only stream", async () => {
+      const result = await runChat([
+        { role: "thinking", content: "internal deliberation only" },
+      ]);
+      expect(result.content).toBe("");
+    });
+  });
+
   describe("default context length", () => {
     allModelProviders.map((modelProvider) => {
       const LLMClass = LLMClasses.find(

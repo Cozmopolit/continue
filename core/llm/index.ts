@@ -1065,6 +1065,12 @@ export abstract class BaseLLM implements ILLM {
   ) {
     let completion = "";
     for await (const message of this.streamChat(messages, signal, options)) {
+      // Reasoning models interleave `thinking` messages (internal deliberation)
+      // with assistant text. chat() collapses the stream to visible content,
+      // so thinking must not leak into it (e.g. compaction summaries, titles).
+      if (message.role === "thinking") {
+        continue;
+      }
       completion += renderChatMessage(message);
     }
     return { role: "assistant" as const, content: completion };

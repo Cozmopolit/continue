@@ -76,6 +76,10 @@ class CustomLLMClass extends BaseLLM {
         if (typeof content === "string") {
           yield content;
         } else {
+          // thinking chunks are internal reasoning — must not leak into completion text
+          if (content.role === "thinking") {
+            continue;
+          }
           yield renderChatMessage(content);
         }
       }

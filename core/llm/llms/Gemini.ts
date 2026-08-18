@@ -89,6 +89,10 @@ class Gemini extends BaseLLM {
       signal,
       options,
     )) {
+      // thinking chunks are internal reasoning — must not leak into completion text
+      if (message.role === "thinking") {
+        continue;
+      }
       yield renderChatMessage(message);
     }
   }

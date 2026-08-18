@@ -1,3 +1,5 @@
+import { ChatMessage } from "../..";
+
 import OpenAI from "./OpenAI";
 
 describe("OpenAI", () => {
@@ -38,5 +40,36 @@ describe("OpenAI", () => {
     expect(openai.isOSeriesOrGpt5PlusModel("so1")).toBeFalsy();
     expect(openai.isOSeriesOrGpt5PlusModel("ao31")).toBeFalsy();
     expect(openai.isOSeriesOrGpt5PlusModel("1os")).toBeFalsy();
+  });
+});
+
+describe("OpenAI _streamComplete thinking guard", () => {
+  class ThinkingStubOpenAI extends OpenAI {
+    protected async *_streamChat(): AsyncGenerator<ChatMessage> {
+      yield { role: "thinking", content: "internal planning monologue" };
+      yield { role: "assistant", content: "visible " };
+      yield { role: "assistant", content: "answer" };
+    }
+
+    // Hermetic access to the adapter's completion-string path (the public
+    // streamComplete may branch into the openai-adapters package instead)
+    async *completeViaStreamCompleteDelegation(
+      prompt: string,
+      signal: AbortSignal,
+    ): AsyncGenerator<string> {
+      yield* this._streamComplete(prompt, signal, { model: this.model });
+    }
+  }
+
+  test("does not leak thinking chunks into the completion stream", async () => {
+    const llm = new ThinkingStubOpenAI({ model: "gpt-4o-mini" });
+    let completion = "";
+    for await (const chunk of llm.completeViaStreamCompleteDelegation(
+      "prompt",
+      new AbortController().signal,
+    )) {
+      completion += chunk;
+    }
+    expect(completion).toBe("visible answer");
   });
 });

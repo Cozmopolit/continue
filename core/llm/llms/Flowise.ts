@@ -121,6 +121,10 @@ class Flowise extends BaseLLM {
   ): AsyncGenerator<string> {
     const message: ChatMessage = { role: "user", content: prompt };
     for await (const chunk of this._streamChat([message], signal, options)) {
+      // thinking chunks are internal reasoning — must not leak into completion text
+      if (chunk.role === "thinking") {
+        continue;
+      }
       yield renderChatMessage(chunk);
     }
   }

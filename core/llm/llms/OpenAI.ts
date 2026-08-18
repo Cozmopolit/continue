@@ -430,6 +430,10 @@ class OpenAI extends BaseLLM {
       signal,
       options,
     )) {
+      // thinking chunks are internal reasoning — must not leak into completion text
+      if (chunk.role === "thinking") {
+        continue;
+      }
       yield renderChatMessage(chunk);
     }
   }
