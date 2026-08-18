@@ -9,7 +9,7 @@ import { setActive, setCompactionLoading } from "../redux/slices/sessionSlice";
 import { setBoardWatchMode } from "../redux/slices/uiSlice";
 import { RootState } from "../redux/store";
 import { createMockStore, getEmptyRootState } from "../util/test/mockStore";
-import { useBoardWatch } from "./useBoardWatch";
+import { nextWatchDelayMs, useBoardWatch } from "./useBoardWatch";
 
 // Board wake mode (board-wake-mode.md): watcher behavior against a real
 // store and the real fetchBoardPending seam (board requests go through
@@ -128,7 +128,7 @@ async function renderProbe(store: any, messenger: MockIdeMessenger) {
   return rendered;
 }
 
-async function tick(ms = 30_000) {
+async function tick(ms = 60_000) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
   });
@@ -139,6 +139,10 @@ const wakeCalls = () => wakeMock.mock.calls;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  // Deterministic cadence: pin the jitter to the interval midpoint
+  // (0.75 + 0.25 = 1.0 × 60 s). Individual tests override to exercise the
+  // jittered delay itself.
+  vi.spyOn(Math, "random").mockReturnValue(0.5);
   vi.spyOn(console, "warn").mockImplementation(() => {});
   mockMainEditor(EMPTY_EDITOR_JSON);
 });
@@ -263,32 +267,40 @@ describe("useBoardWatch", () => {
     expect(wakeCalls()).toHaveLength(1);
   });
 
-  it("skips ticks while a compaction runs and wakes once it completes", async () => {
+  it("pauses fully while a compaction runs, primes and wakes after it completes", async () => {
     const { messenger, store, boardCalls } = setup({
       compactionLoading: { 2: true },
     });
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
     await renderProbe(store, messenger);
-    expect(boardCalls()).toHaveLength(1); // priming only
+    // fully paused — priming included (agent-self-compaction.md): no consume
+    // may race the loadSession that resets the board buffer
+    expect(boardCalls()).toHaveLength(0);
+    expect(wakeCalls()).toHaveLength(0);
 
-    // compaction in flight: the tick is skipped entirely — no consume, no
-    // wake; the messages stay on the board (cursor untouched)
+    // a message arrives on the board while the compaction still runs: it
+    // stays on the board (no consume, no wake, cursor untouched)
     messenger.responses["board/consumePending"] = PENDING_RESULT;
     await tick();
-    expect(boardCalls()).toHaveLength(1);
+    expect(boardCalls()).toHaveLength(0);
     expect(wakeCalls()).toHaveLength(0);
     expect((store.getState() as RootState).session.board.messages).toEqual([]);
 
-    // compaction done: the next tick picks the message up and wakes
+    // compaction done: re-activation primes the pending message — priming
+    // consumes without waking
     await act(async () => {
       store.dispatch(setCompactionLoading({ index: 2, loading: false }));
     });
-    await tick();
-    expect(boardCalls()).toHaveLength(2);
-    expect(wakeCalls()).toHaveLength(1);
+    expect(boardCalls()).toHaveLength(1); // priming consume
+    expect(wakeCalls()).toHaveLength(0);
     expect((store.getState() as RootState).session.board.messages).toEqual([
       BOARD_MESSAGE,
     ]);
+
+    // the watcher keeps ticking after the pause — pending messages wake
+    await tick();
+    expect(boardCalls()).toHaveLength(2);
+    expect(wakeCalls()).toHaveLength(1);
   });
 
   it("does not wake when a compaction starts while the fetch is in flight", async () => {
@@ -384,5 +396,34 @@ describe("useBoardWatch", () => {
     await tick(90_000);
 
     expect(boardCalls()).toHaveLength(1);
+  });
+
+  it("ticks on the jittered delay, not the bare interval", async () => {
+    // random = 0 → delay = 0.75 × 60 s = 45 s (rate-limit interim:
+    // decorrelates phase-locked windows)
+    vi.mocked(Math.random).mockReturnValue(0);
+    const { messenger, store, boardCalls } = setup();
+    messenger.responses["board/consumePending"] = EMPTY_RESULT;
+    await renderProbe(store, messenger);
+    expect(boardCalls()).toHaveLength(1); // priming
+
+    await tick(44_000);
+    expect(boardCalls()).toHaveLength(1);
+    await tick(1_000);
+    expect(boardCalls()).toHaveLength(2); // first jittered tick at 45 s
+
+    await tick(45_000);
+    expect(boardCalls()).toHaveLength(3); // re-rolled with the pinned value
+  });
+});
+
+describe("nextWatchDelayMs", () => {
+  it("maps Math.random onto [0.75, 1.25) × interval", () => {
+    vi.mocked(Math.random).mockReturnValue(0);
+    expect(nextWatchDelayMs()).toBe(45_000);
+    vi.mocked(Math.random).mockReturnValue(0.5);
+    expect(nextWatchDelayMs()).toBe(60_000);
+    vi.mocked(Math.random).mockReturnValue(0.999);
+    expect(nextWatchDelayMs()).toBeCloseTo(74_970);
   });
 });

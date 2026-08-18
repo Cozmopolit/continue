@@ -15,8 +15,24 @@ import { RootState } from "../redux/store";
 import { fetchBoardPending } from "../redux/thunks/fetchBoardPending";
 import { streamResponseThunk } from "../redux/thunks/streamResponse";
 
-/** Poll cadence while idle-watching (board-wake-mode.md). */
-const BOARD_WATCH_INTERVAL_MS = 30_000;
+/**
+ * Poll cadence while idle-watching (board-wake-mode.md). Doubled from 30 s
+ * after the 2026-08-18 GitHub rate-limit incident — together with the
+ * per-tick jitter below this is the fork half of the KISS interim
+ * (board-rate-limit-polling-regime.md).
+ */
+const BOARD_WATCH_INTERVAL_MS = 60_000;
+
+/**
+ * Per-tick delay: interval ± 25 % jitter. Concurrently booted windows used
+ * to tick phase-locked (same boot window → same 30-s phase → synchronized
+ * bursts into the shared GitHub quota; incident 2026-08-18). Independently
+ * jittered delays decorrelate the windows within a few ticks; the draw also
+ * staggers the first tick after activation.
+ */
+export function nextWatchDelayMs(): number {
+  return BOARD_WATCH_INTERVAL_MS * (0.75 + Math.random() * 0.5);
+}
 
 const WAKE_MODIFIERS: InputModifiers = {
   useCodebase: false,
@@ -68,8 +84,12 @@ const WAKE_DOC: JSONContent = {
  *   per-session board buffer, so messages consumed mid-compaction would
  *   advance the board cursor and then vanish from the context window. They
  *   stay on the board and arrive in the first tick after completion.
- * - No further guards by design (no backoff/rate-limits/filters): the mode
- *   toggle is the kill switch.
+ * - Cadence: 60 s ± 25 % jitter per tick (nextWatchDelayMs). The
+ *   rate-limit incident (2026-08-18) showed phase-synchronized windows
+ *   bursting every 30 s into the shared GitHub quota. Jitter is a stagger,
+ *   not a guard: no further guards by design (no backoff/rate-limits/
+ *   filters), the mode toggle is the kill switch. The 403/429 backoff
+ *   lives CITT-side (vesta, KISS interim).
  */
 export function useBoardWatch() {
   const dispatch = useAppDispatch();
@@ -100,49 +120,65 @@ export function useBoardWatch() {
     // Priming consume (no wake, board-wake-mode.md).
     void fetchBoardPending(dispatch, ideMessenger);
 
-    const interval = setInterval(() => {
-      void (async () => {
-        // Compaction gate: skip the whole tick (no consume, no wake) while a
-        // compaction is in flight — the board buffer is about to be reset by
-        // the finishing loadSession (board-wake-mode.md).
-        if (selectIsCompactionRunning(store.getState())) {
-          return;
-        }
-        const result = await fetchBoardPending(dispatch, ideMessenger);
-        if (cancelled || !result || result.messages.length === 0) {
-          return;
-        }
-        const editor = mainEditorRef.current;
-        if (!editor || hasValidEditorContent(editor.getJSON())) {
-          // No composer access or user is typing: stay quiet — the messages
-          // are accumulated and will render in the next run.
-          return;
-        }
-        // Recheck immediately before dispatching: a user-started run or a
-        // compaction may have begun while the fetch was in flight, and a
-        // conversation that has not started yet (no user message, no
-        // summary) may never receive a synthetic [board-wake] as its first
-        // message (board-wake-mode.md).
-        const state = store.getState();
-        if (
-          !selectIsConversationIdle(state) ||
-          !selectConversationIsStarted(state) ||
-          selectIsCompactionRunning(state)
-        ) {
-          return;
-        }
-        dispatch(
-          streamResponseThunk({
-            editorState: WAKE_DOC,
-            modifiers: WAKE_MODIFIERS,
-          }),
-        );
-      })();
-    }, BOARD_WATCH_INTERVAL_MS);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const tick = async () => {
+      // Compaction gate: skip the whole tick (no consume, no wake) while a
+      // compaction is in flight — the board buffer is about to be reset by
+      // the finishing loadSession (board-wake-mode.md).
+      if (selectIsCompactionRunning(store.getState())) {
+        return;
+      }
+      const result = await fetchBoardPending(dispatch, ideMessenger);
+      if (cancelled || !result || result.messages.length === 0) {
+        return;
+      }
+      const editor = mainEditorRef.current;
+      if (!editor || hasValidEditorContent(editor.getJSON())) {
+        // No composer access or user is typing: stay quiet — the messages
+        // are accumulated and will render in the next run.
+        return;
+      }
+      // Recheck immediately before dispatching: a user-started run or a
+      // compaction may have begun while the fetch was in flight, and a
+      // conversation that has not started yet (no user message, no
+      // summary) may never receive a synthetic [board-wake] as its first
+      // message (board-wake-mode.md).
+      const state = store.getState();
+      if (
+        !selectIsConversationIdle(state) ||
+        !selectConversationIsStarted(state) ||
+        selectIsCompactionRunning(state)
+      ) {
+        return;
+      }
+      dispatch(
+        streamResponseThunk({
+          editorState: WAKE_DOC,
+          modifiers: WAKE_MODIFIERS,
+        }),
+      );
+    };
+
+    // Recursive setTimeout instead of setInterval: every round re-rolls the
+    // jittered delay (decorrelates phase-locked windows), and a slow fetch
+    // can never overlap the next tick.
+    const scheduleNext = () => {
+      timer = setTimeout(() => {
+        void tick().finally(() => {
+          if (!cancelled) {
+            scheduleNext();
+          }
+        });
+      }, nextWatchDelayMs());
+    };
+    scheduleNext();
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
     };
   }, [active, dispatch, ideMessenger, store]);
 }

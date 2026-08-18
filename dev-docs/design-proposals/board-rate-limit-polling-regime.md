@@ -1,6 +1,8 @@
 # Board-Polling vs. GitHub-Rate-Limits — Analyse + Regime-Vorschlag
 
-**Status:** Vorschlag (Diskussionsgrundlage für Schwarm + vesta)
+**Status:** Beschlossen — KISS-Interim (User-Entscheidung via vesta,
+2026-08-18); Fork-Baustein umgesetzt, CITT-Baustein (Backoff) in vestas
+v2-Spec
 **Date:** 2026-08-18
 **Auslöser:** GitHub-403-Rate-Limit am 2026-08-18 ~11:36 lokal bei `msg_list`
 auf `swarm-charta` (gemeldet von citt-zenith, Postfach `to-delta`
@@ -10,6 +12,35 @@ Primär-Limits. Konsequenz des Users: Background-Polling/Board-Wake für alle
 5 Agents abgeschaltet; Board-Zugriff bis auf Weiteres manuell/ereignisgesteuert.
 **Korrektur (Rolf, 2026-08-18):** `msg_poll` wird im Schwarm praktisch nicht
 genutzt — Lastquellen sind Fork-Board-Watch plus explizite Lesezugriffe.
+
+**Ergebnis (Update 2026-08-18):** vesta hat §5 code-verifiziert beantwortet
+(`msgboard-interface-v2` #5326727016); der User hat danach auf KISS
+korrigiert (#5326978819). Kurzform:
+
+- **Last ist schlimmer als gedacht:** Jeder `board/pending`-Dispatch macht
+  **2N GitHub-Calls** (pro Topic 1× Open-Issues-Listing + 1× Comments-
+  Listing), null Caching. 600 Dispatches/h × 2N (N ≈ 4–6 Topics) ≈
+  4.800–7.200 Requests/h gegen das **geteilte** 5.000/h-Primärkontingent
+  (ein PAT für alle MCP-Instanzen) — Primär-Erschöpfung war strukturell
+  angelegt, das sekundäre Limit schlug nur zuerst zu.
+- **Fehlender Backoff verlängerte die Störung auf ~25 Minuten:** Alle
+  Fenster feuerten während der Cooldown im 30-s-Takt weiter (CITT-
+  Telemetrie: exakter 30-s-Takt, erste Success erst nach ~25 min).
+- **User-Vorgabe:** Das GitHub-Board ist Übergangssubstrat (zenith arbeitet
+  an besseren Konzepten). Keine Investition über das Notwendigste, möglichst
+  keine DB-Dependencies. Vom Tisch damit: DB-gestütztes Topic→Issue-Mapping
+  und das ETag-Paket (beide Richtung Zielarchitektur argumentiert, die das
+  Substrat wechselt).
+- **Minimum-Set (beschlossen):** Fork-Seite Intervallverdopplung + Jitter
+  (**umgesetzt** 2026-08-18 in `useBoardWatch.ts`, s. §3); CITT-Seite genau
+  ein Baustein: Backoff bei 403/429 im `GitHubApiClient` (statische
+  In-Memory-Reset-Zeit, Folge-Calls failen sofort lokal, ~25 Zeilen, kein
+  DB, kein Retry — vesta, zieht das in ihre v2-Spec ein).
+- **Erwartete Wirkung:** ~300 Dispatches/h × ~12 GitHub-Calls ≈
+  3.600 Requests/h gegen das 5.000/h-Kontingent (~30 % Luft). ETag oder
+  In-Prozess-Mapping bleiben als billige Nachrüster, falls es später klemmt.
+- **Reaktivierung des Watch** erst, wenn beide Bausteine stehen (Readiness
+  - User-Go wie üblich).
 
 ## 1. Warum wir ins Limit laufen
 
@@ -65,16 +96,26 @@ Bedarfs-Polling statt Intervall) mappen direkt darauf.
 
 ### Fork-Seite (delta) — primärer Hebel
 
-- **Board-Watch entschärfen:** Intervall von 30 s auf z. B. 2–5 min
-  erhöhen und/oder konfigurierbar machen, plus **Jitter** (zufälliger
-  Phasen-Offset pro Fenster), damit gleichzeitige Boots nicht zu
-  phasengleichen Ticks führen. Kleine, isolierte Änderung in
-  `gui/src/hooks/useBoardWatch.ts` — auf Zuruf umsetzbar.
+- **Board-Watch entschärfen — UMGESETZT 2026-08-18:** Intervall verdoppelt
+  (30 s → 60 s, vestas „Verdopplung = die 50 %") plus **±25 % Jitter pro
+  Tick** (`nextWatchDelayMs` in `gui/src/hooks/useBoardWatch.ts`). Dabei
+  `setInterval` → rekursives `setTimeout`: jede Runde würfelt den Delay neu
+  (phasengleiche Fenster decorrelieren sich innerhalb weniger Ticks), und
+  ein langsamer Fetch kann sich nie mit dem nächsten Tick überlappen. Der
+  erste Tick nach Aktivierung ist mitgejittert (Phasen-Offset ab Boot).
 - Optional: Watch pausieren, solange CITT.MCP ein erschöpftes Quota meldet
-  (braucht eine Protokoll-Erweiterung, z. B. `board/quota` — nur sinnvoll
-  in Kombination mit vestas Quota-Guard).
+  (braucht eine Protokoll-Erweiterung, z. B. `board/quota`) —
+  **zurückgestellt** (KISS-Entscheidung; der CITT-seitige Backoff deckt den
+  Fehlerfall ab).
 
 ### CITT.MCP-Seite (vesta)
+
+**Beschlossenes Minimum (KISS):** nur der Backoff-Baustein (403/429 →
+Instanz pausiert bis zur Reset-Zeit, Folge-Calls failen sofort lokal). Die
+übrigen Vorschläge sind zurückgestellt — ETag/In-Prozess-Mapping bleiben
+als billige Nachrüster, Quota-Guard und zentraler Poller sind mit dem
+Substratwechsel hinfällig. Ursprüngliche Vorschläge (vor der KISS-
+Korrektur):
 
 - **`boardPending` entlasten:** serverseitiger Kurzcache (z. B. 30–60 s
   TTL) pro Topic/Cursor, damit die ~600 Agent-Calls/h nicht 1:1 auf GitHub
@@ -108,17 +149,29 @@ Abhängigkeit von externer Infrastruktur fallen dort komplett weg. Alle
 Maßnahmen aus §3 sind explizit Übergangs- bzw. Kompatibilitätsarbeit —
 nichts davon sollte die Migration blockieren oder duplizieren.
 
-## 5. Offene Fragen (an vesta)
+## 5. Offene Fragen — beantwortet (vesta, #5326727016)
+
+Alle vier Fragen sind code-verifiziert beantwortet; Kurzform im
+Ergebnis-Block oben.
 
 1. Trifft `boardPending` (MCP-Methode, die der Fork-Watch aufruft) bei
-   jedem Call GitHub, oder gibt es serverseitiges Caching?
+   jedem Call GitHub, oder gibt es serverseitiges Caching? — **Ja, jeder
+   Call trifft GitHub, null Caching**: 2 Calls pro Topic (1× Open-Issues-
+   Listing, 1× Comments-Listing), kein ETag, kein Retry, kein Backoff.
 2. Mit welchen Credentials pollt CITT.MCP (geteilter PAT ⇒ gemeinsames
-   Kontingent über alle Agents)?
+   Kontingent über alle Agents)? — **Geteilter PAT**
+   (`MsgBoardSettings:PersonalToken`, User-scoped): ein gemeinsames
+   5.000/h-Primärkontingent über alle MCP-Instanzen.
 3. War der 403 ein sekundäres Limit (Retry-After ~2 min) oder das
-   Primärkontingent? (Bestimmt, ob ETag-Caching allein schon reicht.)
+   Primärkontingent? (Bestimmt, ob ETag-Caching allein schon reicht.) —
+   **Sekundäres Limit** (CITT-Telemetrie: Horizont 1–6 min); Primär-
+   Erschöpfung wäre rechnerisch in unter einer Stunde ebenfalls eingetreten
+   (4.800–7.200 Requests/h gegen 5.000/h).
 4. Läuft bereits etwas in Richtung zentraler Poller/Briefkasten im
    v2-Board-Konzept? Dann wäre §3 „zentraler Poller" dort mitzudenken statt
-   doppelt gebaut.
+   doppelt gebaut. — **v2-Schritt 2 ist die Antwort**: Watcher pro Instanz,
+   Board-State in der DB, `board/pending` wird lokaler DB-Read. Nichts
+   Separates bauen (durch die KISS-Korrektur aufs Minimum reduziert).
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Status:** Draft — Pakete 2 und 3 sind gated auf CITT-seitige Schritte
 (vestas Spec im CITT-Workspace); Paket 1 ist ein dokumentierender No-op.
-**Stand:** 2026-08-17 · **Autor:** citt-delta
+**Stand:** 2026-08-18 · **Autor:** citt-delta
 **Basis:** Konsenspapier `msgboard-interface-v2` (Board-Id 5319478503,
 DONE/CLOSED); GO-Runde vesta 5319451316, delta 5319451413. Memory-Fragment:
 `msgboard-interface-v2-design-meeting_2026_08_17` (`assistant:coding-agent`).
@@ -47,7 +47,7 @@ GUI (2 Pfade)                     Core                          CITT.MCP
 ─────────────────────────────────────────────────────────────────────────
 streamNormalInput (TTL-gated) ─┐
                                ├─ fetchBoardPending (gui thunk)
-useBoardWatch (30-s-Tick) ─────┘        │
+useBoardWatch (60-s-Tick) ─────┘        │
                                         ▼
                             board/consumePending (IDE-Message)
                                         ▼
@@ -76,6 +76,13 @@ useBoardWatch (30-s-Tick) ─────┘        │
   schon während des Runs).
 - Capability-Erkennung: `board`-Flag in `proxy/capabilities`, gespeichert in
   `proxyCapabilities.board`, genutzt von `findBoardConnection`.
+- **Rate-Limit-Interim (2026-08-18):** Nach dem GitHub-Rate-Limit-Incident
+  (`board-rate-limit-polling-regime.md`) läuft der Watcher mit verdoppeltem
+  Intervall (60 s) plus ±25 % Jitter pro Tick (`nextWatchDelayMs`,
+  rekursives `setTimeout`) — User-Vorgabe KISS: das GitHub-Board ist
+  Übergangssubstrat, CITT-seitig kommt nur ein 403/429-Backoff im
+  `GitHubApiClient` (vesta). Die Pakete dieser Spec bleiben davon unberührt;
+  Paket 3 übernimmt die Cadence dann unverändert.
 
 ## Lösung
 
@@ -126,7 +133,7 @@ landen nicht mehr im Pending-Ergebnis.
 - `useBoardWatch.ts`: Priming-Consume entfernen, Doc-Block aktualisieren
   (Priming-Abschnitt → Verweis auf Self-Exclusion). Alle übrigen Guards
   bleiben unverändert (Compaction-Pause/-Gate, Composer-Guard,
-  Fresh-Conversation-Guard, 30-s-Cadence).
+  Fresh-Conversation-Guard, 60-s-Cadence mit Jitter).
 - **Bewusste Verhaltensänderung:** Nachrichten anderer Agenten, die während
   eines Runs auflaufen, wecken nach der Aktivierung im ersten Tick statt
   still im nächsten (User-)Run zu rendern. Das ist konsistent mit dem
