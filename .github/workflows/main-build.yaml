@@ -1,10 +1,9 @@
 name: Main Branch Build
 
 # Download and republish VS Code extension artifacts when code is merged to main
+# Fork: no automatic CI on this fork — the local full runner is the gate
+# (dev-docs/how-tos/test-baseline.md). Manually triggerable only.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       test_pr_number:

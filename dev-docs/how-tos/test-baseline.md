@@ -1,6 +1,7 @@
 ﻿# Test Baseline (lokale Entwicklung)
 
 Status: **2026-07-25** — vollständige Baseline über alle lauffähigen Suites hergestellt. **Zahlen-Refresh 2026-08-12** (Suite-/File-Counts drifteten durch Commits seit der Baseline; core: Jest 52 Suites, Vitest 100 Files).
+**Voller Runner 2026-08-19 (Deploy-Gate v2.2.1)** (Tranchen-/Meilenstein-Gate auf HEAD `52f2f4abb`: 8/9 Suites grün — core-jest 976, core-vitest 1905, gui 545, config-yaml 287, fetch 137, openai-adapters 160, vscode 113, binary skipped (kein Build). `extensions/cli` 2× 30s-Timeout unter Volllast (`CtrlCProcessHandling` SIGINT + `serve` --org), **solo deterministisch grün** (~13s) → katalogisierte Volllast-Flakes, siehe „Bewusst nicht behoben". Kein Code-Fail.)
 **Zahlen-Refresh 2026-08-18 (gui-baseline-drift-closeout)** (Abschluss von `gui-test-baseline-drift`: gui 536→545 Tests. Die letzten 4 roten Tests waren stale Assertions in `streamResponse*.test.ts` — die Erwartungsbilder stammten von vor dem Abort-/Inline-Error-Workstream. Runtime-State ist die gewollte Wahrheit: `abortStream` setzt `streamAborted: true` (auch auf Fehlerpfaden via `cancelStream`), `inlineErrorMessage` ist ein Session-Feld. Tests entsprechend nachgezogen (3 Assertions in 2 Dateien); Suite 49/49 Files, 545/545 Tests grün.)
 **Zahlen-Refresh 2026-08-18 (board-watch-jitter)** (Rate-Limit-KISS-Interim, Fork-Seite: gui 536→545 Tests — davon +2 aus diesem Workstream (`hooks/useBoardWatch.test.tsx`: Jitter-Cadence-Verhalten + `nextWatchDelayMs`-Grenzen), +7 aus nicht refreshten Commits seit der letzten Zeile (u. a. Board-Wake-Amendment fork-summary). Befund: Die Suite war vor der Änderung **rot** — (1) der Compaction-Pause-Test in `useBoardWatch.test.tsx` erwartete noch Priming während Compaction und war seit dem Self-Compaction-Commit (`077ddb9e2`, „fully paused — priming included") stale; gegen die finale Semantik umgeschrieben. (2) 5 Tests in `streamResponse*.test.ts` failen auf `streamAborted: true` statt erwartet `false` — vorbestehend auf HEAD, nicht durch diesen Workstream verursacht, separate Baustelle.)
 **Zahlen-Refresh 2026-08-17 (rate-limit-retry)** (Phase-4-Tests: core-Vitest 105→106 Files — neu `llm/rateLimitRetry.vitest.ts` (+3 Tests: Native-Pfad-429-Regression über den `customFetch`-Seam, persistenter 429 erschöpft 5 Versuche, 401 ohne Retry); core-Jest `llm/utils/retry.test.ts` +16 Tests (`isRateLimitError`-Matrix, `RATE_LIMIT_RETRY`-Shape, `retryStream`-Semantik inkl. Zero-Yield-Fenster und interruptible Sleeps), insgesamt 954 Tests; packages/fetch 131→137 Tests — `stream.test.ts` +4 (`createResponseError`, `streamResponse`-Anreicherung mit status/headers, 499 bleibt still), +2 durch andere Commits seit dem letzten Refresh.)
@@ -137,6 +138,12 @@ Alle Fixes sind **test-only**; kein Produktionscode geändert.
 - `extensions/cli`: TUI-Tests (ink/stdin-Simulation) können unter Volllast flaken
   (beobachtet: `TUIChat.editMessage` "edit selector should exit with Esc", 2× —
   solo deterministisch grün). Bei Failure zuerst Datei solo nachlaufen lassen.
+  Ebenso last-sensitiv (Prozess-/Signal-/Service-Init-Timing, laufen knapp unter
+  dem 30s-Timeout): `src/__tests__/CtrlCProcessHandling.test.ts` "Process SIGINT
+  handling functions > exports the necessary functions for exit message handling"
+  und `src/commands/serve.test.ts` "serve command > should pass the --org flag
+  through to initializeServices" — beobachtet 2026-08-19 im Runner-Gesamtlauf
+  (je 30s-Timeout, solo deterministisch grün in ~13s).
 - `core` (Vitest): `autocomplete/generation/ListenableGenerator.vitest.ts`
   „should allow listeners to receive values" kann unter Volllast flaken
   (Timing-Race: Listener-Spy sieht 1, 2 statt des letzten Werts —

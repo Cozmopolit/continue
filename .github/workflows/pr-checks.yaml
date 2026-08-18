@@ -1,14 +1,10 @@
 name: PR Checks
 
 # PR Checks run on all PRs to the main branch and must pass before merging.
+# Fork: no automatic CI on this fork — the local full runner is the gate
+# (dev-docs/how-tos/test-baseline.md). Manually triggerable only.
 on:
-  pull_request:
-    branches:
-      - main
-
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   track-rerun:
