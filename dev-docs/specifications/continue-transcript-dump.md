@@ -110,7 +110,8 @@ ohne Board-State); `meta.workspace` = `session.workspaceDirectory`;
 
 ### Renderer-Regeln (verbindlich)
 
-Minimal-Transcript — **nur** `user`- und `assistant`-Messages:
+Minimal-Transcript — **`user`- und `assistant`-Messages** plus
+Compaction-Markierungen:
 
 - Pro Item: `## user` / `## assistant` + Message-Text (Content-Parts: nur
   Text-Parts; Bilder als `[image]`-Zeile)
@@ -123,6 +124,12 @@ Minimal-Transcript — **nur** `user`- und `assistant`-Messages:
     `[✗ error: <200 Zeichen, einzeilig>]`; kein Result-Volltext
 - Context-Items einer User-Message als `[context: <name>]`-Zeilen ohne
   Inhalt
+- `conversationSummary` eines Items als `## summary`-Sektion direkt nach dem
+  tragenden Item (Compaction ist non-destruktiv — die History bleibt
+  vollständig im Dump; die Sektion markiert „LLM-Kontext ab hier
+  verdichtet"). Bei Forks steht sie allein am Transcript-Anfang, da das
+  synthetische Fork-Item leer rendert — so überlebt die Fork-Überleitung im
+  Archiv der neuen Session (Amendment 2026-08-18, after-hours)
 - Kumulativ: jeder Dump rendert die komplette History neu; Skip bei leerer
   History. Kein inkrementelles Protokoll, kein Debounce.
 
@@ -162,7 +169,7 @@ nur debug-loggen.
       `"transcriptDump"` in der `sections`-Omit-Liste (kein Block-
       Section); `merge.ts` unangetastet (Spread übernimmt den Block)
 - [x] `core/index.d.ts`: `ContinueConfig.transcriptDump?:
-    TranscriptDumpConfig` + `ProxyCapabilities.transcript?: boolean` +
+  TranscriptDumpConfig` + `ProxyCapabilities.transcript?: boolean` +
       neue Typen `TranscriptDumpConfig`/`TranscriptDumpPayload`/
       `TranscriptDumpResult`
 - [x] `core/config/yaml/loadYaml.ts`: Passthrough
@@ -177,7 +184,7 @@ nur debug-loggen.
       Raw-Args (`{}`) werden unterdrückt
 - [x] `core/transcriptDump/client.ts` (neu):
       `findTranscriptConnection()` + `dumpTranscript(session, ide,
-    configHandler)` — Skip-Logik (leere History, enabled=false, kein
+  configHandler)` — Skip-Logik (leere History, enabled=false, kein
       transcript-fähiger Server), Handle via `loadBoardState(ide)`,
       Memory-Default `transcripts:<handle>` (Fallback
       `transcripts:continue`), meta `{ workspace, agent: handle, title }`

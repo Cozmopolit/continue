@@ -261,4 +261,27 @@ describe("renderTranscript", () => {
     );
     expect(out).toContain('[tool: msg_post re=5 wait=true meta={"a":1}]');
   });
+
+  it("renders conversationSummary as ## summary section after its item", () => {
+    const out = renderTranscript(
+      makeSession([
+        { ...userItem("alter Kontext"), conversationSummary: "Bisher: X." },
+        userItem("weiter"),
+      ]),
+    );
+    expect(out).toBe(
+      "# Test Session\n\n## user\n\nalter Kontext\n\n## summary\n\nBisher: X.\n\n## user\n\nweiter\n",
+    );
+  });
+
+  it("renders summary on otherwise empty items (fork handoff)", () => {
+    const out = renderTranscript(
+      makeSession([
+        { ...userItem(""), conversationSummary: "Handoff: Projektstatus." },
+      ]),
+    );
+    expect(out).toBe(
+      "# Test Session\n\n## summary\n\nHandoff: Projektstatus.\n",
+    );
+  });
 });

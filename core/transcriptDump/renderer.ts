@@ -85,10 +85,17 @@ export function renderTranscript(session: Session): string {
     for (const toolCallState of item.toolCallStates ?? []) {
       body.push(...renderToolCall(toolCallState));
     }
-    if (body.length === 0) {
-      continue;
+    if (body.length > 0) {
+      sections.push(`## ${role}\n\n${body.join("\n")}`);
     }
-    sections.push(`## ${role}\n\n${body.join("\n")}`);
+    const summary = item.conversationSummary?.trim();
+    if (summary) {
+      // continue-transcript-dump.md: compaction is non-destructive, the
+      // history stays complete in the dump. The summary marks "LLM context
+      // condensed up to here"; on forks it carries the handoff into the new
+      // session's transcript (the synthetic fork item itself renders empty).
+      sections.push(`## summary\n\n${summary}`);
+    }
   }
   return `${sections.join("\n\n")}\n`;
 }
