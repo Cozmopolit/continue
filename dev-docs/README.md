@@ -6,14 +6,14 @@ Extension); `dev-docs/` ist die interne Prozess-Doku.
 
 ## Wo liegt was
 
-| Verzeichnis               | Inhalt                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `design-proposals/`       | Ideen / Feature-Requests, noch nicht reif oder priorisiert für eine Spec                                  |
-| `technical-debts/`        | Problembeschreibungen ohne Lösung; offene Incidents bis Abschluss der Analyse                             |
-| `specifications/`         | Implementierungs-Specs (Template additiv zum Tech-Debt-Format) + `_IMPLEMENTATION.md` (Workflow-Playbook) |
-| `how-tos/`                | Lebende Dev-Doku: Tests ausführen (`running-tests.md`), Test-Baseline, Environment-Gotchas                |
-| `history/specifications/` | Archiv: implementierte Specs                                                                              |
-| `history/incidents/`      | Archiv: abgeschlossene Incident-Reports                                                                   |
+| Verzeichnis               | Inhalt                                                                                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `design-proposals/`       | Ideen / Feature-Requests, noch nicht reif oder priorisiert für eine Spec                                                                        |
+| `technical-debts/`        | Problembeschreibungen ohne Lösung; offene Incidents bis Abschluss der Analyse                                                                   |
+| `specifications/`         | Implementierungs-Specs (Template additiv zum Tech-Debt-Format) + `_IMPLEMENTATION.md` (Workflow-Playbook)                                       |
+| `how-tos/`                | Lebende Dev-Doku: Tests ausführen (`running-tests.md`), Test-Baseline, Environment-Gotchas, Modell-YAML-Konfiguration (`config-yaml-models.md`) |
+| `history/specifications/` | Archiv: implementierte Specs                                                                                                                    |
+| `history/incidents/`      | Archiv: abgeschlossene Incident-Reports                                                                                                         |
 
 Dateien im Root: `AGENTS.md` (Bootstrap für Coding Agents — hier starten) und
 `coding-guidelines.md` (dauerhafte Konventionen inkl. Commit-/Push-Policy).
