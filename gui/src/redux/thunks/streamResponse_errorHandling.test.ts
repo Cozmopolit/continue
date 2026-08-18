@@ -189,6 +189,8 @@ describe("streamResponseThunk", () => {
       session: {
         ...noModelState.session,
         streamAborter: expect.any(AbortController),
+        streamAborted: true, // cancelStream → abortStream on the error path
+        inlineErrorMessage: undefined,
         history: [
           { ...noModelState.session.history[0], isGatheringContext: false },
         ],
@@ -746,6 +748,8 @@ describe("streamResponseThunk", () => {
       session: {
         ...initialState.session,
         streamAborter: expect.any(AbortController),
+        streamAborted: true, // cancelStream → abortStream on the error path
+        inlineErrorMessage: undefined,
         mainEditorContentTrigger: mockEditorState, // Editor content that triggered the request
       },
       ui: {

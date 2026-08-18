@@ -1,9 +1,26 @@
 ﻿# GUI-Suite rot gegen test-baseline.md (pre-existing auf HEAD 3812d33c2)
 
-**Status:** Open
+**Status:** Resolved (2026-08-18)
 **Date:** 2026-08-17
 
-## Problem
+## Auflösung (2026-08-18)
+
+Die offene Wahrheitsfrage (Runtime-State vs. Tests) ist entschieden: der
+Runtime-State ist gewollt. `abortStream` setzt `streamAborted: true`
+explizit (sessionSlice), und die Fehlerpfade dispatchen `cancelStream` →
+`abortStream`; `inlineErrorMessage` ist ein reales Session-Feld aus dem
+Inline-Error-Workstream. Die Tests wurden gegen die finale Implementierung
+nachgezogen (3 Assertions in `streamResponse.test.ts` +
+`streamResponse_errorHandling.test.ts`: `streamAborted: true` auf Abort-
+und Fehlerpfaden, `inlineErrorMessage: undefined` ergänzt). Verifikation:
+GUI-Suite 49/49 Files, 545/545 Tests grün (2026-08-18); die Wahrheit ist
+in test-baseline.md refresht.
+
+Rest-Befund von damals: der useBoardWatch-Compaction-Test war bereits am
+2026-08-18 vormittags im board-watch-jitter-Workstream gegen die finale
+Semantik umgeschrieben worden (16/16 grün).
+
+## Ursprüngliches Problem
 
 dev-docs/how-tos/test-baseline.md beschreibt die GUI-Suite als grün. Auf
 HEAD 3812d33c2 (und darauf 8c0d5f822) schlagen 5–6 GUI-Tests fehl —

@@ -1,5 +1,18 @@
 # CITT Proxy: Gemini Streaming Not Detected
 
+**Status:** Fork-Seite erledigt (2026-08-18); CITT-Server-Fix weiterhin offen
+
+**Update 2026-08-18:** Die Fork-Seite hat den damals als "Rejected"
+eingestuften Client-Pfad inzwischen umgesetzt und live mit Rolf verifiziert:
+der Fork hängt `?alt=sse` an `:streamGenerateContent`-Requests (Spec
+`gemini-alt-sse-streaming.md`, Commit `10d4858b5`). Damit streamt Google
+`text/event-stream`, die bestehende Content-Type-Erkennung des Proxies
+greift, und CITT.MCP sieht den Stream (inkl. `ExtractGeminiSse` für
+`logs.ProxyTokenUsage`). Der unten beschriebene serverseitige Fix ist damit
+nicht mehr zwingend für Continue, bleibt aber als Option für andere
+MCP-Clients, die ohne `alt=sse` anfragen. Verantwortlich: CITT-Seite
+(vesta).
+
 ## Problem
 
 When Continue sends a streaming request to a native Gemini endpoint (apiType="Gemini") via the CITT MCP tunnel, the response is buffered instead of streamed. This causes:

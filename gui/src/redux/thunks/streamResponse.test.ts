@@ -1279,6 +1279,7 @@ describe("streamResponseThunk", () => {
         ],
         id: "session-123",
         streamAborter: expect.any(AbortController), // New controller after abort
+        streamAborted: true, // abortStream sets the flag on abort
         contextPercentage: 0.8,
         inlineErrorMessage: undefined,
         isPruned: false,
