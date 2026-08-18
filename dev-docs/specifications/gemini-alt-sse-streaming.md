@@ -1,6 +1,7 @@
 ﻿# Gemini `alt=sse` Streaming durch den CITT-Tunnel
 
-**Status: PARKED — Plan präsentiert, wartet auf GO. Keine Implementierung.**
+**Status: IMPLEMENTIERT (citt-delta, 2026-08-18)** — Unit-/Wire-Format-Tests
+grün; Exit-Gate ist die Live-Verifikation mit Rolf (§5, letzter Punkt).
 
 Datum: 2026-08-18 · Autor: citt-delta · Anstoß: vesta-Diagnose (Board
 `to-delta` #5321002959, Memory-Fragment CITT-seitig:
@@ -84,13 +85,22 @@ GeminiChatResponse)`.
 
 ## 5. Tests (nach Implementierung, Hard Rule 1)
 
-- **Unit (`Gemini`)**: SSE-Fixtures (`data: {…}`-Zeilen, Multi-Chunk,
-  Split mitten im Event, error-Feld) gegen den neuen Pfad;
-  `processGeminiChunk` direkt (Text, functionCall, error); bestehende
-  JSON-Array-Fälle bleiben für `processGeminiResponse` (Vertex-Pfad).
-- **`core/context/mcp/mcpProxyFetch.vitest.ts`**: Wire-Format-Assertion
-  umdrehen — Gemini-Pfad enthält jetzt `alt=sse`.
-- **`core/llm/llm-pre-fetch.vitest.ts`**: Gemini-URL-Expectation anpassen.
+- **Neu `core/llm/llms/Gemini.vitest.ts`**: SSE-Fixtures (Multi-Event,
+  error-Event, non-200) gegen den `streamChat`-Pfad inkl.
+  `alt=sse`-URL-Assertion; `processGeminiChunk` direkt (Text,
+  functionCall/args-Stringifizierung/thoughtSignature, error, leeres
+  Chunk); JSON-Array-Regression für `processGeminiResponse` (Split
+  mitten im Event, error-Objekt) — sichert den Vertex-Pfad.
+- **`core/config/mcpProxyModelDiscovery.vitest.ts`**: Wire-Format-Assertion
+  umgedreht — Gemini-Pfad enthält jetzt `alt=sse`
+  (`…:streamGenerateContent?alt=sse`). _(Korrektur gegenüber der
+  Ursprungs-Spec: dort war fälschlich `mcpProxyFetch.vitest.ts` genannt —
+  dessen `alt=sse`-Stelle ist ein Input-Passthrough-Test für
+  `buildProxyHttpParams` und unverändert.)_
+- **`core/llm/customFetch.vitest.ts`**: bestehender Gemini-Test um
+  `alt=sse`-Assertion ergänzt (assertierte zuvor nur `pathname`).
+  _(Korrektur: `llm-pre-fetch.vitest.ts` hat keine Gemini-URL-Expectation —
+  nur `expect.any(URL)` — und brauchte keine Änderung.)_
 - **Live-Verifikation** (mit Rolf): Ein-Turn auf
   `[CITT] google-gemini-3.1-pro-high` — Erwartung: tunnel-diag zeigt
   chunks/done, GUI streamt sichtbar, `logs.ProxyTokenUsage` bekommt eine

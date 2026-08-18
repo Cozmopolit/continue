@@ -124,6 +124,7 @@ describe("LLMOptions.customFetch", () => {
       RequestInit,
     ];
     expect(url.searchParams.has("key")).toBe(false);
+    expect(url.searchParams.get("alt")).toBe("sse");
     expect(url.toString()).not.toContain("proxy-key");
     expect(url.pathname).toContain(
       "models/gemini-2.0-flash:streamGenerateContent",

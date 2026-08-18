@@ -1,4 +1,4 @@
-import { streamResponse } from "@continuedev/fetch";
+import { streamSse } from "@continuedev/fetch";
 import { v4 as uuidv4 } from "uuid";
 import {
   AssistantChatMessage,
@@ -371,6 +371,71 @@ class Gemini extends BaseLLM {
     return body;
   }
 
+  /**
+   * Convert one parsed Gemini response object into ChatMessage deltas.
+   * Shared by the legacy raw JSON array stream (`processGeminiResponse`,
+   * still used by VertexAI) and the `alt=sse` event stream.
+   */
+  public async *processGeminiChunk(
+    data: GeminiChatResponse,
+  ): AsyncGenerator<ChatMessage> {
+    if ("error" in data) {
+      throw new Error(data.error.message);
+    }
+
+    const contentParts = data?.candidates?.[0]?.content?.parts;
+    if (contentParts) {
+      const textParts: MessagePart[] = [];
+      const toolCalls: ToolCallDelta[] = [];
+
+      for (const part of contentParts) {
+        if ("text" in part) {
+          textParts.push({ type: "text", text: part.text });
+        } else if ("functionCall" in part) {
+          const thoughtSignature = part.thoughtSignature;
+          toolCalls.push({
+            type: "function",
+            id: part.functionCall.id ?? uuidv4(),
+            function: {
+              name: part.functionCall.name,
+              arguments:
+                typeof part.functionCall.args === "string"
+                  ? part.functionCall.args
+                  : JSON.stringify(part.functionCall.args),
+            },
+            ...(thoughtSignature && {
+              extra_content: {
+                google: {
+                  thought_signature: thoughtSignature,
+                },
+              },
+            }),
+          });
+        } else {
+          console.warn("Unsupported gemini part type received", part);
+        }
+      }
+
+      const assistantMessage: AssistantChatMessage = {
+        role: "assistant",
+        content: textParts.length ? textParts : "",
+      };
+      if (toolCalls.length > 0) {
+        assistantMessage.toolCalls = toolCalls;
+      }
+      if (textParts.length || toolCalls.length) {
+        yield assistantMessage;
+      }
+    } else {
+      console.warn("Unexpected response format:", data);
+    }
+  }
+
+  /**
+   * Legacy raw JSON array wire-format parser (Google streams `[{…}\n,{…}]`
+   * when `alt=sse` is not set). Only VertexAI still goes through this path;
+   * it builds its own URL and delegates per-object work here.
+   */
   public async *processGeminiResponse(
     stream: AsyncIterable<string>,
   ): AsyncGenerator<ChatMessage> {
@@ -400,56 +465,7 @@ class Gemini extends BaseLLM {
           continue; // yo!
         }
 
-        if ("error" in data) {
-          throw new Error(data.error.message);
-        }
-
-        const contentParts = data?.candidates?.[0]?.content?.parts;
-        if (contentParts) {
-          const textParts: MessagePart[] = [];
-          const toolCalls: ToolCallDelta[] = [];
-
-          for (const part of contentParts) {
-            if ("text" in part) {
-              textParts.push({ type: "text", text: part.text });
-            } else if ("functionCall" in part) {
-              const thoughtSignature = part.thoughtSignature;
-              toolCalls.push({
-                type: "function",
-                id: part.functionCall.id ?? uuidv4(),
-                function: {
-                  name: part.functionCall.name,
-                  arguments:
-                    typeof part.functionCall.args === "string"
-                      ? part.functionCall.args
-                      : JSON.stringify(part.functionCall.args),
-                },
-                ...(thoughtSignature && {
-                  extra_content: {
-                    google: {
-                      thought_signature: thoughtSignature,
-                    },
-                  },
-                }),
-              });
-            } else {
-              console.warn("Unsupported gemini part type received", part);
-            }
-          }
-
-          const assistantMessage: AssistantChatMessage = {
-            role: "assistant",
-            content: textParts.length ? textParts : "",
-          };
-          if (toolCalls.length > 0) {
-            assistantMessage.toolCalls = toolCalls;
-          }
-          if (textParts.length || toolCalls.length) {
-            yield assistantMessage;
-          }
-        } else {
-          console.warn("Unexpected response format:", data);
-        }
+        yield* this.processGeminiChunk(data);
       }
       if (foundIncomplete) {
         buffer = parts[parts.length - 1];
@@ -468,6 +484,11 @@ class Gemini extends BaseLLM {
       `models/${options.model}:streamGenerateContent`,
       this.apiBase,
     );
+    // alt=sse: Google then returns one `data: {…}` event per chunk instead
+    // of a raw JSON array. The CITT tunnel only recognizes
+    // `text/event-stream` responses as streams, so this is what enables real
+    // streaming UX (and SSE-path usage logging) for Gemini endpoints.
+    apiURL.searchParams.set("alt", "sse");
 
     const isV1API = !!this.apiBase?.includes("/v1/");
 
@@ -483,10 +504,11 @@ class Gemini extends BaseLLM {
       } as any,
       signal,
     });
-    for await (const message of this.processGeminiResponse(
-      streamResponse(response),
-    )) {
-      yield message;
+    for await (const data of streamSse(response, {
+      signal,
+      context: "gemini streamGenerateContent",
+    })) {
+      yield* this.processGeminiChunk(data as GeminiChatResponse);
     }
   }
   private async *streamChatBison(

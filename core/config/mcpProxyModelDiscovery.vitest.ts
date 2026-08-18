@@ -728,8 +728,10 @@ describe("wire format through the tunnel fetch", () => {
     const { params } = transport.calls[0];
     expect(params.method).toBe("POST");
     // Path uses endpoint.id (not endpoint.model) so CITT proxy can resolve.
+    // alt=sse switches Google to one `data:` event per chunk — the tunnel
+    // only recognizes text/event-stream, so this is required for streaming.
     expect(params.path).toBe(
-      "/gemini/v1beta/models/gemini-flash:streamGenerateContent",
+      "/gemini/v1beta/models/gemini-flash:streamGenerateContent?alt=sse",
     );
     // Proxy key travels in the header, never as key= query param.
     expect(params.path).not.toContain("key=");
