@@ -4,7 +4,8 @@
 `OpenRouter.ts`, Gating unverändert in `openaiTypeConverters.ts`; Tests:
 `OpenRouter.vitest.ts` „reasoning resend policy",
 `openaiTypeConverters.test.ts` „toChatBody reasoning resend gating";
-core Jest + Vitest grün, `tsc --noEmit` sauber). Commit steht aus.
+core Jest + Vitest grün, `tsc --noEmit` sauber). Committet als `5ab32eade`
+(2026-08-17).
 **Stand:** 2026-08-17 · **Autor:** citt-delta
 **Vorarbeit:** Stufen 1, 2, 2.5 abgeschlossen. Alle Belege im Testbed
 `C:\Users\Zuser\Documents\Rolf\VSC_Projekte\CITT-Solution\openrouter-reasoning-probe`
