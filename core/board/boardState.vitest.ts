@@ -172,6 +172,51 @@ describe("loadBoardState", () => {
     expect(state?.handle).toBe("delta");
     expect(state?.cursor).toBe(5);
   });
+
+  it("parses the migrated flag when set to true", async () => {
+    writeValidState({
+      handle: "delta",
+      topics: ["t1"],
+      cursor: 42,
+      migrated: true,
+    });
+    expect(await loadBoardState(wsIde())).toEqual({
+      handle: "delta",
+      topics: ["t1"],
+      cursor: 42,
+      migrated: true,
+    });
+  });
+
+  it("normalizes migrated=false to absence (only strict true counts)", async () => {
+    writeValidState({
+      handle: "delta",
+      topics: [],
+      cursor: 0,
+      migrated: false,
+    });
+    expect(await loadBoardState(wsIde())).toEqual({
+      handle: "delta",
+      topics: [],
+      cursor: 0,
+    });
+  });
+
+  it("ignores a garbage migrated value without discarding the state", async () => {
+    writeStateFile(
+      JSON.stringify({
+        handle: "delta",
+        topics: ["t1"],
+        cursor: 3,
+        migrated: "yes",
+      }),
+    );
+    expect(await loadBoardState(wsIde())).toEqual({
+      handle: "delta",
+      topics: ["t1"],
+      cursor: 3,
+    });
+  });
 });
 
 describe("saveBoardState", () => {
@@ -194,6 +239,17 @@ describe("saveBoardState", () => {
       handle: "delta",
       topics: ["t1", "t2"],
       cursor: 99,
+    };
+    await saveBoardState(wsIde(), state);
+    expect(await loadBoardState(wsIde())).toEqual(state);
+  });
+
+  it("round-trips the migrated flag through loadBoardState", async () => {
+    const state: BoardState = {
+      handle: "delta",
+      topics: ["t1"],
+      cursor: 99,
+      migrated: true,
     };
     await saveBoardState(wsIde(), state);
     expect(await loadBoardState(wsIde())).toEqual(state);

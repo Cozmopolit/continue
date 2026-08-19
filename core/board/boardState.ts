@@ -16,6 +16,14 @@ export interface BoardState {
   topics: string[];
   /** Global cursor across all topics (GitHub comment ids are monotonic). */
   cursor: number;
+  /**
+   * One-shot flag (msgboard-v2-fork-packages.md): set once
+   * `board/migrateImport` succeeded on a v2 gateway. Enables mode (b) —
+   * server-resolved `board/pending` — and makes the gateway the source of
+   * truth for subscriptions until M3 removes this store. Absent = not
+   * migrated. Never written back to `false`; absence is normalized away.
+   */
+  migrated?: boolean;
 }
 
 // Envelope-delimiter hygiene mirrors the MsgBoard handle validation
@@ -81,6 +89,8 @@ export async function loadBoardState(
             typeof t === "string" && validateBoardTopic(t) === undefined,
         ),
         cursor: parsed.cursor,
+        // Normalize: only `true` is meaningful; `false`/garbage = not migrated.
+        ...(parsed.migrated === true ? { migrated: true } : {}),
       };
     }
     console.warn(`Board state file is malformed, ignoring: ${statePath}`);

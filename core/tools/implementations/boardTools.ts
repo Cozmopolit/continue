@@ -1,4 +1,7 @@
-import { fetchBoardLatest } from "../../board/boardClient";
+import {
+  fetchBoardLatest,
+  syncBoardSubscription,
+} from "../../board/boardClient";
 import {
   BoardState,
   loadBoardState,
@@ -11,7 +14,10 @@ import { ToolImpl } from ".";
 
 // Board auto-topic-injection (board-auto-topic-injection.md): subscription
 // management. All state lives in `.continue/board-state.json`; the only CITT
-// roundtrip is the init-mode cursor bootstrap of the very first subscription.
+// roundtrips are the init-mode cursor bootstrap of the very first
+// subscription and — once the workspace is migrated (msgboard-v2,
+// msgboard-v2-fork-packages.md) — the best-effort propagation of changes to
+// the gateway's server-side subscription state.
 
 export const boardSubscribeImpl: ToolImpl = async (args, extras) => {
   const handle = String(args.handle ?? "");
@@ -48,11 +54,19 @@ export const boardSubscribeImpl: ToolImpl = async (args, extras) => {
     await saveBoardState(extras.ide, existing);
     // Cursor already bootstrapped: the global cursor gives later-added topics
     // "from now on" semantics automatically (only id > cursor is delivered).
+    // Migrated workspaces (msgboard-v2): propagate the change to the
+    // gateway's server-side subscription state. On failure the migration
+    // flag is dropped so the next consumption run self-heals via a full
+    // re-migration — tell the agent what happened either way.
+    const synced = await syncBoardSubscription(extras.ide, topic, true);
+    const syncNote = synced
+      ? ""
+      : " Note: server-side subscription sync failed; the next board fetch re-migrates the full subscription set and heals this automatically.";
     return [
       {
         name: "Subscribed",
         description: topic,
-        content: `Subscribed to "${topic}" (handle: ${existing.handle}). New messages (id > current cursor ${existing.cursor}) will be injected at the start of the next chat session. Older messages on this topic (id <= ${existing.cursor}) are not injected; if you need them, read the topic history with msg_list/msg_read.`,
+        content: `Subscribed to "${topic}" (handle: ${existing.handle}). New messages (id > current cursor ${existing.cursor}) will be injected at the start of the next chat session. Older messages on this topic (id <= ${existing.cursor}) are not injected; if you need them, read the topic history with msg_list/msg_read.${syncNote}`,
       },
     ];
   }
@@ -110,13 +124,22 @@ export const boardUnsubscribeImpl: ToolImpl = async (args, extras) => {
 
   state.topics = state.topics.filter((t) => t !== topic);
   await saveBoardState(extras.ide, state);
+  // Migrated workspaces (msgboard-v2): propagate the removal to the gateway
+  // (`subscribed: false` removes the server-side subscription). Unlike the
+  // subscribe path a failed removal cannot self-heal via re-migration
+  // (upsert-only seam), so surface it: messages on the topic may still be
+  // injected until the removal is retried successfully.
+  const synced = await syncBoardSubscription(extras.ide, topic, false);
+  const syncNote = synced
+    ? ""
+    : ` Note: local unsubscribe saved, but server-side propagation failed — messages on "${topic}" may still be injected until the removal is retried (re-subscribe to the topic, then unsubscribe again).`;
   return [
     {
       name: "Unsubscribed",
       description: topic,
       content: `Unsubscribed from "${topic}". Remaining topics: ${
         state.topics.length > 0 ? state.topics.join(", ") : "(none)"
-      }`,
+      }${syncNote}`,
     },
   ];
 };

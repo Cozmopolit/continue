@@ -1471,6 +1471,12 @@ export interface ProxyCapabilities {
    */
   board?: boolean;
   /**
+   * MsgBoard v2 (msgboard-v2-fork-packages.md): server supports the v2 board
+   * surface — `board/register`, `board/migrateImport` and
+   * subscription-resolved `board/pending`. Absent on pre-v2 builds.
+   */
+  boardV2?: boolean;
+  /**
    * continue-transcript-dump.md: server supports the `transcript/dump` RPC.
    * Absent on older builds.
    */

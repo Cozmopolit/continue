@@ -6,6 +6,7 @@ import {
   consumeBoardPending,
   fetchBoardLatest,
   findBoardConnection,
+  syncBoardSubscription,
 } from "./boardClient";
 import { BoardState, loadBoardState, saveBoardState } from "./boardState";
 
@@ -37,16 +38,31 @@ const EMPTY_RESULT: BoardPendingResult = { messages: [], latestByTopic: {} };
 function makeConnection({
   status = "connected",
   boardCapability = true,
+  boardV2Capability = false,
   boardPending = vi.fn(),
+  boardRegister = vi.fn().mockResolvedValue({ ok: true, handle: "delta" }),
+  boardMigrateImport = vi.fn().mockResolvedValue({
+    ok: true,
+    processed: 1,
+    subscribed: 1,
+    cursorAdvanced: true,
+  }),
 }: {
   status?: string;
   boardCapability?: boolean;
+  boardV2Capability?: boolean;
   boardPending?: ReturnType<typeof vi.fn>;
+  boardRegister?: ReturnType<typeof vi.fn>;
+  boardMigrateImport?: ReturnType<typeof vi.fn>;
 } = {}) {
   return {
     status,
-    proxyCapabilities: boardCapability ? { board: true } : {},
+    proxyCapabilities: boardCapability
+      ? { board: true, ...(boardV2Capability ? { boardV2: true } : {}) }
+      : {},
     boardPending,
+    boardRegister,
+    boardMigrateImport,
   };
 }
 
@@ -234,6 +250,212 @@ describe("consumeBoardPending", () => {
   });
 });
 
+describe("consumeBoardPending on v2 gateways (msgboard-v2 migration)", () => {
+  // Frozen contract (02-board-state-watcher.md): register -> migrateImport ->
+  // mode (b) pending. Every failure must fall back to the proven mode (a).
+
+  it("registers, migrates once and switches to mode (b) on first v2 contact", async () => {
+    mockLoad.mockResolvedValueOnce(state()).mockResolvedValueOnce(state()); // reload before the flag save
+    const boardPending = vi
+      .fn()
+      .mockResolvedValue({ messages: [], latestByTopic: {} });
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    const boardMigrateImport = vi.fn().mockResolvedValue({
+      ok: true,
+      processed: 1,
+      subscribed: 1,
+      cursorAdvanced: true,
+    });
+    setConnections(
+      makeConnection({
+        boardV2Capability: true,
+        boardPending,
+        boardRegister,
+        boardMigrateImport,
+      }),
+    );
+
+    await consumeBoardPending(mockIde);
+
+    expect(boardRegister).toHaveBeenCalledWith("delta");
+    expect(boardMigrateImport).toHaveBeenCalledWith([
+      { topic: "t1", sinceId: 100, subscribed: true },
+    ]);
+    expect(mockSave).toHaveBeenCalledWith(mockIde, {
+      handle: "delta",
+      topics: ["t1"],
+      cursor: 100,
+      migrated: true,
+    });
+    // mode (b): no topics, no sinceId
+    expect(boardPending).toHaveBeenCalledTimes(1);
+    expect(boardPending).toHaveBeenCalledWith();
+  });
+
+  it("skips the migration when the flag is already set, but registers per connection", async () => {
+    mockLoad.mockResolvedValue(state({ migrated: true }));
+    const boardPending = vi
+      .fn()
+      .mockResolvedValue({ messages: [], latestByTopic: {} });
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    const boardMigrateImport = vi.fn();
+    setConnections(
+      makeConnection({
+        boardV2Capability: true,
+        boardPending,
+        boardRegister,
+        boardMigrateImport,
+      }),
+    );
+
+    await consumeBoardPending(mockIde);
+
+    expect(boardRegister).toHaveBeenCalledWith("delta");
+    expect(boardMigrateImport).not.toHaveBeenCalled();
+    expect(boardPending).toHaveBeenCalledWith();
+  });
+
+  it("stays on mode (a) when registration fails (migrateImport requires registration)", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardPending = vi
+      .fn()
+      .mockResolvedValue({ messages: [], latestByTopic: {} });
+    const boardRegister = vi.fn().mockRejectedValue(new Error("-32002"));
+    const boardMigrateImport = vi.fn();
+    setConnections(
+      makeConnection({
+        boardV2Capability: true,
+        boardPending,
+        boardRegister,
+        boardMigrateImport,
+      }),
+    );
+
+    await consumeBoardPending(mockIde);
+
+    expect(boardMigrateImport).not.toHaveBeenCalled();
+    expect(boardPending).toHaveBeenCalledWith(["t1"], 100);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("stays on mode (a) and leaves the flag absent when the migration fails", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardPending = vi
+      .fn()
+      .mockResolvedValue({ messages: [], latestByTopic: {} });
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    const boardMigrateImport = vi
+      .fn()
+      .mockRejectedValue(new Error("method not found"));
+    setConnections(
+      makeConnection({
+        boardV2Capability: true,
+        boardPending,
+        boardRegister,
+        boardMigrateImport,
+      }),
+    );
+
+    await consumeBoardPending(mockIde);
+
+    expect(boardPending).toHaveBeenCalledWith(["t1"], 100);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("stays on mode (a) when the store is removed during the migration RPC", async () => {
+    mockLoad.mockResolvedValueOnce(state()).mockResolvedValueOnce(undefined);
+    const boardPending = vi
+      .fn()
+      .mockResolvedValue({ messages: [], latestByTopic: {} });
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    const boardMigrateImport = vi.fn().mockResolvedValue({
+      ok: true,
+      processed: 1,
+      subscribed: 1,
+      cursorAdvanced: true,
+    });
+    setConnections(
+      makeConnection({
+        boardV2Capability: true,
+        boardPending,
+        boardRegister,
+        boardMigrateImport,
+      }),
+    );
+
+    await consumeBoardPending(mockIde);
+
+    expect(boardPending).toHaveBeenCalledWith(["t1"], 100);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("falls back to mode (a) when migrated but registration fails on this tick", async () => {
+    mockLoad.mockResolvedValue(state({ migrated: true }));
+    const boardPending = vi
+      .fn()
+      .mockResolvedValue({ messages: [], latestByTopic: {} });
+    const boardRegister = vi.fn().mockRejectedValue(new Error("timeout"));
+    setConnections(
+      makeConnection({ boardV2Capability: true, boardPending, boardRegister }),
+    );
+
+    await consumeBoardPending(mockIde);
+
+    expect(boardPending).toHaveBeenCalledWith(["t1"], 100);
+  });
+
+  it("does not register or migrate against a non-v2 gateway (downgrade-safe)", async () => {
+    mockLoad.mockResolvedValue(state({ migrated: true }));
+    const boardPending = vi
+      .fn()
+      .mockResolvedValue({ messages: [], latestByTopic: {} });
+    const boardRegister = vi.fn();
+    const boardMigrateImport = vi.fn();
+    setConnections(
+      makeConnection({ boardPending, boardRegister, boardMigrateImport }),
+    );
+
+    await consumeBoardPending(mockIde);
+
+    expect(boardRegister).not.toHaveBeenCalled();
+    expect(boardMigrateImport).not.toHaveBeenCalled();
+    expect(boardPending).toHaveBeenCalledWith(["t1"], 100);
+  });
+
+  it("keeps advancing the store cursor under mode (b) (fallback integrity)", async () => {
+    mockLoad
+      .mockResolvedValueOnce(state({ migrated: true }))
+      .mockResolvedValueOnce(state({ migrated: true }));
+    const boardPending = vi.fn().mockResolvedValue({
+      messages: [message(150)],
+      latestByTopic: { t1: 150 },
+    });
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    setConnections(
+      makeConnection({ boardV2Capability: true, boardPending, boardRegister }),
+    );
+
+    const result = await consumeBoardPending(mockIde);
+
+    expect(result.messages).toHaveLength(1);
+    expect(boardPending).toHaveBeenCalledWith();
+    expect(mockSave).toHaveBeenCalledWith(
+      mockIde,
+      expect.objectContaining({ cursor: 150, migrated: true }),
+    );
+  });
+});
+
 describe("fetchBoardLatest", () => {
   it("returns undefined when no board-capable server is connected", async () => {
     setConnections();
@@ -259,5 +481,148 @@ describe("fetchBoardLatest", () => {
     setConnections(makeConnection({ boardPending }));
 
     await expect(fetchBoardLatest(["t1"])).rejects.toThrow("boom");
+  });
+});
+
+describe("syncBoardSubscription", () => {
+  it("is a no-op before migration (the migration carries changes over)", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardRegister = vi.fn();
+    const boardMigrateImport = vi.fn();
+    setConnections(
+      makeConnection({
+        boardV2Capability: true,
+        boardRegister,
+        boardMigrateImport,
+      }),
+    );
+
+    await expect(syncBoardSubscription(mockIde, "t2", true)).resolves.toBe(
+      true,
+    );
+    expect(boardRegister).not.toHaveBeenCalled();
+    expect(boardMigrateImport).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when no state exists", async () => {
+    mockLoad.mockResolvedValue(undefined);
+    setConnections(makeConnection({ boardV2Capability: true }));
+
+    await expect(syncBoardSubscription(mockIde, "t1", true)).resolves.toBe(
+      true,
+    );
+  });
+
+  it("is a no-op against a non-v2 gateway (mode (a) semantics apply)", async () => {
+    mockLoad.mockResolvedValue(state({ migrated: true }));
+    const boardRegister = vi.fn();
+    const boardMigrateImport = vi.fn();
+    setConnections(makeConnection({ boardRegister, boardMigrateImport }));
+
+    await expect(syncBoardSubscription(mockIde, "t2", true)).resolves.toBe(
+      true,
+    );
+    expect(boardRegister).not.toHaveBeenCalled();
+    expect(boardMigrateImport).not.toHaveBeenCalled();
+  });
+
+  it("pushes a subscribe as an upsert with the current cursor", async () => {
+    mockLoad.mockResolvedValue(state({ migrated: true }));
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    const boardMigrateImport = vi.fn().mockResolvedValue({
+      ok: true,
+      processed: 1,
+      subscribed: 1,
+      cursorAdvanced: false,
+    });
+    setConnections(
+      makeConnection({
+        boardV2Capability: true,
+        boardRegister,
+        boardMigrateImport,
+      }),
+    );
+
+    await expect(syncBoardSubscription(mockIde, "t2", true)).resolves.toBe(
+      true,
+    );
+    expect(boardRegister).toHaveBeenCalledWith("delta");
+    expect(boardMigrateImport).toHaveBeenCalledWith([
+      { topic: "t2", sinceId: 100, subscribed: true },
+    ]);
+  });
+
+  it("pushes an unsubscribe as a removal", async () => {
+    mockLoad.mockResolvedValue(state({ migrated: true }));
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    const boardMigrateImport = vi.fn().mockResolvedValue({
+      ok: true,
+      processed: 1,
+      subscribed: 0,
+      cursorAdvanced: false,
+    });
+    setConnections(
+      makeConnection({
+        boardV2Capability: true,
+        boardRegister,
+        boardMigrateImport,
+      }),
+    );
+
+    await expect(syncBoardSubscription(mockIde, "t1", false)).resolves.toBe(
+      true,
+    );
+    expect(boardMigrateImport).toHaveBeenCalledWith([
+      { topic: "t1", sinceId: 100, subscribed: false },
+    ]);
+  });
+
+  it("clears the migrated flag when a subscribe sync fails (self-heal)", async () => {
+    mockLoad.mockResolvedValue(state({ migrated: true }));
+    const boardRegister = vi.fn().mockRejectedValue(new Error("down"));
+    setConnections(makeConnection({ boardV2Capability: true, boardRegister }));
+
+    await expect(syncBoardSubscription(mockIde, "t2", true)).resolves.toBe(
+      false,
+    );
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockSave.mock.calls[0][1]).not.toHaveProperty("migrated");
+  });
+
+  it("keeps the migrated flag when an unsubscribe sync fails (no self-heal for removals)", async () => {
+    mockLoad.mockResolvedValue(state({ migrated: true }));
+    const boardRegister = vi.fn().mockRejectedValue(new Error("down"));
+    setConnections(makeConnection({ boardV2Capability: true, boardRegister }));
+
+    await expect(syncBoardSubscription(mockIde, "t1", false)).resolves.toBe(
+      false,
+    );
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("clears the migrated flag when the migrateImport sync fails on a subscribe (self-heal)", async () => {
+    mockLoad.mockResolvedValue(state({ migrated: true }));
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    const boardMigrateImport = vi.fn().mockRejectedValue(new Error("-32602"));
+    setConnections(
+      makeConnection({
+        boardV2Capability: true,
+        boardRegister,
+        boardMigrateImport,
+      }),
+    );
+
+    await expect(syncBoardSubscription(mockIde, "t2", true)).resolves.toBe(
+      false,
+    );
+    // subscribed=true → self-heal applies: flag is cleared for re-migration
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockSave.mock.calls[0][1]).not.toHaveProperty("migrated");
   });
 });

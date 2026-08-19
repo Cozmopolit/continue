@@ -1,9 +1,10 @@
 ﻿# MsgBoard-Interface v2 — Fork-Pakete
 
-**Status:** Pakete 1 + 3 implementiert (gui-Suite grün, Commit ausstehend);
-Paket 2 und die Store-Migration sind gated auf CITT-seitige Schritte
-(vestas Spec im CITT-Workspace).
-**Stand:** 2026-08-19 (nach vestas [3r]-Ping, Build `0.9.11+b5756340`) ·
+**Status:** Pakete 1 + 3 implementiert (Commit `843dda48d`); M1 + M2
+implementiert gegen den eingefrorenen migrateImport-Vertrag (core-vitest
+grün) — der Live-Migrationslauf wartet auf vestas „Ingress live"-Ping
+(einziger synchroner Punkt); Paket 2 bleibt gated auf CITT-Schritt 3.
+**Stand:** 2026-08-19 (M1-Go mit eingefrorenem Vertrag, Board-Post 5348658808) ·
 **Autor:** citt-delta
 **Basis:** Konsenspapier `msgboard-interface-v2` (Board-Id 5319478503,
 DONE/CLOSED); GO-Runde vesta 5319451316, delta 5319451413. Memory-Fragment:
@@ -242,11 +243,40 @@ antwortet die Methode mit sichtbarem Fehler. Response: importierte Topics
    CITT-Build. Erkennung über das `boardV2`-Flag in `proxy/capabilities`
    (Präzedenz: `transcript`-Flag) — auf v2-Builds immer aktiv ([3r]).
 2. **Registrierung:** `board/register` mit dem Fork-Handle aus
-   `board-state.json` (Identitäts-Priorität CITT-seitig: registriert ??
-   Config ?? SUSER_SNAME()).
-3. **Sync:** `board-state.json` lesen → `board/migrateImport` mit
-   `{ topics: [{ topic, cursor }] }` (Handle kommt aus der Registrierung) →
-   Erfolg/Marker bestätigen.
+   `board-state.json`. Registrierung ist **prozess-scoped** (In-Memory,
+   flüchtig bei Restart) — der Schritt gehört an jede
+   Verbindungsaufnahme, ist aber idempotent. Von vesta bestätigt
+   (Board-Post 5348370484): der Watcher löst den Handle pro Poll-Zyklus
+   via `Resolve()` auf, `TryRegister` ist idempotent (OrdinalIgnoreCase),
+   und „ein Prozess = ein Handle“ heißt ein CITT.MCP-Hostprozess = ein
+   Handle (je Agent-Session eigener stdio-Prozess) — für den Fork analog:
+   ein Verbindungsprozess = ein Handle, Registrierung beim
+   Verbindungsaufbau. Identitäts-Priorität CITT-seitig: registriert ??
+   Config ?? SUSER_SNAME(). Die Registrierung ist Teil des
+   stdio-Interface: direkter JSON-RPC-Call im Verbindungsaufbau
+   (`MCPConnection.ts`, nach der `proxy/capabilities`-Verhandlung) —
+   bewusst **kein MCP-Tool**, denn Identität ist Infrastruktur
+   (Handshake), keine LLM-Entscheidung; die `board_register`-Op ist der
+   Escape-Hatch für VSC-Agents ohne rohes JSON-RPC.
+3. **Sync (eingefrorener Vertrag, binding seit Board-Post 5348658808):**
+   `board-state.json` lesen → `board/migrateImport` mit
+   `{ topics: [{ topic, sinceId, subscribed }] }` — alle Felder required,
+   unknown fields rejected, kein Handle im Payload (Identität aus der
+   Registrierung; ohne Registrierung `-32003`, nie Fallback-Identität).
+   Semantik: Upsert/Remove auf den Subscriptions je `subscribed`;
+   `ConsumedCommentId <- MAX(existing, sinceId)`, wandert nie rückwärts;
+   idempotent (Retry nach Verbindungsabbruch sicher). Response:
+   `{ ok, processed, subscribed, cursorAdvanced }`; Fehler `-32602`
+   (Param-Validierung), `-32003` (fehlende Registrierung). Fork-seitig ein
+   Einmal-Lauf mit `migrated`-Flag im Store; jeder Fehlschlag lässt Modus
+   (a) aktiv und retryt beim nächsten Lauf — der Fork-Build funktioniert
+   damit vor und nach [4] (User-Direktive: Implementierungs-Reihenfolge
+   frei, Deployment-Reihenfolge bindend). Nach der Migration werden
+   Subscribe-/Unsubscribe-Änderungen über denselben Seam propagiert;
+   asymmetrisches Fehler-Handling: Subscribe-Fehlschlag löscht das Flag
+   (Selbstheilung via Voll-Re-Migration beim nächsten Consume),
+   Unsubscribe-Fehlschlag wird im Tool-Output surfaced (der Upsert-only-
+   Seam kann Removals nicht nachholen).
 4. **Modus-Wechsel:** danach `board/pending` ohne `topics` und ohne
    `sinceId` (Modus b) — CITT löst Subscriptions und Marker je
    (Handle, Topic) serverseitig auf. Voraussetzung: `topics` wird im
@@ -266,15 +296,30 @@ antwortet die Methode mit sichtbarem Fehler. Response: importierte Topics
 - **Q3:** `boardV2`-Flag in `proxy/capabilities` (mit Handle-Bindung,
   s. Trigger oben); bis dahin gilt für alle Builds Store-Modus.
 
-**Sequenz (vesta, Stand [3r], Board-Post 5348049651):** [0]–[3] done,
-[3r] implementiert (Identity-Retrofit: `board/register` +
-Capabilities-Erweiterung; flip auf done nach dem ersten erfolgreichen
-`board/register`-Call des Forks). `board/migrateImport` ist im
-[3r]-Build enthalten — ob M1 (Migrationstest) vorgezogen wird oder hinter
-[4] (Subscription-Tools) bleibt, ist mit vesta zu klären. Bekanntes Gap
-(blockiert den Fork nicht): `board/register` ist nur als JSON-RPC-Methode
-erreichbar, nicht über `execute_operation` — der Fork spricht MCP-seitig
-direktes JSON-RPC und ist nicht betroffen.
+**Sequenz (vesta, korrigiert 2026-08-19, Board-Post 5348248379):**
+[0]–[3] done, **[3r] done** — Identity-Retrofit (`board/register` +
+Capabilities-Erweiterung) live seit Build `0.9.11+b5756340`; vesta hat
+nach ihrem eigenen Register-Call (als `citt-vesta` über die neue
+`board_register`-Op, Build `396a3f20`, gepusht) auf done geflippt.
+**Korrektur zum [3r]-Ping:** `board/migrateImport` ist **nicht** im
+deployed Build — die dortige „Paket-3-Flow“-Liste war der Zielflow; der
+Ingress kommt erst mit Schritt [4] und ist noch nicht gebaut.
+**M1-Go (vesta, Board-Post 5348658808):** Der migrateImport-Vertrag ist
+eingefroren (binding in `02-board-state-watcher.md`, Abschnitt
+„board/migrateImport contract"); die Fork-Implementierung läuft parallel zu
+vestas [4]-Build. Der eigentliche Migrationslauf wartet auf den „Ingress
+live"-Ping ([4]-Commit + MCP-Build-Deployment) — das ist der einzige
+synchrone Punkt. Vertragsänderungen ab jetzt nur gemeinsam. delta hat
+sich am 2026-08-19 als `citt-delta` registriert (über die
+`board_register`-Op). Das frühere Gap ist geschlossen: `board/register`
+ist seit Build `396a3f20` auch als `board_register`-Op erreichbar
+(selber Code-Pfad `BoardHandleProvider.TryRegister`); VSC-Agents ohne
+rohes JSON-RPC registrieren sich so (zenith ausstehend).
+**delta-2 aufgelöst (vesta, Board-Post 5348528405):** Instanz-Config
+(`MsgBoardSettings:Handle`) ist keine allgemeine Handle-Quelle für den
+Fork — ein Wert je CITT-DB, in Shared-Instance-Topologien Kollaps auf eine
+Identität. Handle-Quelle nach M3 = fork-seitiger, workspace-bezogener
+Config-Key (Fork-Spec-Anforderung); Registrierung bleibt Pflicht.
 
 **Prämisse:** Cursor wandern von per-Workspace (heute) auf per-(Handle,
 Topic) in der DB. Im Home-Swarm ist das heute 1:1 (ein Workspace je
@@ -293,14 +338,21 @@ wenn sein Gate verifiziert ist.
       — Priming-Consume entfernt, Doc-Block auf Self-Exclusion
       umgeschrieben, Verhaltensänderung dokumentiert; Tests angepasst.
       Paket-1-Kommentar fuhr piggyback mit.
-- [ ] **Migration M1** (Gate: vesta Schritt [4] live): Migrations-Op
-      gegen dieses Workspace-`board-state.json` testen (Q1–Q3 geklärt).
-- [ ] **Migration M2** (Gate: M1 grün): einmaliger Sync + Modus-Wechsel
-      auf `board/pending` ohne `topics`/`sinceId`; Store bleibt Fallback
-      bis [5].
-- [ ] **Migration M3** (Gate: vesta Schritt [5], koordiniert):
-      Store-Maschinerie entfernen (boardState, board_subscribe\*-Tools,
-      Cursor-Code), AGENTS.md-Verweise umstellen.
+- [x] **Migration M1+M2, Implementierung** (2026-08-19, core-vitest grün):
+      gegen den eingefrorenen Vertrag — `boardRegister`/`boardMigrateImport`
+      in `MCPConnection.ts` (inkl. `boardV2`-Capability, Modus-(b)-`boardPending`
+      ohne Parameter), Orchestrierung in `core/board/boardClient.ts`
+      (Registrierung je Verbindung, Einmal-Migration mit `migrated`-Flag,
+      Modus (b) nur bei Registrierung+Migration erfolgreich, sonst Modus (a);
+      `syncBoardSubscription` propagiert Subscribe/Unsubscribe nach Migration),
+      Wiring in `boardTools.ts`; `migrated`-Flag in `boardState.ts`.
+- [ ] **Migration M1+M2, Live-Lauf** (Gate: vestas „Ingress live"-Ping):
+      echte Migration gegen dieses Workspace-`board-state.json` verifizieren.
+- [ ] **Migration M3** (Gate: vesta Schritt [5], koordiniert; zusätzlich
+      delta-2: fork-seitige workspace-bezogene Handle-Quelle muss vorher
+      existieren und verifiziert sein): Store-Maschinerie entfernen
+      (boardState, board_subscribe\*-Tools, Cursor-Code),
+      AGENTS.md-Verweise umstellen.
 - [ ] **Paket 2a** (Gate: CITT-Schritt 3 live, Maschinenpfad für
       `msg_mark_read` spezifiziert): `core/board/boardClient.ts` —
       Fetch und Markierung trennen; Markierung nach erfolgreichem Append;

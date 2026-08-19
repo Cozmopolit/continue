@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchBoardLatest } from "../../board/boardClient";
+import {
+  fetchBoardLatest,
+  syncBoardSubscription,
+} from "../../board/boardClient";
 import {
   BoardState,
   loadBoardState,
@@ -12,10 +15,11 @@ import {
   boardUnsubscribeImpl,
 } from "./boardTools";
 
-// Only the state IO and the gateway roundtrip are mocked; the validators run
+// Only the state IO and the gateway roundtrips are mocked; the validators run
 // for real (their behavior is additionally covered in boardState.vitest.ts).
 vi.mock("../../board/boardClient", () => ({
   fetchBoardLatest: vi.fn(),
+  syncBoardSubscription: vi.fn(),
 }));
 
 vi.mock("../../board/boardState", async (importOriginal) => {
@@ -31,6 +35,7 @@ vi.mock("../../board/boardState", async (importOriginal) => {
 const mockLoad = vi.mocked(loadBoardState);
 const mockSave = vi.mocked(saveBoardState);
 const mockFetchLatest = vi.mocked(fetchBoardLatest);
+const mockSync = vi.mocked(syncBoardSubscription);
 
 const extras = { ide: {} } as any;
 
@@ -44,6 +49,7 @@ const existingState = (overrides: Partial<BoardState> = {}): BoardState => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mockSave.mockResolvedValue(undefined);
+  mockSync.mockResolvedValue(true);
 });
 
 describe("boardSubscribeImpl", () => {
@@ -86,7 +92,7 @@ describe("boardSubscribeImpl", () => {
     expect(mockFetchLatest).not.toHaveBeenCalled();
   });
 
-  it("appends a new topic to existing state without a gateway roundtrip", async () => {
+  it("appends a new topic to existing state and syncs the subscription (no init roundtrip)", async () => {
     mockLoad.mockResolvedValue(existingState({ topics: ["t0"], cursor: 7 }));
     const result = await boardSubscribeImpl(
       { handle: "delta", topic: "t1" },
@@ -97,9 +103,28 @@ describe("boardSubscribeImpl", () => {
       extras.ide,
       expect.objectContaining({ topics: ["t0", "t1"] }),
     );
+    expect(mockSync).toHaveBeenCalledWith(extras.ide, "t1", true);
     expect(result[0].name).toBe("Subscribed");
     expect(result[0].content).toContain("id > current cursor 7");
     expect(result[0].content).toContain("msg_list");
+    expect(result[0].content).not.toContain("subscription sync failed");
+  });
+
+  it("surfaces a note when the server-side subscription sync fails", async () => {
+    mockLoad.mockResolvedValue(existingState({ topics: ["t0"], cursor: 7 }));
+    mockSync.mockResolvedValue(false);
+    const result = await boardSubscribeImpl(
+      { handle: "delta", topic: "t1" },
+      extras,
+    );
+    expect(result[0].content).toContain("server-side subscription sync failed");
+    expect(result[0].content).toContain("re-migrates");
+  });
+
+  it("does not sync on the already-subscribed no-op path", async () => {
+    mockLoad.mockResolvedValue(existingState({ topics: ["t1"], cursor: 7 }));
+    await boardSubscribeImpl({ handle: "delta", topic: "t1" }, extras);
+    expect(mockSync).not.toHaveBeenCalled();
   });
 
   describe("first subscription (cursor bootstrap via init-mode fetch)", () => {
@@ -219,14 +244,24 @@ describe("boardUnsubscribeImpl", () => {
     expect(mockSave).not.toHaveBeenCalled();
   });
 
-  it("removes the topic and reports the remaining ones", async () => {
+  it("removes the topic, reports the remaining ones, and syncs the removal", async () => {
     mockLoad.mockResolvedValue(existingState({ topics: ["t0", "t1"] }));
     const result = await boardUnsubscribeImpl({ topic: "t1" }, extras);
     expect(mockSave).toHaveBeenCalledWith(
       extras.ide,
       expect.objectContaining({ topics: ["t0"] }),
     );
+    expect(mockSync).toHaveBeenCalledWith(extras.ide, "t1", false);
     expect(result[0].content).toContain("Remaining topics: t0");
+    expect(result[0].content).not.toContain("propagation failed");
+  });
+
+  it("surfaces a note when server-side removal propagation fails", async () => {
+    mockLoad.mockResolvedValue(existingState({ topics: ["t1"] }));
+    mockSync.mockResolvedValue(false);
+    const result = await boardUnsubscribeImpl({ topic: "t1" }, extras);
+    expect(result[0].content).toContain("server-side propagation failed");
+    expect(result[0].content).toContain("may still be injected");
   });
 
   it("reports (none) when the last topic is removed", async () => {
