@@ -89,6 +89,7 @@ import { dumpTranscript } from "./transcriptDump";
 import { ContinueError, ContinueErrorReason } from "./util/errors";
 import { shareSession } from "./util/historyUtils";
 import { Logger } from "./util/Logger.js";
+import { SubmenuRefreshCoalescer } from "./util/submenuRefreshCoalescer.js";
 
 export class Core {
   configHandler: ConfigHandler;
@@ -853,6 +854,12 @@ export class Core {
 
     // File changes - TODO - remove remaining logic for these from IDEs where possible
     on("files/changed", this.handleFilesChanged.bind(this));
+    // Event-driven submenu refreshes are coalesced to one send per window
+    // (watcher-smb-hammering-mitigation.md): every send makes the GUI run a
+    // full workspace walk, which hammers network shares under watcher churn.
+    const submenuRefreshCoalescer = new SubmenuRefreshCoalescer((providers) => {
+      this.messenger.send("refreshSubmenuItems", { providers });
+    });
     const refreshIfNotIgnored = async (uris: string[]) => {
       const toRefresh: string[] = [];
       for (const uri of uris) {
@@ -869,9 +876,7 @@ export class Core {
         }
       }
       if (toRefresh.length > 0) {
-        this.messenger.send("refreshSubmenuItems", {
-          providers: ["file"],
-        });
+        submenuRefreshCoalescer.request(["file"]);
         const { config } = await this.configHandler.loadConfig();
         if (config && !config.disableIndexing) {
           await this.codeBaseIndexer.refreshCodebaseIndexFiles(toRefresh);
@@ -883,6 +888,7 @@ export class Core {
       if (!data?.uris?.length) {
         return;
       }
+      Logger.info(`[fs-watch] files/created batch: ${data.uris.length} uris`);
 
       walkDirCache.invalidate();
       // Ignore files change the effective ignore set workspace-wide — route
@@ -925,6 +931,7 @@ export class Core {
       if (!data?.uris?.length) {
         return;
       }
+      Logger.info(`[fs-watch] files/deleted batch: ${data.uris.length} uris`);
 
       walkDirCache.invalidate();
       // Ignore files change the effective ignore set workspace-wide — route
@@ -1305,9 +1312,12 @@ export class Core {
     uris?: string[];
   }>): Promise<void> {
     if (data?.uris?.length) {
+      Logger.info(`[fs-watch] files/changed batch: ${data.uris.length} uris`);
       const diffCache = GitDiffCache.getInstance(getDiffFn(this.ide));
       diffCache.invalidate();
-      walkDirCache.invalidate(); // safe approach for now - TODO - only invalidate on relevant changes
+      // No walkDirCache.invalidate() here (watcher-smb-hammering-mitigation.md):
+      // content changes never alter the file list, and ignore-file changes
+      // route to index/forceReIndex below, which invalidates on its own.
       const currentProfileUri =
         this.configHandler.currentProfile?.profileDescription.uri ?? "";
       for (const uri of data.uris) {

@@ -8,6 +8,7 @@ import {
 } from "../../";
 import { isSecurityConcern } from "../../indexing/ignore";
 import { walkDirs } from "../../indexing/walkDir";
+import { Logger } from "../../util/Logger";
 import {
   getShortestUniqueRelativeUriPaths,
   getUriDescription,
@@ -53,6 +54,7 @@ class FileContextProvider extends BaseContextProvider {
   async loadSubmenuItems(
     args: LoadSubmenuItemsArgs,
   ): Promise<ContextSubmenuItem[]> {
+    const startedAt = Date.now();
     const workspaceDirs = await args.ide.getWorkspaceDirs();
     const results = await walkDirs(
       args.ide,
@@ -65,6 +67,9 @@ class FileContextProvider extends BaseContextProvider {
     const withUniquePaths = getShortestUniqueRelativeUriPaths(
       files,
       workspaceDirs,
+    );
+    Logger.info(
+      `[fs-watch] loadSubmenuItems(file): ${withUniquePaths.length} items in ${Date.now() - startedAt} ms`,
     );
 
     return withUniquePaths.map((file) => {
