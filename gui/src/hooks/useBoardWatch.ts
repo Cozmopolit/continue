@@ -62,12 +62,15 @@ const WAKE_DOC: JSONContent = {
  * model through the regular always-apply injection block — the wake message
  * is only the trigger.
  *
- * - Priming: on entering the active state, consume once WITHOUT waking
- *   (cursor hygiene — the just-finished run's own posts and already-injected
- *   messages must not wake).
+ * - No priming (msgboard-v2-fork-packages.md, Paket 3): since CITT-side
+ *   self-exclusion keeps this agent's own posts out of board/pending,
+ *   activation no longer needs a silent consume for cursor hygiene.
+ *   Deliberate behavior change: foreign messages that piled up while a run
+ *   was active wake in the first tick after activation instead of rendering
+ *   silently in the next run.
  * - Compaction pause: while a compaction runs OR a self-compaction is
- *   pending, the watcher is fully paused — priming included. The finishing
- *   loadSession resets the board buffer, so no consume may race it
+ *   pending, the watcher is fully paused. The finishing loadSession resets
+ *   the board buffer, so no consume may race it
  *   (agent-self-compaction.md, board-wake-mode.md).
  * - Composer guard: never dispatch while the user has text in the composer;
  *   accumulated messages render in the next run regardless.
@@ -99,8 +102,7 @@ export function useBoardWatch() {
   const boardWatchMode = useAppSelector((store) => store.ui.boardWatchMode);
   const isIdle = useAppSelector(selectIsConversationIdle);
   // Compaction pause (agent-self-compaction.md): pending counts as running —
-  // neither priming nor ticks may race the loadSession that resets the board
-  // buffer.
+  // no tick may race the loadSession that resets the board buffer.
   const compactionRunning = useAppSelector(selectIsCompactionRunning);
   const active = boardWatchMode && isIdle && !compactionRunning;
 
@@ -116,9 +118,6 @@ export function useBoardWatch() {
       return;
     }
     let cancelled = false;
-
-    // Priming consume (no wake, board-wake-mode.md).
-    void fetchBoardPending(dispatch, ideMessenger);
 
     let timer: ReturnType<typeof setTimeout> | undefined;
 

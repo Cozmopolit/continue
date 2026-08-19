@@ -62,7 +62,10 @@ const ProxyCapabilitiesSchema = z.object({
   transcript: z.boolean().optional(),
 });
 
-// Timeout for the run-start board fetch; mirrors PROXY_METHOD_TIMEOUT.
+// Timeout for `board/pending`; mirrors PROXY_METHOD_TIMEOUT. The uniform
+// 5 s budget for BOTH modes (run-start injection and watcher ticks) is
+// intentional: from CITT step 2 onward `board/pending` is a DB-read, so the
+// budget is trivially satisfiable — no budget split (msgboard-v2-fork-packages.md).
 // Best-effort by contract: on timeout the injection is skipped, the run starts.
 // Exported for test assertions.
 export const BOARD_PENDING_TIMEOUT = 5_000; // 5 seconds

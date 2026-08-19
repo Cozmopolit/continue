@@ -153,16 +153,23 @@ afterEach(() => {
 });
 
 describe("useBoardWatch", () => {
-  it("primes on activation without waking, even with messages pending", async () => {
+  it("does not consume on activation — the first tick consumes and wakes", async () => {
+    // Paket 3 (msgboard-v2-fork-packages.md): priming is gone — CITT-side
+    // self-exclusion keeps own posts out of board/pending, so activation no
+    // longer needs a silent consume. Messages pending at activation wake in
+    // the first tick.
     const { messenger, store, boardCalls } = setup();
     messenger.responses["board/consumePending"] = PENDING_RESULT;
 
     await renderProbe(store, messenger);
 
-    expect(boardCalls()).toHaveLength(1);
+    expect(boardCalls()).toHaveLength(0);
     expect(wakeCalls()).toHaveLength(0);
-    // primed messages are accumulated, not dropped — they render in the
-    // injection block of the next run
+
+    await tick();
+
+    expect(boardCalls()).toHaveLength(1);
+    expect(wakeCalls()).toHaveLength(1);
     expect((store.getState() as RootState).session.board.messages).toEqual([
       BOARD_MESSAGE,
     ]);
@@ -267,14 +274,14 @@ describe("useBoardWatch", () => {
     expect(wakeCalls()).toHaveLength(1);
   });
 
-  it("pauses fully while a compaction runs, primes and wakes after it completes", async () => {
+  it("pauses fully while a compaction runs, consumes and wakes on the first tick after", async () => {
     const { messenger, store, boardCalls } = setup({
       compactionLoading: { 2: true },
     });
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
     await renderProbe(store, messenger);
-    // fully paused — priming included (agent-self-compaction.md): no consume
-    // may race the loadSession that resets the board buffer
+    // fully paused (agent-self-compaction.md): no consume may race the
+    // loadSession that resets the board buffer
     expect(boardCalls()).toHaveLength(0);
     expect(wakeCalls()).toHaveLength(0);
 
@@ -286,21 +293,20 @@ describe("useBoardWatch", () => {
     expect(wakeCalls()).toHaveLength(0);
     expect((store.getState() as RootState).session.board.messages).toEqual([]);
 
-    // compaction done: re-activation primes the pending message — priming
-    // consumes without waking
+    // compaction done: re-activation itself consumes nothing (no priming) —
+    // the pending message wakes in the first tick
     await act(async () => {
       store.dispatch(setCompactionLoading({ index: 2, loading: false }));
     });
-    expect(boardCalls()).toHaveLength(1); // priming consume
+    expect(boardCalls()).toHaveLength(0);
     expect(wakeCalls()).toHaveLength(0);
+
+    await tick();
+    expect(boardCalls()).toHaveLength(1);
+    expect(wakeCalls()).toHaveLength(1);
     expect((store.getState() as RootState).session.board.messages).toEqual([
       BOARD_MESSAGE,
     ]);
-
-    // the watcher keeps ticking after the pause — pending messages wake
-    await tick();
-    expect(boardCalls()).toHaveLength(2);
-    expect(wakeCalls()).toHaveLength(1);
   });
 
   it("does not wake when a compaction starts while the fetch is in flight", async () => {
@@ -308,8 +314,9 @@ describe("useBoardWatch", () => {
     let calls = 0;
     messenger.responseHandlers["board/consumePending"] = async () => {
       calls += 1;
-      if (calls === 2) {
-        // the user starts a compaction while the tick's fetch is in flight
+      if (calls === 1) {
+        // the user starts a compaction while the (first) tick's fetch is in
+        // flight
         store.dispatch(setCompactionLoading({ index: 0, loading: true }));
         return PENDING_RESULT;
       }
@@ -332,8 +339,9 @@ describe("useBoardWatch", () => {
     let calls = 0;
     messenger.responseHandlers["board/consumePending"] = async () => {
       calls += 1;
-      if (calls === 2) {
-        // a user-started run begins while the tick's fetch is in flight
+      if (calls === 1) {
+        // a user-started run begins while the (first) tick's fetch is in
+        // flight
         store.dispatch(setActive());
         return PENDING_RESULT;
       }
@@ -364,38 +372,41 @@ describe("useBoardWatch", () => {
     expect(boardCalls()).toHaveLength(0);
   });
 
-  it("re-primes without waking when the mode is toggled off and on", async () => {
+  it("resumes ticking when the mode is toggled off and on", async () => {
+    // no priming on re-activation either — the pending message wakes in the
+    // first tick after re-enabling
     const { messenger, store, boardCalls } = setup();
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
     await renderProbe(store, messenger);
-    expect(boardCalls()).toHaveLength(1);
+    expect(boardCalls()).toHaveLength(0);
 
     await act(async () => {
       store.dispatch(setBoardWatchMode(false));
     });
     await tick(60_000);
-    expect(boardCalls()).toHaveLength(1);
+    expect(boardCalls()).toHaveLength(0);
 
-    // re-activation primes the pending message instead of waking on it
     messenger.responses["board/consumePending"] = PENDING_RESULT;
     await act(async () => {
       store.dispatch(setBoardWatchMode(true));
     });
+    expect(boardCalls()).toHaveLength(0);
 
-    expect(boardCalls()).toHaveLength(2);
-    expect(wakeCalls()).toHaveLength(0);
+    await tick();
+    expect(boardCalls()).toHaveLength(1);
+    expect(wakeCalls()).toHaveLength(1);
   });
 
   it("stops polling after unmount", async () => {
     const { messenger, store, boardCalls } = setup();
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
     const rendered = await renderProbe(store, messenger);
-    expect(boardCalls()).toHaveLength(1);
+    expect(boardCalls()).toHaveLength(0);
 
     rendered.unmount();
     await tick(90_000);
 
-    expect(boardCalls()).toHaveLength(1);
+    expect(boardCalls()).toHaveLength(0);
   });
 
   it("ticks on the jittered delay, not the bare interval", async () => {
@@ -405,15 +416,15 @@ describe("useBoardWatch", () => {
     const { messenger, store, boardCalls } = setup();
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
     await renderProbe(store, messenger);
-    expect(boardCalls()).toHaveLength(1); // priming
+    expect(boardCalls()).toHaveLength(0);
 
     await tick(44_000);
-    expect(boardCalls()).toHaveLength(1);
+    expect(boardCalls()).toHaveLength(0);
     await tick(1_000);
-    expect(boardCalls()).toHaveLength(2); // first jittered tick at 45 s
+    expect(boardCalls()).toHaveLength(1); // first jittered tick at 45 s
 
     await tick(45_000);
-    expect(boardCalls()).toHaveLength(3); // re-rolled with the pinned value
+    expect(boardCalls()).toHaveLength(2); // re-rolled with the pinned value
   });
 });
 
