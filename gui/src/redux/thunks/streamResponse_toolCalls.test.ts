@@ -267,6 +267,7 @@ describe("streamResponseThunk - tool calls", () => {
       "session/streamUpdate",
       "session/streamUpdate",
       "session/addPromptCompletionPair",
+      "session/rescueInterruptedReasoning",
       "session/setToolGenerated",
       "chat/callTool/pending",
       "session/setToolCallCalling",
@@ -284,6 +285,7 @@ describe("streamResponseThunk - tool calls", () => {
       "session/setContextPercentage",
       "session/streamUpdate",
       "session/addPromptCompletionPair",
+      "session/rescueInterruptedReasoning",
       "session/setInactive",
       "chat/streamNormalInput/fulfilled",
       "session/saveCurrent/pending",
@@ -785,6 +787,10 @@ describe("streamResponseThunk - tool calls", () => {
             prompt: "Please search the codebase",
           },
         ],
+      },
+      {
+        type: "session/rescueInterruptedReasoning",
+        payload: undefined,
       },
       {
         type: "session/setToolGenerated",
@@ -1342,6 +1348,10 @@ describe("streamResponseThunk - tool calls", () => {
         ],
       },
       {
+        type: "session/rescueInterruptedReasoning",
+        payload: undefined,
+      },
+      {
         type: "session/setToolGenerated",
         payload: {
           toolCallId: "tool-approval-flow-1",
@@ -1610,6 +1620,10 @@ describe("streamResponseThunk - tool calls", () => {
             prompt: "continuing after tool execution",
           },
         ],
+      },
+      {
+        type: "session/rescueInterruptedReasoning",
+        payload: undefined,
       },
       {
         type: "session/setInactive",

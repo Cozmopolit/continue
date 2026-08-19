@@ -10,6 +10,7 @@ import {
   addPromptCompletionPair,
   endActiveReasoning,
   errorToolCall,
+  rescueInterruptedReasoning,
   setActive,
   setAppliedRulesAtIndex,
   setBoardFetchAttempted,
@@ -356,9 +357,24 @@ export const streamNormalInput = createAsyncThunk<
     // Tool call sequence:
     // 1. Mark generating tool calls as generated
     const state1 = getState();
-    if (streamAborter.signal.aborted || !state1.session.isStreaming) {
+    // Stale-turn guard: the captured aborter must still be the current
+    // controller — a replacement means this thunk belongs to an aborted turn
+    // (see rescue-reasoning-stream-end.md).
+    if (
+      streamAborter.signal.aborted ||
+      state1.session.streamAborter !== streamAborter ||
+      !state1.session.isStreaming
+    ) {
       return;
     }
+
+    // Rescue partial reasoning when a turn ends regularly but produced no
+    // visible content (e.g. provider hit the token limit mid-reasoning) —
+    // same kill-chain as on abort paths, see rescue-reasoning-stream-end.md.
+    // No-op whenever the turn produced content or tool calls. Placed behind
+    // the staleness guard so a replaced (aborted) thunk cannot rescue into a
+    // newer turn's history.
+    dispatch(rescueInterruptedReasoning());
     const originalToolCalls = selectCurrentToolCalls(state1);
     const generatingCalls = originalToolCalls.filter(
       (tc) => tc.status === "generating",

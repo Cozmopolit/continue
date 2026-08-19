@@ -282,6 +282,10 @@ describe("streamResponseThunk", () => {
         ],
       },
       {
+        type: "session/rescueInterruptedReasoning",
+        payload: undefined,
+      },
+      {
         type: "session/setInactive",
         payload: undefined,
       },
@@ -619,6 +623,7 @@ describe("streamResponseThunk", () => {
       "session/streamUpdate",
       "session/streamUpdate",
       "session/addPromptCompletionPair",
+      "session/rescueInterruptedReasoning",
       "session/setToolGenerated",
       "chat/callTool/pending",
       "session/setToolCallCalling",
@@ -636,6 +641,7 @@ describe("streamResponseThunk", () => {
       "session/setContextPercentage",
       "session/streamUpdate",
       "session/addPromptCompletionPair",
+      "session/rescueInterruptedReasoning",
       "session/setInactive",
       "chat/streamNormalInput/fulfilled",
       "session/saveCurrent/pending",
