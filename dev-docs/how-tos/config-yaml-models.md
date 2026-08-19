@@ -1,7 +1,9 @@
 # config.yaml — Modelle konfigurieren (Corporate Fork)
 
 **Status:** Lebende Doku (how-to) — bei relevanten Code-Änderungen mitpflegen.
-**Verifiziert gegen:** Fork v2.1.0, 2026-08-18 (citt-delta, codeverifiziert).
+**Verifiziert gegen:** Fork v2.1.0, 2026-08-19 (citt-delta, codeverifiziert;
+Erweiterungen §3.3–§3.5 am 2026-08-19, inkl. Korrektur des
+`extraBodyProperties`-Eintrags).
 **Warum dieses Dokument:** Die Upstream-Web-Doku (docs.continue.dev) existiert
 noch teilweise, bildet aber weder Fork-Verhalten noch unser Corporate-Setup
 ab. Dieses Dokument ist die verbindliche Referenz für alle, die
@@ -160,22 +162,22 @@ Zod-Schema: `packages/config-yaml/src/schemas/models.ts`; Verarbeitung:
 `core/config/yaml/models.ts` (reicht fast alle Felder 1:1 an die
 Provider-Klasse durch).
 
-| Feld                                                                                     | Typ / Werte                                                       | Bedeutung                                                                                                                                                                                                                                                |
-| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                                                                                   | string, Pflicht                                                   | Anzeigename in der GUI                                                                                                                                                                                                                                   |
-| `provider`                                                                               | string, Pflicht                                                   | wählt die LLM-Klasse (`openai`, `azure`, `anthropic`, `gemini`, `openrouter`, `ollama`, `transformers`, …); unbekannt ⇒ Modell wird still verworfen                                                                                                      |
-| `model`                                                                                  | string, Pflicht                                                   | Modell-ID bzw. Deploymentname; geht in Body oder URL                                                                                                                                                                                                     |
-| `apiBase`                                                                                | string                                                            | Basis-URL — **Trailing-Slash beachten** (§3.1)                                                                                                                                                                                                           |
-| `apiKey`                                                                                 | string                                                            | wird je nach Provider als `Authorization: Bearer` und/oder `api-key`/`x-goog-api-key` gesendet                                                                                                                                                           |
-| `roles`                                                                                  | Liste: `chat`, `edit`, `apply`, `autocomplete`, `embed`, `rerank` | Rollenzuweisung; ohne `roles` = Chat-Kandidat                                                                                                                                                                                                            |
-| `capabilities`                                                                           | Liste: `tool_use`, `image_input`, `next_edit`                     | **`tool_use` ist Pflicht für Agent-Modi** — fehlt es, bekommt das Modell keine Tools                                                                                                                                                                     |
-| `contextLength`                                                                          | number                                                            | überschreibt `defaultCompletionOptions.contextLength`                                                                                                                                                                                                    |
-| `defaultCompletionOptions`                                                               | object                                                            | `temperature`, `maxTokens`, `contextLength`, `topP`, …                                                                                                                                                                                                   |
-| `requestOptions`                                                                         | object                                                            | `timeout` (Sekunden), `headers`, `proxy`, `caBundlePath`, … — **`extraBodyProperties` wirkt im OpenAI/Azure-Chat-Pfad NICHT**                                                                                                                            |
-| `env`                                                                                    | map                                                               | es werden nur bestimmte Keys gelesen: `apiType`, `apiVersion`, `deployment`, `deploymentId`, `projectId`, `region`, `profile`, `accessKeyId`, `secretAccessKey`, `modelArn`, `aiGatewaySlug`, `accountId` (+ `useLegacyCompletionsEndpoint` als boolean) |
-| `useResponsesApi`                                                                        | boolean                                                           | `false` erzwingt `/chat/completions` statt `/responses` (§3.2)                                                                                                                                                                                           |
-| `useLegacyCompletionsEndpoint`                                                           | boolean                                                           | `/completions` statt `/chat/completions` (Legacy)                                                                                                                                                                                                        |
-| `promptTemplates`, `chatOptions`, `autocompleteOptions`, `embedOptions`, `cacheBehavior` | object                                                            | Feintuning, selten nötig                                                                                                                                                                                                                                 |
+| Feld                                                                                     | Typ / Werte                                                                                | Bedeutung                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                                                                                   | string, Pflicht                                                                            | Anzeigename in der GUI                                                                                                                                                                                                                                   |
+| `provider`                                                                               | string, Pflicht                                                                            | wählt die LLM-Klasse (`openai`, `azure`, `anthropic`, `gemini`, `openrouter`, `ollama`, `transformers`, …); unbekannt ⇒ Modell wird still verworfen                                                                                                      |
+| `model`                                                                                  | string, Pflicht                                                                            | Modell-ID bzw. Deploymentname; geht in Body oder URL                                                                                                                                                                                                     |
+| `apiBase`                                                                                | string                                                                                     | Basis-URL — **Trailing-Slash beachten** (§3.1)                                                                                                                                                                                                           |
+| `apiKey`                                                                                 | string                                                                                     | wird je nach Provider als `Authorization: Bearer` und/oder `api-key`/`x-goog-api-key` gesendet                                                                                                                                                           |
+| `roles`                                                                                  | Liste: `chat`, `edit`, `apply`, `autocomplete`, `embed`, `rerank`, `summarize`, `subagent` | Rollenzuweisung; ohne `roles` = `[chat, summarize, apply, edit]` (§3.4)                                                                                                                                                                                  |
+| `capabilities`                                                                           | Liste: `tool_use`, `image_input`, `next_edit`                                              | **`tool_use` ist Pflicht für Agent-Modi** — fehlt es, bekommt das Modell keine Tools                                                                                                                                                                     |
+| `contextLength`                                                                          | number                                                                                     | überschreibt `defaultCompletionOptions.contextLength`                                                                                                                                                                                                    |
+| `defaultCompletionOptions`                                                               | object                                                                                     | `temperature`, `maxTokens`, `contextLength`, `topP`, …                                                                                                                                                                                                   |
+| `requestOptions`                                                                         | object                                                                                     | `timeout` (Sekunden), `headers`, `proxy`, `caBundlePath`, `extraBodyProperties`, … (§3.5) — **nur diese Keys kennt das Schema; `extraBody` ist tot**                                                                                                     |
+| `env`                                                                                    | map                                                                                        | es werden nur bestimmte Keys gelesen: `apiType`, `apiVersion`, `deployment`, `deploymentId`, `projectId`, `region`, `profile`, `accessKeyId`, `secretAccessKey`, `modelArn`, `aiGatewaySlug`, `accountId` (+ `useLegacyCompletionsEndpoint` als boolean) |
+| `useResponsesApi`                                                                        | boolean                                                                                    | `false` erzwingt `/chat/completions` statt `/responses` (§3.2)                                                                                                                                                                                           |
+| `useLegacyCompletionsEndpoint`                                                           | boolean                                                                                    | `/completions` statt `/chat/completions` (Legacy)                                                                                                                                                                                                        |
+| `promptTemplates`, `chatOptions`, `autocompleteOptions`, `embedOptions`, `cacheBehavior` | object                                                                                     | Feintuning, selten nötig                                                                                                                                                                                                                                 |
 
 Secrets: `apiKey: ${{ secrets.NAME }}` wird beim Entrollen der Config aufgelöst
 (Secret-Store der IDE). Wo kein Secret-Store existiert (z. B. Agent-Maschinen):
@@ -206,6 +208,97 @@ Zwei Tücken:
 2. Azure- und AI-Foundry-Endpoints ohne Responses-API antworten mit 404/400.
 
 **Pflicht für GPT-5-Klasse auf Nicht-OpenAI-Servern: `useResponsesApi: false`.**
+
+### 3.3 maxTokens — was gilt, wenn nichts gesetzt ist?
+
+Jeder Request sendet `max_tokens`; der Wert kommt aus einer festen
+Fallback-Kette (YAML-Modelle):
+
+1. `defaultCompletionOptions.maxTokens` aus dem YAML
+   (`core/config/yaml/models.ts`).
+2. Provider-Klassen-Default `defaultOptions.completionOptions.maxTokens` —
+   gesetzt u. a. bei `anthropic` (**8192**); `openai`/`openrouter` haben
+   **keinen**.
+3. Statische Modell-DB `@continuedev/llm-info` (wird per Modellname gematcht):
+   `min(maxCompletionTokens, contextLength / 4)` — bewusst gedeckelt, damit
+   das Ausgabe-Budget nicht das Kontextfenster auffrisst.
+4. Letzter Fallback: **`DEFAULT_MAX_TOKENS = 4096`**
+   (`core/llm/constants.ts`).
+
+Konsequenzen:
+
+- Ein OpenRouter-Modell ohne `maxTokens`, das die DB nicht kennt, läuft mit
+  **4096** — sichtbar als mitten im Satz abgeschnittene Antworten und halbe
+  Tool-Call-JSONs (der Stream endet regulär mit `finish_reason: length`,
+  ist also kein Netzfehler).
+- `maxTokens` reserviert außerdem das Ausgabe-Budget beim Kontext-Zuschnitt
+  (`compileChatMessages`) — ein zu kleiner Wert verkleinert den effektiven
+  Eingaberaum.
+- Der Wert gilt für **alle** Calls des Modells, inkl. Compaction-Summaries
+  und Titel-Generierung (§3.4).
+
+**Regel: `defaultCompletionOptions.maxTokens` immer explizit setzen**
+(zusammen mit `contextLength`), statt auf Fallbacks zu vertrauen.
+
+### 3.4 Rollen, Summarize-Auswahl und Compaction
+
+- Wird `roles` weggelassen, bekommt das Modell
+  **`[chat, summarize, apply, edit]`** (`core/config/yaml/loadYaml.ts`,
+  `defaultModelRoles`) — jedes Modell ist also automatisch Summarize-Kandidat.
+- **Aber:** Die Rolle `summarize` ist im Fork derzeit ohne Funktion.
+  Compaction (`conversation/compact`, `core/core.ts`) und Session-Fork mit
+  Summary nehmen immer **`selectedModelByRole.chat` — das gerade aktive
+  Chat-Modell** (`core/util/conversationCompaction.ts`), mit leeren
+  Completion-Options, d. h. mit dessen konfiguriertem `maxTokens` (§3.3).
+  Die GUI-Rollenauswahl kennt `summarize` ebenfalls nicht
+  („summarize not implemented yet", `core/config/selectedModels.ts`).
+- Beobachtung „Compaction-Summary endet mitten im Satz" ⇒ das aktive
+  Chat-Modell läuft in sein `maxTokens`-Limit (oft der 4096-Fallback aus
+  §3.3). Fix: `maxTokens` des Chat-Modells hochsetzen — ein separates
+  Summarize-Modell einzutragen bringt nichts.
+
+### 3.5 requestOptions: erlaubte Keys, `extraBodyProperties`, tote Keys
+
+Das Schema kennt genau diese Keys (`requestOptionsSchema`,
+`packages/config-yaml/src/schemas/models.ts`; identisch in
+`core/config/types.ts`): `timeout`, `verifySsl`, `caBundlePath`, `proxy`,
+`headers`, `extraBodyProperties`, `noProxy`, `clientCertificate`.
+
+- **Tote Keys:** Alles andere — z. B. `extraBody`, `thinking_budget` —
+  wird beim Zod-Parsen **still entfernt**. Es gibt im gesamten Fork kein
+  Feld namens `extraBody`; der korrekte Name ist `extraBodyProperties`.
+- **Merge auf Config-Ebene:** `requestOptions` des Modells überschreibt die
+  top-level `requestOptions` des Assistant-YAMLs für `extraBodyProperties`
+  **komplett** (kein Deep-Merge); nur `headers` wird keyweise gemerged
+  (`mergeConfigYamlRequestOptions`).
+- **Merge in den Request:** `extraBodyProperties` wird auf der
+  **HTTP-Ebene** in jeden Request mit JSON-String-Body gemerged
+  (`fetchwithRequestOptions`, `packages/fetch/src/fetch.ts`): flacher
+  Top-Level-Spread, `extraBodyProperties` gewinnt bei Kollisionen. Das gilt
+  provider-unabhängig für alle Wege, die über den Fork-Fetch laufen
+  (native Provider-Pfade wie `OpenAI.ts`/`OpenRouter.ts` ebenso wie alle
+  `openai-adapters`-APIs). — Die frühere Aussage dieser Doku, es wirke im
+  OpenAI-Chat-Pfad nicht, war falsch (der Merge sitzt eine Ebene tiefer als
+  der `extraBodyProperties()`-Hook der Provider-Klassen).
+- **Ausnahme Weg A:** Tunnel-Modelle umgehen `fetchwithRequestOptions`
+  (§2.4) — dort ist `extraBodyProperties` wirkungslos.
+
+**Reasoning-Budgets:** `reasoningBudgetTokens` (CompletionOptions) wird nur
+von den nativen Pfaden `anthropic` (`thinking.budget_tokens`, Default 2048),
+`bedrock`, `cohere` und `replicate` gelesen. Der OpenRouter-Pfad sendet von
+sich aus **kein** Reasoning-Enable-Feld; dort läuft Reasoning modellnativ.
+Wer ein Budget über OpenRouter durchreichen will, nutzt den Pass-Through:
+
+```yaml
+requestOptions:
+  extraBodyProperties:
+    reasoning:
+      max_tokens: 8192 # OpenRouter reicht `reasoning` an unterstützte Modelle durch
+```
+
+(Für Resends bereits erzeugten Reasonings gelten die Fork-Regeln aus
+`reasoning-resend-policy.md` — unabhängig davon, wie Reasoning aktiviert
+wurde.)
 
 ---
 
@@ -346,10 +439,18 @@ echte Streaming-UX dadurch auch durch den CITT-Tunnel.
     apiKey: <key>
     useResponsesApi: false # sobald der Name o*/gpt-5* matcht
     defaultCompletionOptions:
-      contextLength: 1000000
-      maxTokens: 128000
+      contextLength: 1000000 # explizit setzen, siehe unten
+      maxTokens: 128000 # explizit setzen, siehe unten
     capabilities: [tool_use, image_input]
 ```
+
+**Metadaten:** Der Fork holt `context_length`/`max_tokens` **nicht** live von
+OpenRouter-`/models` — dieser Abruf speist ausschließlich den
+„Modell hinzufügen"-Picker der GUI (`core/llm/fetchModels.ts`). YAML-Modelle
+bekommen ihre Werte nur aus dem YAML selbst bzw. der statischen
+`llm-info`-DB (§3.3) — beide Felder daher immer explizit setzen.
+
+**Reasoning** (Budget/Pass-Through) und `extraBodyProperties`: §3.5.
 
 ### 4.6 Embeddings (lokal, ohne Provider)
 
@@ -364,18 +465,21 @@ echte Streaming-UX dadurch auch durch den CITT-Tunnel.
 
 ## 5. Fehlerbild → Ursache → Fix
 
-| Symptom                                              | wahrscheinliche Ursache                                                       | Fix                                                                      |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Modell erscheint gar nicht                           | `provider`-Tippfehler (still verworfen); bei Weg A: MCP nicht verbunden       | provider exakt schreiben; MCP-Status prüfen                              |
-| 401 „invalid subscription key or wrong API endpoint" | Key gehört zu einer anderen Azure-Ressource als `apiBase`                     | Key/Ressource paaren (jede Region hat eigene Keys)                       |
-| 404 auf `/responses`                                 | GPT-5-artiger Name + `provider: openai` ohne `useResponsesApi: false`         | `useResponsesApi: false` setzen                                          |
-| 404 auf `chat/completions`                           | `apiBase` ohne trailing `/` (Segment verschluckt)                             | `/` anhängen                                                             |
-| 400 mit Bezug auf `api-version`                      | `apiVersion` fehlt/falsch (klassisches Azure)                                 | `env.apiVersion` setzen                                                  |
-| 400 bei `temperature`                                | Deployment lockt die Temperatur                                               | `temperature` weglassen                                                  |
-| 400 bei `max_tokens`                                 | GPT-5-Klasse erwartet `max_completion_tokens`                                 | Variante 4.2b                                                            |
-| Stream bricht nach ~90 s / kein Stream               | Gateway-/Provider-Timeout, `requestOptions.timeout` zu klein                  | `timeout` hochsetzen (z. B. 300); Weg A mit passendem Endpoint-`timeout` |
-| Agent-Modus ohne Tools                               | `capabilities` ohne `tool_use`                                                | `tool_use` ergänzen                                                      |
-| `extraBodyProperties` zeigt keine Wirkung            | wird im OpenAI/Azure-Chat-Pfad ignoriert (nur SageMaker/Mock + AiSdk-Adapter) | nicht verwenden; Rezept-Workarounds nutzen                               |
+| Symptom                                                  | wahrscheinliche Ursache                                                 | Fix                                                                      |
+| -------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Modell erscheint gar nicht                               | `provider`-Tippfehler (still verworfen); bei Weg A: MCP nicht verbunden | provider exakt schreiben; MCP-Status prüfen                              |
+| 401 „invalid subscription key or wrong API endpoint"     | Key gehört zu einer anderen Azure-Ressource als `apiBase`               | Key/Ressource paaren (jede Region hat eigene Keys)                       |
+| 404 auf `/responses`                                     | GPT-5-artiger Name + `provider: openai` ohne `useResponsesApi: false`   | `useResponsesApi: false` setzen                                          |
+| 404 auf `chat/completions`                               | `apiBase` ohne trailing `/` (Segment verschluckt)                       | `/` anhängen                                                             |
+| 400 mit Bezug auf `api-version`                          | `apiVersion` fehlt/falsch (klassisches Azure)                           | `env.apiVersion` setzen                                                  |
+| 400 bei `temperature`                                    | Deployment lockt die Temperatur                                         | `temperature` weglassen                                                  |
+| 400 bei `max_tokens`                                     | GPT-5-Klasse erwartet `max_completion_tokens`                           | Variante 4.2b                                                            |
+| Stream bricht nach ~90 s / kein Stream                   | Gateway-/Provider-Timeout, `requestOptions.timeout` zu klein            | `timeout` hochsetzen (z. B. 300); Weg A mit passendem Endpoint-`timeout` |
+| Agent-Modus ohne Tools                                   | `capabilities` ohne `tool_use`                                          | `tool_use` ergänzen                                                      |
+| Antworten/Tool-Call-JSONs enden abrupt (kein Netzfehler) | `maxTokens` zu klein bzw. auf Fallback (4096, §3.3)                     | `defaultCompletionOptions.maxTokens` explizit setzen                     |
+| Compaction-Summary endet mitten im Satz                  | aktives Chat-Modell läuft in sein `maxTokens`-Limit (§3.4)              | `maxTokens` des Chat-Modells hochsetzen                                  |
+| `extraBody` / `thinking_budget` zeigt keine Wirkung      | Key existiert nicht im Schema — still entfernt (§3.5)                   | `extraBodyProperties` verwenden                                          |
+| `extraBodyProperties` zeigt keine Wirkung                | Modell läuft über Weg A (Tunnel), oder Body ist kein JSON-String (§3.5) | Weg B nutzen; Key-/Wert-Schreibweise gegen Ziel-API prüfen               |
 
 ---
 
@@ -412,10 +516,16 @@ echte Streaming-UX dadurch auch durch den CITT-Tunnel.
   als Zweitmeinung): `docs.continue.dev/reference`,
   `docs.continue.dev/customize/model-providers/top-level/azure` (kennt weder
   Tunnel noch GPT-5-Falle noch das apiType-Verhalten des Forks).
-- **Code:** `core/config/yaml/models.ts`, `core/llm/llms/OpenAI.ts`
-  (`_getEndpoint`, `_getHeaders`), `core/llm/llms/Azure.ts`,
-  `core/llm/index.ts` (`canUseOpenAIResponses`),
-  `core/config/mcpProxyModelDiscovery.ts`, `core/context/mcp/mcpProxyFetch.ts`,
+- **Code:** `core/config/yaml/models.ts`, `core/config/yaml/loadYaml.ts`
+  (Default-Rollen), `core/llm/constants.ts` (Fallback-Konstanten),
+  `core/llm/index.ts` (`canUseOpenAIResponses`, `fetch`),
+  `core/llm/llms/OpenAI.ts` (`_getEndpoint`, `_getHeaders`),
+  `core/llm/llms/Azure.ts`, `core/llm/fetchModels.ts` (GUI-Picker),
+  `core/util/conversationCompaction.ts` + `core/core.ts`
+  (Compaction/Summarize-Auswahl), `core/config/selectedModels.ts`,
+  `core/config/mcpProxyModelDiscovery.ts`,
+  `core/context/mcp/mcpProxyFetch.ts`,
+  `packages/fetch/src/fetch.ts` (`extraBodyProperties`-Merge),
   `packages/config-yaml/src/schemas/models.ts`,
   `packages/config-yaml/src/schemas/mcp/index.ts`.
 - **Specs:** `endpoint-discovery.md`, `proxy-http-tunneling.md` (Archiv
