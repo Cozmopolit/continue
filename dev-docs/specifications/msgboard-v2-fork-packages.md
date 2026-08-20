@@ -4,8 +4,11 @@
 am 2026-08-20 durch die vereinfachte Server-Side-Subscription-Architektur
 ersetzt (User-Direktive, Abschnitt „Revision 2026-08-20"): kein
 Migrations-RPC, kein Mode-(a)-Fallback, kein `migrated`-Flag, keine
-fork-seitigen Subscription-Tools. Paket 2 bleibt gated auf CITT-Schritt 3.
-**Stand:** 2026-08-20 (Revision) ·
+fork-seitigen Subscription-Tools. Ebenfalls 2026-08-20: M3 gestrichen
+(`board-state.json` bleibt dauerhaft Handle-Quelle) und Handle-only-Cleanup
+(Legacy-Felder entfernt, s. Abschnitt „Revision 2026-08-20"). Paket 2a
+bleibt gated auf CITT-Schritt 3.
+**Stand:** 2026-08-20 (Revision + Handle-only-Cleanup) ·
 **Autor:** citt-delta
 **Basis:** Konsenspapier `msgboard-interface-v2` (Board-Id 5319478503,
 DONE/CLOSED); GO-Runde vesta 5319451316, delta 5319451413. Memory-Fragment:
@@ -40,9 +43,21 @@ Abschnitte unten dokumentieren den historischen Entwurf.
   `syncBoardSubscription`, `fetchBoardLatest`, `cursorAfterConsume`,
   `migrated`-Flag, fork-seitige `board_subscribe`/`board_unsubscribe`/
   `board_subscriptions`-Tools (Definitionen, Implementierungen, Tests).
-- `board-state.json` bleibt vorerst Handle-Quelle; die Legacy-Felder
-  `topics`/`cursor` werden weiter geladen und validiert, aber nicht mehr
-  verwendet. Die Datei selbst entfällt mit CITT-Schritt [5].
+- `board-state.json` **ist und bleibt die Handle-Quelle** (pro Workspace,
+  pro Agent, eigene Identitätsdatei): **M3 — Handle-Umzug in einen
+  workspace-bezogenen Config-Key (delta-2) plus Datei-Abschaffung — ist
+  GESTRICHEN** (User-Entscheidung 2026-08-20 abends; überstimmt delta-2 §4
+  bzw. den früheren OQ3-Fahrplan).
+- **Handle-only-Cleanup (2026-08-20):** `BoardState` = `{ handle }`; die
+  Legacy-Felder `topics`/`cursor` sind aus Interface, Loader und Tests
+  entfernt. **Keine Toleranz für das Altformat** — kein
+  Kompatibilitätsfenster, keine Migration: Dateien mit `topics`/`cursor`
+  werden beim Laden mit Warnung abgewiesen (Board-Injektion inaktiv, bis
+  die Datei reduziert ist). Der Cutover ist der Deploy-Snapshot: neuer
+  Build + vom User auf Handle-only reduzierte `board-state.json`-Dateien
+  gleichzeitig (dasselbe Prinzip wie bei der Mode-(a)/migrateImport-
+  Entfernung). Gelöscht: `saveBoardState` (kein Production-Writer mehr)
+  und `validateBoardTopic` (kein Konsument mehr).
 
 ## Motivation
 
@@ -372,14 +387,22 @@ wenn sein Gate verifiziert ist.
       Subscription-Tools, `syncBoardSubscription`, `fetchBoardLatest`,
       Cursor-Code und `migrated`-Flag entfernt; Subscriptions
       serverseitig (Cutover für citt-delta am 2026-08-20 vollzogen).
-- [ ] **Store-Datei-Abschaffung** (Gate: vesta Schritt [5], koordiniert):
-      `board-state.json` als Handle-Quelle ersetzen (workspace-bezogener
-      Config-Key, delta-2) und die Datei entfernen.
+- [~] **Store-Datei-Abschaffung — GESTRICHEN** (User-Entscheidung
+  2026-08-20): M3 (Handle-Umzug in einen workspace-bezogenen
+  Config-Key, delta-2, und Entfernung der Datei) ist gecancelt;
+  `board-state.json` bleibt dauerhaft die Handle-Quelle. Stattdessen
+  umgesetzt: **Handle-only-Cleanup** (2026-08-20) — Legacy-Felder
+  `topics`/`cursor` aus `core/board/boardState.ts` und den Tests
+  entfernt, Loader erwartet exakt das Handle-only-Format (s. Revision).
 - [ ] **Paket 2a** (Gate: CITT-Schritt 3 live, Maschinenpfad für
       `msg_mark_read` spezifiziert): `core/board/boardClient.ts` —
-      Fetch und Markierung trennen; Markierung nach erfolgreichem Append;
-      lokaler Cursor bleibt Fallback.
-- [ ] **Paket 2b** (Gate: CITT-Marker stabil, Cursor-Modi (b)/(c)
-      unterscheidbar): `core/board/boardClient.ts`, `core/board/boardState`
-      — Cursor ausmustern, `boardPending` ohne `sinceId` (Modus b),
-      State-Migration für bestehende Installationen.
+      Fetch und Markierung trennen; Markierung nach erfolgreichem Append.
+      Der frühere „lokaler Cursor bleibt Fallback“ entfällt mit dem
+      Handle-only-Cleanup — das Fallback-Design ist bei CITT-Schritt 3
+      neu festzulegen.
+- [x] **Paket 2b, Fork-Seite** (2026-08-20, Revision + Handle-only-Cleanup):
+      `boardPending` läuft bereits ohne `sinceId` (Modus b), der
+      Client-Cursor ist aus `core/board/boardState` entfernt;
+      State-Migration entfällt (kein Kompatibilitätsfenster,
+      Deploy-Snapshot-Prinzip). Das verbleibende 2b-Gate (CITT-Marker
+      stabil) betrifft nur noch die CITT-Seite.

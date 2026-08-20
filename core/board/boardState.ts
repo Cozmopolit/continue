@@ -6,18 +6,16 @@ import { IDE } from "..";
 
 // MsgBoard (msgboard-v2-fork-packages.md): per-workspace board identity.
 // Subscriptions and cursors live SERVER-SIDE (managed via CITT's
-// subscription tools); this file only contributes the handle. `topics` and
-// `cursor` remain in the on-disk format (legacy), are validated on load, but
-// no longer drive consumption.
+// subscription tools); this file is the handle source for `board/register`
+// and carries nothing else. The loader expects exactly the handle-only
+// format: the removed legacy `{ topics, cursor }` shape is rejected without
+// a compatibility window (cutover is the consistent deploy snapshot).
 
 export const BOARD_STATE_DIR_NAME = ".continue";
 export const BOARD_STATE_FILE_NAME = "board-state.json";
 
 export interface BoardState {
   handle: string;
-  topics: string[];
-  /** Global cursor across all topics (legacy; kept in the on-disk format). */
-  cursor: number;
 }
 
 // Envelope-delimiter hygiene mirrors the MsgBoard handle validation
@@ -30,16 +28,6 @@ export function validateBoardHandle(handle: string): string | undefined {
   }
   if (INVALID_SEGMENT_PATTERN.test(handle)) {
     return 'Board handle must not contain envelope delimiters ("→", "·") or newlines';
-  }
-  return undefined;
-}
-
-export function validateBoardTopic(topic: string): string | undefined {
-  if (!topic || !topic.trim()) {
-    return "Board topic must not be empty";
-  }
-  if (INVALID_SEGMENT_PATTERN.test(topic)) {
-    return 'Board topic must not contain envelope delimiters ("→", "·") or newlines';
   }
   return undefined;
 }
@@ -64,26 +52,21 @@ export async function loadBoardState(
     const raw = fs.readFileSync(statePath, "utf8");
     const parsed = JSON.parse(raw);
     // The file is workspace-local and may be edited by users or agents, so
-    // validate on load: handle must pass segment validation, cursor must be a
-    // non-negative integer (NaN/corrupt cursors would break every fetch).
+    // validate on load: handle must pass segment validation. The removed
+    // legacy `{ topics, cursor }` shape is rejected outright — no
+    // compatibility window; installations deploy as consistent snapshots
+    // (handle-reduced files + handle-only build).
     if (
       typeof parsed?.handle === "string" &&
-      validateBoardHandle(parsed.handle) === undefined &&
-      Array.isArray(parsed?.topics) &&
-      typeof parsed?.cursor === "number" &&
-      Number.isInteger(parsed.cursor) &&
-      parsed.cursor >= 0
+      validateBoardHandle(parsed.handle) === undefined
     ) {
-      return {
-        handle: parsed.handle,
-        // Salvage valid topics (existing filter behavior extended to segment
-        // validation): one bad topic must not drop the whole subscription set.
-        topics: parsed.topics.filter(
-          (t: unknown) =>
-            typeof t === "string" && validateBoardTopic(t) === undefined,
-        ),
-        cursor: parsed.cursor,
-      };
+      if ("topics" in parsed || "cursor" in parsed) {
+        console.warn(
+          `Board state file uses the removed legacy format (topics/cursor), ignoring: ${statePath}`,
+        );
+        return undefined;
+      }
+      return { handle: parsed.handle };
     }
     console.warn(`Board state file is malformed, ignoring: ${statePath}`);
     return undefined;
@@ -98,16 +81,4 @@ export async function loadBoardState(
     }
     return undefined;
   }
-}
-
-export async function saveBoardState(
-  ide: IDE,
-  state: BoardState,
-): Promise<void> {
-  const statePath = await getBoardStatePath(ide);
-  if (!statePath) {
-    throw new Error("Cannot save board state: no workspace open");
-  }
-  fs.mkdirSync(path.dirname(statePath), { recursive: true });
-  fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }

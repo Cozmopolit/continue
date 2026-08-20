@@ -43,9 +43,17 @@ diesen Agenten):
 5. **Persistenz:** Das Board ist flüchtig. Erkenntnisse, die überleben
    sollen, gehören ins Memory (`assistant:coding-agent`), nicht ins Board.
 6. **Basis-Subscriptions:** Jeder VSC-Agent abonniert `Allgemein` und sein
-   eigenes Postfach `to-<handle>` — Postfächer sind One-shot-Zustellung ohne
-   Rückkanal (keine Replies, keine Diskussion; Eskalation in eigene Topics).
+   eigenes Postfach `to-<handle>` (Zustell- und Reply-Mechanik: Regel 7).
+   Diskussion gehört in eigene Topics, nicht in Postfächer.
    Vollständige Regeln: Memory-Fragment `board-postfach-konzept`.
+7. **Direct messages — `to-<handle>` topics are mailboxes.** Each agent
+   watches exactly one `to-*` topic: their own. Delivery is routed **only
+   by topic subscription** — the `to:` field marks the addressee (and
+   filters listings), it does not route the message. So a message addressed
+   to you arrives in _your_ inbox, and the reply goes to _the sender's_
+   inbox (`to-<sender>`, `re:` set to their message) — never back into your
+   own: nobody but you watches it, so a reply posted there is never seen.
+   Broadcasts in shared topics use `to: '*'`.
 
 ## Erste Aktion in jedem Chat
 
@@ -99,8 +107,12 @@ gearbeitet wird.
    letzte Phase, geschrieben gegen die finale Implementierung
    (Workflow: `dev-docs/specifications/_IMPLEMENTATION.md`).
 2. **Tests immer sequentiell über den Runner**:
-   `node scripts/run-all-tests.mjs [--only …]` — niemals parallel. Erwartete
-   Ergebnisse: `dev-docs/how-tos/test-baseline.md`.
+   `node scripts/run-all-tests.mjs [--only …] [--filter …]` — niemals
+   parallel. `--filter <Muster>` begrenzt die Suite auf passende Testdateien
+   (vitest: Substring im Pfad, jest: Regex) — bei kleinen Änderungen immer
+   gezielt filtern statt volle Suiten fahren; volle Suiten sind
+   Meilenstein-Gates. Erwartete Ergebnisse:
+   `dev-docs/how-tos/test-baseline.md`.
 3. **Junction-Regel**: nach Änderungen an `packages/fetch` oder
    `packages/openai-adapters` zuerst dort `npm run build` — abhängige Pakete
    konsumieren deren `dist/` per Junction.
@@ -151,6 +163,21 @@ gearbeitet wird.
    und nie wieder ein Commit-Zeit-Thema. Commit-Messages sind Einzeiler:
    Conventional Prefix, Subject ≤ ~80 Zeichen, kein Body. Doc-Referenzen
    nutzen nackte Dateinamen, keine Pfade.
+
+## Terminal-Disziplin
+
+Die IDE-Shell tötet foreground-Kommandos nach ~5 Minuten. Lange Läufe
+(Test-Suites, Builds) deshalb **niemals foreground „mal probieren"** — das
+ist jedes Mal verschenkte Wartezeit. Absehbar > ~3 Minuten → sofort im
+Background mit Logfile starten und das Log pollen:
+
+```powershell
+node scripts/run-all-tests.mjs --only core-vitest *> "$env:TEMP\tests.log"
+# danach: Get-Content "$env:TEMP\tests.log" -Tail 30
+```
+
+Kurze gezielte Läufe (mit `--filter`, einzelne kleine Suites) dürfen
+foreground laufen. Verkettung von Befehlen mit `;`, niemals `&&`.
 
 ## Vorgehensweise
 

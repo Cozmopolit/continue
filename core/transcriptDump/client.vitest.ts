@@ -93,11 +93,7 @@ describe("dumpTranscript", () => {
   it("dumps with handle-derived memory default and full meta", async () => {
     const conn = makeConnection(true);
     setConnections([conn]);
-    loadBoardStateMock.mockResolvedValue({
-      handle: "citt-delta",
-      topics: [],
-      cursor: 0,
-    });
+    loadBoardStateMock.mockResolvedValue({ handle: "citt-delta" });
     await dumpTranscript(makeSession(), ide, makeConfigHandler(undefined));
     expect(conn.transcriptDump).toHaveBeenCalledOnce();
     const payload = conn.transcriptDump.mock.calls[0][0];
@@ -114,11 +110,7 @@ describe("dumpTranscript", () => {
   it("config memory override wins over the handle default", async () => {
     const conn = makeConnection(true);
     setConnections([conn]);
-    loadBoardStateMock.mockResolvedValue({
-      handle: "citt-delta",
-      topics: [],
-      cursor: 0,
-    });
+    loadBoardStateMock.mockResolvedValue({ handle: "citt-delta" });
     await dumpTranscript(
       makeSession(),
       ide,

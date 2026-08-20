@@ -5,8 +5,14 @@
  * Usage:
  *   node scripts/run-all-tests.mjs              # run all suites (sequential)
  *   node scripts/run-all-tests.mjs --only gui,core-jest
+ *   node scripts/run-all-tests.mjs --only core-vitest --filter boardState
  *   node scripts/run-all-tests.mjs --list
  *   node scripts/run-all-tests.mjs --timeout 30 # per-suite timeout in minutes
+ *
+ * --filter limits each selected suite to matching test files instead of the
+ * full suite: passed through as positional file filter (vitest: substring
+ * match on the path; jest: regex on the path). Use it for targeted runs —
+ * a full suite is a milestone gate, not a per-change gate.
  *
  * Why sequential: some suites have timing-sensitive tests that flake under
  * parallel load (see test-baseline.md, gotcha #6).
@@ -170,13 +176,20 @@ function parseRunnerOutput(runner, text) {
   return { found, suites, tests, failingTests: failLines };
 }
 
-function runSuite(suite, logFile, timeoutMin) {
+function runSuite(suite, logFile, timeoutMin, filter) {
   return new Promise((resolve) => {
     const started = Date.now();
     const logStream = fs.createWriteStream(logFile);
     let timedOut = false;
 
-    const child = spawn(suite.cmd, suite.args, {
+    // npm needs "--" before args that belong to the wrapped script
+    const args = filter
+      ? suite.cmd === "npm"
+        ? [...suite.args, "--", filter]
+        : [...suite.args, filter]
+      : suite.args;
+
+    const child = spawn(suite.cmd, args, {
       cwd: path.join(REPO_ROOT, suite.dir),
       shell: true,
       env: {
@@ -257,10 +270,16 @@ async function main() {
     suites = SUITES.filter((s) => wanted.has(s.id));
   }
 
+  const filter = getArg("--filter");
+
   fs.rmSync(REPORT_DIR, { recursive: true, force: true });
   fs.mkdirSync(REPORT_DIR, { recursive: true });
   console.log(`Report dir: ${REPORT_DIR}`);
-  console.log(`Running ${suites.length} suite(s) sequentially, timeout ${timeoutMin}min each\n`);
+  console.log(
+    `Running ${suites.length} suite(s) sequentially, timeout ${timeoutMin}min each` +
+      (filter ? `, filter "${filter}"` : "") +
+      "\n",
+  );
 
   const results = [];
   for (const [i, suite] of suites.entries()) {
@@ -280,7 +299,12 @@ async function main() {
 
     process.stdout.write(`▶ ${prefix} ... `);
     const logFile = path.join(REPORT_DIR, `${suite.id}.log`);
-    const { exitCode, timedOut, durationSec } = await runSuite(suite, logFile, timeoutMin);
+    const { exitCode, timedOut, durationSec } = await runSuite(
+      suite,
+      logFile,
+      timeoutMin,
+      filter,
+    );
 
     const logText = fs.readFileSync(logFile, "utf8");
     const parsed = parseRunnerOutput(suite.runner, logText);

@@ -8,11 +8,8 @@ import { IDE } from "..";
 import {
   BOARD_STATE_DIR_NAME,
   BOARD_STATE_FILE_NAME,
-  BoardState,
   loadBoardState,
-  saveBoardState,
   validateBoardHandle,
-  validateBoardTopic,
 } from "./boardState";
 
 // Tests run against the real filesystem in a temp workspace directory:
@@ -35,10 +32,6 @@ const wsIde = () => makeIde([pathToFileURL(wsDir).href]);
 function writeStateFile(content: string): void {
   fs.mkdirSync(path.join(wsDir, BOARD_STATE_DIR_NAME), { recursive: true });
   fs.writeFileSync(stateFilePath(), content, "utf8");
-}
-
-function writeValidState(state: BoardState): void {
-  writeStateFile(JSON.stringify(state, null, 2));
 }
 
 beforeEach(() => {
@@ -72,26 +65,6 @@ describe("validateBoardHandle", () => {
   );
 });
 
-describe("validateBoardTopic", () => {
-  it("accepts regular topics", () => {
-    expect(validateBoardTopic("auto-topic-injection")).toBeUndefined();
-  });
-
-  it("rejects empty and whitespace-only topics", () => {
-    expect(validateBoardTopic("")).toBe("Board topic must not be empty");
-    expect(validateBoardTopic("   ")).toBe("Board topic must not be empty");
-  });
-
-  it.each(["→", "·", "\n", "\r"])(
-    "rejects envelope delimiter %j in topics",
-    (char) => {
-      expect(validateBoardTopic(`bad${char}topic`)).toContain(
-        "envelope delimiters",
-      );
-    },
-  );
-});
-
 describe("loadBoardState", () => {
   it("returns undefined when no workspace is open", async () => {
     expect(await loadBoardState(makeIde([]))).toBeUndefined();
@@ -103,22 +76,14 @@ describe("loadBoardState", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("parses a valid state file", async () => {
-    writeValidState({ handle: "delta", topics: ["t1", "t2"], cursor: 42 });
-    expect(await loadBoardState(wsIde())).toEqual({
-      handle: "delta",
-      topics: ["t1", "t2"],
-      cursor: 42,
-    });
+  it("parses a valid handle-only state file", async () => {
+    writeStateFile(JSON.stringify({ handle: "delta" }, null, 2));
+    expect(await loadBoardState(wsIde())).toEqual({ handle: "delta" });
   });
 
-  it("accepts cursor 0 as a valid boundary", async () => {
-    writeValidState({ handle: "delta", topics: [], cursor: 0 });
-    expect(await loadBoardState(wsIde())).toEqual({
-      handle: "delta",
-      topics: [],
-      cursor: 0,
-    });
+  it("ignores unknown extra keys beyond the handle", async () => {
+    writeStateFile(JSON.stringify({ handle: "delta", futureKey: true }));
+    expect(await loadBoardState(wsIde())).toEqual({ handle: "delta" });
   });
 
   it("returns undefined and warns when the file is not valid JSON", async () => {
@@ -133,19 +98,12 @@ describe("loadBoardState", () => {
   });
 
   const malformedStates: Array<[string, unknown]> = [
-    [
-      "handle containing a delimiter",
-      { handle: "bad→handle", topics: [], cursor: 0 },
-    ],
-    ["empty handle", { handle: "", topics: [], cursor: 0 }],
-    ["missing handle", { topics: [], cursor: 0 }],
-    ["non-string handle", { handle: 42, topics: [], cursor: 0 }],
-    ["topics not an array", { handle: "delta", topics: "t1", cursor: 0 }],
-    ["missing cursor", { handle: "delta", topics: [] }],
-    ["non-number cursor", { handle: "delta", topics: [], cursor: "42" }],
-    ["negative cursor", { handle: "delta", topics: [], cursor: -1 }],
-    ["non-integer cursor", { handle: "delta", topics: [], cursor: 1.5 }],
-    ["null cursor", { handle: "delta", topics: [], cursor: null }],
+    ["handle containing a delimiter", { handle: "bad→handle" }],
+    ["empty handle", { handle: "" }],
+    ["whitespace-only handle", { handle: "   " }],
+    ["missing handle", {}],
+    ["non-string handle", { handle: 42 }],
+    ["null handle", { handle: null }],
   ];
 
   it.each(malformedStates)(
@@ -158,43 +116,19 @@ describe("loadBoardState", () => {
     },
   );
 
-  it("salvages valid topics and drops invalid ones", async () => {
-    writeStateFile(
-      JSON.stringify({
-        handle: "delta",
-        topics: ["good", "bad·topic", 42, "", "   ", "also-good"],
-        cursor: 5,
-      }),
-    );
-    const state = await loadBoardState(wsIde());
-    expect(state?.topics).toEqual(["good", "also-good"]);
-    expect(state?.handle).toBe("delta");
-    expect(state?.cursor).toBe(5);
-  });
-});
+  const legacyStates: Array<[string, unknown]> = [
+    ["full legacy shape", { handle: "delta", topics: ["t1"], cursor: 42 }],
+    ["legacy topics only", { handle: "delta", topics: [] }],
+    ["legacy cursor only", { handle: "delta", cursor: 0 }],
+  ];
 
-describe("saveBoardState", () => {
-  it("writes pretty-printed JSON with a trailing newline, creating .continue recursively", async () => {
-    const state: BoardState = { handle: "delta", topics: ["t1"], cursor: 7 };
-    await saveBoardState(wsIde(), state);
-    const raw = fs.readFileSync(stateFilePath(), "utf8");
-    expect(raw).toBe(`${JSON.stringify(state, null, 2)}\n`);
-  });
-
-  it("throws when no workspace is open", async () => {
-    const state: BoardState = { handle: "delta", topics: [], cursor: 0 };
-    await expect(saveBoardState(makeIde([]), state)).rejects.toThrow(
-      "Cannot save board state: no workspace open",
-    );
-  });
-
-  it("round-trips through loadBoardState", async () => {
-    const state: BoardState = {
-      handle: "delta",
-      topics: ["t1", "t2"],
-      cursor: 99,
-    };
-    await saveBoardState(wsIde(), state);
-    expect(await loadBoardState(wsIde())).toEqual(state);
-  });
+  it.each(legacyStates)(
+    "rejects the removed legacy format without compatibility: %s",
+    async (_label, content) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      writeStateFile(JSON.stringify(content));
+      expect(await loadBoardState(wsIde())).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("legacy"));
+    },
+  );
 });

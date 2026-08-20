@@ -12,6 +12,10 @@ npm run test:all
 # Nur bestimmte Suites
 node scripts/run-all-tests.mjs --only gui,core-jest
 
+# Gezielt: Suite auf passende Testdateien begrenzen (vitest: Substring im
+# Pfad, jest: Regex) — Standard für kleine Änderungen
+node scripts/run-all-tests.mjs --only core-vitest --filter boardState
+
 # Inventar anzeigen
 node scripts/run-all-tests.mjs --list
 ```

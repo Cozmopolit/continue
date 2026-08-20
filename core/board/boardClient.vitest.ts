@@ -60,8 +60,6 @@ function setConnections(...connections: any[]) {
 
 const state = (overrides: Partial<BoardState> = {}): BoardState => ({
   handle: "delta",
-  topics: ["t1"],
-  cursor: 100,
   ...overrides,
 });
 
