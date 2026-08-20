@@ -1073,6 +1073,7 @@ describe("Thinking reasoning_details stream accumulation (resent-user-messages i
   // reset" below.
   const createInitialState = (): any => ({
     lastSessionId: undefined,
+
     allSessionMetadata: [],
     history: [
       {
@@ -1207,5 +1208,166 @@ describe("Thinking reasoning_details stream accumulation (resent-user-messages i
     expect(thinking.content).toBe("Only first.");
     expect(thinking.reasoning_details).toHaveLength(1);
     expect(thinking.reasoning_details![0].text).toBe("Only");
+  });
+});
+
+describe("sessionSlice clearDanglingMessages tool-call cancellation", () => {
+  // User-abort semantics: every unfinished tool call of the aborted run
+  // must end up "canceled" so the next run renders
+  // CANCELLED_TOOL_CALL_MESSAGE instead of NO_TOOL_CALL_OUTPUT_MESSAGE
+  // ("No tool output"), which is formally indistinguishable from an
+  // anomalous empty tool result.
+
+  const toolState = (
+    toolCallId: string,
+    status: ToolStatus,
+    output?: any,
+  ): ToolCallState => ({
+    toolCallId,
+    toolCall: {
+      id: toolCallId,
+      type: "function",
+      function: { name: "mock_tool", arguments: "{}" },
+    },
+    status,
+    parsedArgs: {},
+    ...(output ? { output } : {}),
+  });
+
+  const userItem = (): ChatHistoryItemWithMessageId => ({
+    message: { id: "user-1", role: "user", content: "Hello" },
+    contextItems: [],
+  });
+
+  const assistantWithTools = (
+    id: string,
+    states: ToolCallState[],
+  ): ChatHistoryItemWithMessageId => ({
+    message: { id, role: "assistant", content: "" },
+    contextItems: [],
+    toolCallStates: states,
+  });
+
+  const toolItem = (toolCallId: string): ChatHistoryItemWithMessageId => ({
+    message: {
+      id: `tool-${toolCallId}`,
+      role: "tool",
+      content: "result",
+      toolCallId,
+    },
+    contextItems: [],
+  });
+
+  const createState = (history: ChatHistoryItemWithMessageId[]): any => ({
+    lastSessionId: undefined,
+    allSessionMetadata: [],
+    history,
+    isStreaming: true,
+    title: "Test Session",
+    id: "test-session-id",
+    streamAborter: new AbortController(),
+    symbols: {},
+    mode: "agent" as const,
+    isInEdit: false,
+    codeBlockApplyStates: { states: [], curIndex: 0 },
+    newestToolbarPreviewForInput: {},
+    isSessionMetadataLoading: false,
+    compactionLoading: {},
+    pendingSelfCompaction: false,
+    streamAborted: false,
+    board: {
+      messages: [],
+      droppedCount: 0,
+      omittedTotal: 0,
+      omittedOldestId: undefined,
+      tooLargeIds: [],
+      lastFetchAt: undefined,
+    },
+  });
+
+  const run = (history: ChatHistoryItemWithMessageId[]) =>
+    sessionSlice.reducer(createState(history), {
+      type: "session/clearDanglingMessages",
+    });
+
+  it("cancels a tool call that was executing ('calling') when the run was aborted", () => {
+    const state = run([
+      userItem(),
+      assistantWithTools("assistant-1", [toolState("tc-1", "calling")]),
+    ]);
+
+    // The assistant turn is kept; the in-flight call is marked canceled so
+    // constructMessages renders CANCELLED_TOOL_CALL_MESSAGE for it.
+    expect(state.history).toHaveLength(2);
+    expect(state.history[1].toolCallStates?.[0].status).toBe("canceled");
+  });
+
+  it("still cancels generated and generating states on the kept assistant message", () => {
+    const state = run([
+      userItem(),
+      assistantWithTools("assistant-1", [
+        toolState("tc-1", "generated"),
+        toolState("tc-2", "generating"),
+      ]),
+    ]);
+
+    expect(state.history).toHaveLength(2);
+    expect(state.history[1].toolCallStates?.[0].status).toBe("canceled");
+    expect(state.history[1].toolCallStates?.[1].status).toBe("canceled");
+  });
+
+  it("cancels the in-flight call of a parallel batch behind an emitted tool message", () => {
+    // Parallel calls: tc-1 already completed (its tool message is the
+    // last user/tool boundary item), tc-2 still executing when the abort
+    // arrives. The backwards scan never reaches the assistant item here,
+    // so only the run-wide sweep catches tc-2.
+    const state = run([
+      userItem(),
+      assistantWithTools("assistant-1", [
+        toolState("tc-1", "done", [
+          { name: "Result", description: "ok", content: "tool output" },
+        ]),
+        toolState("tc-2", "calling"),
+      ]),
+      toolItem("tc-1"),
+    ]);
+
+    expect(state.history).toHaveLength(3);
+    const states = state.history[1].toolCallStates!;
+    expect(states[0].status).toBe("done");
+    expect(states[0].output).toBeDefined();
+    expect(states[1].status).toBe("canceled");
+  });
+
+  it("cancels only the unfinished states of a deep tool loop and keeps finished turns", () => {
+    const state = run([
+      userItem(),
+      assistantWithTools("assistant-1", [
+        toolState("tc-1", "done", [
+          { name: "Result", description: "ok", content: "first output" },
+        ]),
+      ]),
+      toolItem("tc-1"),
+      assistantWithTools("assistant-2", [toolState("tc-2", "calling")]),
+    ]);
+
+    expect(state.history).toHaveLength(4);
+    expect(state.history[1].toolCallStates?.[0].status).toBe("done");
+    expect(state.history[3].toolCallStates?.[0].status).toBe("canceled");
+  });
+
+  it("still drops a pure argument-streaming turn (slicing invariant)", () => {
+    // A turn whose only tool states are "generating" (arguments still
+    // streaming, possibly malformed partial JSON) is removed wholesale —
+    // the sweep must not keep it alive by canceling those states early.
+    const state = run([
+      userItem(),
+      assistantWithTools("assistant-1", [toolState("tc-1", "generating")]),
+    ]);
+
+    // Stock behavior: nothing valid after the user message, the user input
+    // is handed back to the editor.
+    expect(state.history).toHaveLength(0);
+    expect(state.mainEditorContentTrigger).toBeUndefined();
   });
 });

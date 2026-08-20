@@ -48,10 +48,27 @@ Get-Content "$env:TEMP\continue-test-report\manual\<...>.log" -Tail 40
 Kein Tee-Object, kein nacktes `>`; Volltext auf Platte, Tail im Chat.
 Flake-Disziplin und Gate-Modell: coding-guidelines.md §3.
 
+## Test-Disziplin (Swarm-Beschluss 2026-08-20, verbindlich)
+
+- **Verifikations-Scope = Änderungs-Scope.** Betroffene Suiten einmal +
+  Typecheck; keine Test-Entwicklung für Abraum (weggeworfener Code).
+- **Verifikations-Budget:** Re-Runs nur bei Failure, gedeckelt auf max. 2;
+  danach melden statt weiterlaufen lassen.
+- **Bekannte Flakes werden nicht gejagt.** In test-baseline.md dokumentiert
+  = keine Isolations-Runs (Baseline-Referenz genügt). Neuer Flake: max.
+  zwei Solo-Runs, klassifizieren, dokumentieren — der Fix ist ein eigener
+  Workstream.
+- **„Fertig" definiert der Task, nicht perfektes Grün.** Dokumentiertes
+  Baseline-Rot blockiert nicht.
+- **Typecheck läuft mit** (`cd gui; npx tsc --noEmit`) — Vitest allein
+  fängt Typfehler nicht (Beispiel: `boardV2`-Typfehler am 2026-08-20).
+
 ## Bei Failures
 
-1. **Zuerst die betroffene Datei solo nachlaufen lassen** — unter Volllast
-   flaken bekannte Kandidaten (test-baseline.md, "Bewusst nicht behoben"):
+1. **Zuerst die betroffene Datei solo nachlaufen lassen** (max. zwei
+   Solo-Runs, s. Test-Disziplin; bekannte Flakes: nur Baseline-Referenz) —
+   unter Volllast flaken bekannte Kandidaten (test-baseline.md, "Bewusst
+   nicht behoben"):
    ```powershell
    cd <suite-dir>; npx vitest run <pfad/zur/datei.test.ts>   # vitest
    cd core; npm test -- <pfad>                               # jest (core)

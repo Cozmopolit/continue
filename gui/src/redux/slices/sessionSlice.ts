@@ -333,6 +333,34 @@ export const sessionSlice = createSlice({
         return;
       }
 
+      // Cancel all unfinished tool calls of the aborted run. This sweeps the
+      // whole current run (everything after the last user message) rather
+      // than only the tail the backwards scan below reaches, so it also
+      // catches "calling" states on assistant items that precede an
+      // already-emitted tool message (parallel calls: one done, one still
+      // executing when the abort arrives). Without this, such states stayed
+      // "calling" forever and constructMessages rendered
+      // NO_TOOL_CALL_OUTPUT_MESSAGE ("No tool output") for them — formally
+      // indistinguishable from an anomalous empty result. Marked canceled,
+      // the next run renders CANCELLED_TOOL_CALL_MESSAGE instead.
+      // "generating" states are deliberately left untouched here: a turn
+      // still streaming tool arguments may hold malformed partial JSON and
+      // gets dropped by the slicing below instead of being kept.
+      const lastUserIdx = findLastIndex(
+        state.history,
+        (item) => item.message.role === "user",
+      );
+      for (let i = lastUserIdx + 1; i < state.history.length; i++) {
+        state.history[i].toolCallStates?.forEach((toolCallState) => {
+          if (
+            toolCallState.status === "generated" ||
+            toolCallState.status === "calling"
+          ) {
+            toolCallState.status = "canceled";
+          }
+        });
+      }
+
       const lastUserOrToolIdx = findLastIndex(
         state.history,
         (item) => item.message.role === "tool" || item.message.role === "user",
@@ -346,12 +374,16 @@ export const sessionSlice = createSlice({
         );
         if (message.message.content || hasGeneratedMsg) {
           validAssistantMessageIdx = i;
-          // Cancel any tool calls that are dangling and generated
+          // Cancel any tool calls still dangling on the kept message. The
+          // run-wide sweep above already handled "generated"/"calling"; this
+          // additionally cancels "generating" states on a message kept for
+          // its content or other states.
           if (message.toolCallStates) {
             message.toolCallStates.forEach((toolCallState) => {
               if (
                 toolCallState.status === "generated" ||
-                toolCallState.status === "generating"
+                toolCallState.status === "generating" ||
+                toolCallState.status === "calling"
               ) {
                 toolCallState.status = "canceled";
               }

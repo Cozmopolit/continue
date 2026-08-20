@@ -149,8 +149,8 @@ Alle Fixes sind **test-only**; kein Produktionscode geändert.
   Listener-Spy sieht 1, 2 statt des letzten Werts) — beobachtet
   2026-08-12 im Runner-Gesamtlauf und 2026-08-20 auch im Solo-Lauf
   (4 Solo-Durchläufe: 3× grün, 1× rot; unabhängig von aktuellem Worktree,
-  gegen sauberen HEAD verifiziert). Bei Failure: mehrmals solo nachlaufen;
-  Einzel-Failure ohne Bezug zur eigenen Änderung = Flake.
+  gegen sauberen HEAD verifiziert). Bei Failure: Baseline-Referenz genügt —
+  keine weiteren Isolations-Runs (Test-Disziplin, running-tests.md).
 - `gui`: `MockIdeMessenger` hat weiterhin kein `history/load`-Default → kosmetischer
   `console.error` im History-Test (kein Testimpact).
 - `core` Jest: "Jest did not exit one second after the test run" (open handles) —

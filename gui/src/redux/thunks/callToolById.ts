@@ -95,6 +95,24 @@ export const callToolById = createAsyncThunk<
     streamResponse = true;
   }
 
+  // User-abort guard: if the run was cancelled while this tool was executing
+  // (stop button / Cmd+Backspace / stream error), clearDanglingMessages has
+  // already marked the state "canceled". A late result must not overwrite
+  // that marker (acceptToolCall/errorToolCall would flip it back to
+  // done/errored) and must not resume the stream into the user's
+  // intervention.
+  const stateAfterExecution = getState();
+  const toolCallStateAfterExecution = findToolCallById(
+    stateAfterExecution.session.history,
+    toolCallId,
+  );
+  if (
+    !toolCallStateAfterExecution ||
+    toolCallStateAfterExecution.status !== "calling"
+  ) {
+    return;
+  }
+
   if (error) {
     dispatch(
       updateToolCallOutput({
