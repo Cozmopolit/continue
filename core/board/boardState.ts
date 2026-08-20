@@ -2,11 +2,13 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { BoardMessage, IDE } from "..";
+import { IDE } from "..";
 
-// Board auto-topic-injection (board-auto-topic-injection.md): per-workspace
-// subscription state. CITT is a stateless gateway by contract, so the fork
-// owns this file: `<workspace>/.continue/board-state.json`.
+// MsgBoard (msgboard-v2-fork-packages.md): per-workspace board identity.
+// Subscriptions and cursors live SERVER-SIDE (managed via CITT's
+// subscription tools); this file only contributes the handle. `topics` and
+// `cursor` remain in the on-disk format (legacy), are validated on load, but
+// no longer drive consumption.
 
 export const BOARD_STATE_DIR_NAME = ".continue";
 export const BOARD_STATE_FILE_NAME = "board-state.json";
@@ -14,16 +16,8 @@ export const BOARD_STATE_FILE_NAME = "board-state.json";
 export interface BoardState {
   handle: string;
   topics: string[];
-  /** Global cursor across all topics (GitHub comment ids are monotonic). */
+  /** Global cursor across all topics (legacy; kept in the on-disk format). */
   cursor: number;
-  /**
-   * One-shot flag (msgboard-v2-fork-packages.md): set once
-   * `board/migrateImport` succeeded on a v2 gateway. Enables mode (b) —
-   * server-resolved `board/pending` — and makes the gateway the source of
-   * truth for subscriptions until M3 removes this store. Absent = not
-   * migrated. Never written back to `false`; absence is normalized away.
-   */
-  migrated?: boolean;
 }
 
 // Envelope-delimiter hygiene mirrors the MsgBoard handle validation
@@ -89,8 +83,6 @@ export async function loadBoardState(
             typeof t === "string" && validateBoardTopic(t) === undefined,
         ),
         cursor: parsed.cursor,
-        // Normalize: only `true` is meaningful; `false`/garbage = not migrated.
-        ...(parsed.migrated === true ? { migrated: true } : {}),
       };
     }
     console.warn(`Board state file is malformed, ignoring: ${statePath}`);
@@ -118,18 +110,4 @@ export async function saveBoardState(
   }
   fs.mkdirSync(path.dirname(statePath), { recursive: true });
   fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-}
-
-/** at-least-once: only advance, never backwards (ids are monotonic). */
-export function cursorAfterConsume(
-  current: number,
-  messages: BoardMessage[],
-): number {
-  let cursor = current;
-  for (const message of messages) {
-    if (message.id > cursor) {
-      cursor = message.id;
-    }
-  }
-  return cursor;
 }

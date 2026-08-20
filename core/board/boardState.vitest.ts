@@ -9,7 +9,6 @@ import {
   BOARD_STATE_DIR_NAME,
   BOARD_STATE_FILE_NAME,
   BoardState,
-  cursorAfterConsume,
   loadBoardState,
   saveBoardState,
   validateBoardHandle,
@@ -172,51 +171,6 @@ describe("loadBoardState", () => {
     expect(state?.handle).toBe("delta");
     expect(state?.cursor).toBe(5);
   });
-
-  it("parses the migrated flag when set to true", async () => {
-    writeValidState({
-      handle: "delta",
-      topics: ["t1"],
-      cursor: 42,
-      migrated: true,
-    });
-    expect(await loadBoardState(wsIde())).toEqual({
-      handle: "delta",
-      topics: ["t1"],
-      cursor: 42,
-      migrated: true,
-    });
-  });
-
-  it("normalizes migrated=false to absence (only strict true counts)", async () => {
-    writeValidState({
-      handle: "delta",
-      topics: [],
-      cursor: 0,
-      migrated: false,
-    });
-    expect(await loadBoardState(wsIde())).toEqual({
-      handle: "delta",
-      topics: [],
-      cursor: 0,
-    });
-  });
-
-  it("ignores a garbage migrated value without discarding the state", async () => {
-    writeStateFile(
-      JSON.stringify({
-        handle: "delta",
-        topics: ["t1"],
-        cursor: 3,
-        migrated: "yes",
-      }),
-    );
-    expect(await loadBoardState(wsIde())).toEqual({
-      handle: "delta",
-      topics: ["t1"],
-      cursor: 3,
-    });
-  });
 });
 
 describe("saveBoardState", () => {
@@ -242,45 +196,5 @@ describe("saveBoardState", () => {
     };
     await saveBoardState(wsIde(), state);
     expect(await loadBoardState(wsIde())).toEqual(state);
-  });
-
-  it("round-trips the migrated flag through loadBoardState", async () => {
-    const state: BoardState = {
-      handle: "delta",
-      topics: ["t1"],
-      cursor: 99,
-      migrated: true,
-    };
-    await saveBoardState(wsIde(), state);
-    expect(await loadBoardState(wsIde())).toEqual(state);
-  });
-});
-
-describe("cursorAfterConsume", () => {
-  const message = (id: number) => ({
-    topic: "t1",
-    id,
-    from: "home-citt",
-    to: "*",
-    createdAt: "2026-08-14T00:00:00Z",
-    body: `body ${id}`,
-  });
-
-  it("returns the current cursor when there are no messages", () => {
-    expect(cursorAfterConsume(100, [])).toBe(100);
-  });
-
-  it("advances to the highest message id (unsorted input)", () => {
-    expect(
-      cursorAfterConsume(100, [message(101), message(175), message(150)]),
-    ).toBe(175);
-  });
-
-  it("never moves backwards", () => {
-    expect(cursorAfterConsume(200, [message(101), message(150)])).toBe(200);
-  });
-
-  it("advances from cursor 0", () => {
-    expect(cursorAfterConsume(0, [message(7)])).toBe(7);
   });
 });

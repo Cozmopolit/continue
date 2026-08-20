@@ -145,10 +145,12 @@ Alle Fixes sind **test-only**; kein Produktionscode geändert.
   through to initializeServices" — beobachtet 2026-08-19 im Runner-Gesamtlauf
   (je 30s-Timeout, solo deterministisch grün in ~13s).
 - `core` (Vitest): `autocomplete/generation/ListenableGenerator.vitest.ts`
-  „should allow listeners to receive values" kann unter Volllast flaken
-  (Timing-Race: Listener-Spy sieht 1, 2 statt des letzten Werts —
-  beobachtet 2026-08-12 im Runner-Gesamtlauf, solo deterministisch grün).
-  Bei Failure zuerst solo nachlaufen lassen.
+  „should allow listeners to receive values" flakt (Timing-Race:
+  Listener-Spy sieht 1, 2 statt des letzten Werts) — beobachtet
+  2026-08-12 im Runner-Gesamtlauf und 2026-08-20 auch im Solo-Lauf
+  (4 Solo-Durchläufe: 3× grün, 1× rot; unabhängig von aktuellem Worktree,
+  gegen sauberen HEAD verifiziert). Bei Failure: mehrmals solo nachlaufen;
+  Einzel-Failure ohne Bezug zur eigenen Änderung = Flake.
 - `gui`: `MockIdeMessenger` hat weiterhin kein `history/load`-Default → kosmetischer
   `console.error` im History-Test (kein Testimpact).
 - `core` Jest: "Jest did not exit one second after the test run" (open handles) —

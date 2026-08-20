@@ -7,7 +7,6 @@ import {
 } from "../..";
 import * as ideUtils from "../../util/ideUtils";
 import MCPConnection, {
-  BOARD_MIGRATE_IMPORT_TIMEOUT,
   BOARD_PENDING_TIMEOUT,
   BOARD_REGISTER_TIMEOUT,
   DEFAULT_MCP_TOOL_CALL_TIMEOUT,
@@ -790,50 +789,13 @@ describe("MCPConnection", () => {
       });
       const conn = new MCPConnection(options);
 
-      const res = await conn.boardPending(["board-etikette"], 0);
+      const res = await conn.boardPending();
 
       expect(res.messages[0].re).toBeUndefined();
       expect(res.messages[1].re).toBe(5296779803);
     });
 
-    it("passes topics and sinceId, bounded by the board timeout", async () => {
-      const requestSpy = mockBoardRequest({
-        messages: [],
-        latestByTopic: {},
-      });
-      const conn = new MCPConnection(options);
-
-      await conn.boardPending(["t1", "t2"], 42);
-
-      expect(requestSpy).toHaveBeenCalledWith(
-        {
-          method: "board/pending",
-          params: { topics: ["t1", "t2"], sinceId: 42 },
-        },
-        expect.anything(),
-        { signal: undefined, timeout: BOARD_PENDING_TIMEOUT },
-      );
-    });
-
-    it("omits sinceId in init mode", async () => {
-      const requestSpy = mockBoardRequest({
-        messages: [],
-        latestByTopic: { t: 7 },
-        emptyTopics: [],
-      });
-      const conn = new MCPConnection(options);
-
-      const res = await conn.boardPending(["t"]);
-
-      expect(requestSpy).toHaveBeenCalledWith(
-        { method: "board/pending", params: { topics: ["t"] } },
-        expect.anything(),
-        { signal: undefined, timeout: BOARD_PENDING_TIMEOUT },
-      );
-      expect(res.latestByTopic).toEqual({ t: 7 });
-    });
-
-    it("omits topics and sinceId entirely in mode (b) (v2 server-resolved)", async () => {
+    it("sends no params (server-resolved subscriptions), bounded by the board timeout", async () => {
       const requestSpy = mockBoardRequest({
         messages: [],
         latestByTopic: {},
@@ -850,10 +812,10 @@ describe("MCPConnection", () => {
     });
   });
 
-  // MsgBoard v2 (msgboard-v2-fork-packages.md): frozen contract in
-  // 02-board-state-watcher.md. Same mock style as board/pending above: the
-  // response is parsed with the schema handed to the SDK call.
-  describe("board v2 (register / migrateImport)", () => {
+  // MsgBoard v2 (msgboard-v2-fork-packages.md). Same mock style as
+  // board/pending above: the response is parsed with the schema handed to
+  // the SDK call.
+  describe("board v2 (register)", () => {
     const options: InternalStdioMcpOptions = {
       name: "test-mcp",
       id: "test-id",
@@ -880,41 +842,6 @@ describe("MCPConnection", () => {
         { method: "board/register", params: { handle: "citt-delta" } },
         expect.anything(),
         { signal: undefined, timeout: BOARD_REGISTER_TIMEOUT },
-      );
-    });
-
-    it("sends the exact frozen migrateImport payload and parses the response", async () => {
-      const topics = [
-        { topic: "t1", sinceId: 100, subscribed: true },
-        { topic: "t2", sinceId: 100, subscribed: false },
-      ];
-      const requestSpy = vi
-        .spyOn(Client.prototype, "request")
-        .mockImplementation(async (req: any, resultSchema: any) => {
-          if (req.method === "board/migrateImport") {
-            return resultSchema.parse({
-              ok: true,
-              processed: 2,
-              subscribed: 1,
-              cursorAdvanced: true,
-            });
-          }
-          throw new Error(`Unexpected request: ${req.method}`);
-        });
-      const conn = new MCPConnection(options);
-
-      const res = await conn.boardMigrateImport(topics);
-
-      expect(res).toEqual({
-        ok: true,
-        processed: 2,
-        subscribed: 1,
-        cursorAdvanced: true,
-      });
-      expect(requestSpy).toHaveBeenCalledWith(
-        { method: "board/migrateImport", params: { topics } },
-        expect.anything(),
-        { signal: undefined, timeout: BOARD_MIGRATE_IMPORT_TIMEOUT },
       );
     });
   });

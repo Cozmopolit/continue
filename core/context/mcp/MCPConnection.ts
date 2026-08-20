@@ -75,38 +75,16 @@ const ProxyCapabilitiesSchema = z.object({
 // Exported for test assertions.
 export const BOARD_PENDING_TIMEOUT = 5_000; // 5 seconds
 
-// MsgBoard v2 (msgboard-v2-fork-packages.md): `board/register` and
-// `board/migrateImport` are one-shot DB writes like proxy discovery — same
-// 5 s budget. Both are best-effort from the fork's perspective: failures keep
-// the proven mode-(a) consumption alive. Exported for test assertions.
+// MsgBoard v2 (msgboard-v2-fork-packages.md): `board/register` is a one-shot
+// DB write like proxy discovery — same 5 s budget. Best-effort from the
+// fork's perspective. Exported for test assertions.
 export const BOARD_REGISTER_TIMEOUT = 5_000; // 5 seconds
-export const BOARD_MIGRATE_IMPORT_TIMEOUT = 5_000; // 5 seconds
 
-// Frozen contract (02-board-state-watcher.md, „board/migrateImport contract",
-// binding since board post 5348658808): registration response.
+// MsgBoard v2 (msgboard-v2-fork-packages.md): registration response.
 const BoardRegisterResultSchema = z.object({
   ok: z.boolean(),
   handle: z.string(),
 });
-
-// Frozen contract (same section): migration response. `processed` counts the
-// received topic entries, `subscribed` the ones kept active, `cursorAdvanced`
-// whether any ConsumedCommentId moved.
-const BoardMigrateImportResultSchema = z.object({
-  ok: z.boolean(),
-  processed: z.number(),
-  subscribed: z.number(),
-  cursorAdvanced: z.boolean(),
-});
-
-/** One topic entry of the `board/migrateImport` payload (frozen contract). */
-export interface BoardMigrateImportTopic {
-  topic: string;
-  /** Highest consumed comment id on this topic (0 = nothing consumed). */
-  sinceId: number;
-  /** true = upsert the subscription, false = remove it. */
-  subscribed: boolean;
-}
 
 // continue-transcript-dump.md: transcript payloads are larger than
 // board/pending responses — dedicated, slightly higher timeout.
@@ -453,27 +431,16 @@ class MCPConnection {
   }
 
   /**
-   * Fetches pending MsgBoard messages for subscribed topics through the CITT
-   * board gateway (`board/pending`, contract v1.2 in
-   * board-auto-topic-injection.md). Omit `sinceId` for init mode (no
-   * messages, only `latestByTopic`). Omit BOTH `topics` and `sinceId` for
-   * mode (b) on v2 gateways (msgboard-v2-fork-packages.md): CITT resolves the
-   * caller's subscriptions server-side via the registered handle.
-   * Best-effort: callers must handle errors and never block a run on this.
+   * Fetches pending MsgBoard messages through the CITT board gateway
+   * (`board/pending`, msgboard-v2-fork-packages.md): no topics, no sinceId —
+   * CITT resolves the caller's subscriptions server-side via the registered
+   * handle. Best-effort: callers must handle errors and never block a run on
+   * this.
    */
-  async boardPending(
-    topics?: string[],
-    sinceId?: number,
-    options?: { signal?: AbortSignal },
-  ): Promise<BoardPendingResult> {
-    const params: Record<string, unknown> = {};
-    if (topics !== undefined) {
-      params.topics = topics;
-    }
-    if (sinceId !== undefined) {
-      params.sinceId = sinceId;
-    }
-    return await this.callMethod("board/pending", params, BoardPendingSchema, {
+  async boardPending(options?: {
+    signal?: AbortSignal;
+  }): Promise<BoardPendingResult> {
+    return await this.callMethod("board/pending", {}, BoardPendingSchema, {
       signal: options?.signal,
       timeout: BOARD_PENDING_TIMEOUT,
     });
@@ -481,11 +448,10 @@ class MCPConnection {
 
   /**
    * Registers this connection's board identity at the CITT gateway
-   * (`board/register`, frozen contract in 02-board-state-watcher.md).
-   * CITT's registry is PROCESS-SCOPED, so the call belongs to every
-   * connection establishment and is idempotent per handle. Errors: `-32002`
-   * handle conflict, `-32602` invalid handle. Best-effort: an unregistered
-   * fork stays fully functional on mode-(a) `board/pending`.
+   * (`board/register`, msgboard-v2-fork-packages.md). CITT's registry is
+   * PROCESS-SCOPED, so the call belongs to every consumption and is
+   * idempotent per handle. Errors: `-32002` handle conflict, `-32602`
+   * invalid handle. Best-effort: callers swallow errors.
    */
   async boardRegister(
     handle: string,
@@ -496,32 +462,6 @@ class MCPConnection {
       { handle },
       BoardRegisterResultSchema,
       { signal: options?.signal, timeout: BOARD_REGISTER_TIMEOUT },
-    );
-  }
-
-  /**
-   * One-shot board-state migration (`board/migrateImport`, frozen contract in
-   * 02-board-state-watcher.md): upserts/removes server-side subscriptions and
-   * seeds the consumed-cursor markers (`ConsumedCommentId <- MAX`, never
-   * backwards). REQUIRES a prior `boardRegister` on this connection
-   * (`-32003` otherwise, never a fallback identity); idempotent and
-   * retry-safe after connection loss. All payload fields are required and
-   * unknown fields are rejected.
-   */
-  async boardMigrateImport(
-    topics: BoardMigrateImportTopic[],
-    options?: { signal?: AbortSignal },
-  ): Promise<{
-    ok: boolean;
-    processed: number;
-    subscribed: number;
-    cursorAdvanced: boolean;
-  }> {
-    return await this.callMethod(
-      "board/migrateImport",
-      { topics },
-      BoardMigrateImportResultSchema,
-      { signal: options?.signal, timeout: BOARD_MIGRATE_IMPORT_TIMEOUT },
     );
   }
 

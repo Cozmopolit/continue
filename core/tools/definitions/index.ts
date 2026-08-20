@@ -10,12 +10,6 @@ export { lsTool } from "./ls";
 export { multiEditTool } from "./multiEdit";
 export { readCurrentlyOpenFileTool } from "./readCurrentlyOpenFile";
 export { readFileTool } from "./readFile";
-export {
-  boardSubscribeTool,
-  boardSubscriptionsTool,
-  boardUnsubscribeTool,
-} from "./boardTools";
-
 export { readFileRangeTool } from "./readFileRange";
 export { readSkillTool } from "./readSkill";
 export { requestRuleTool } from "./requestRule";

@@ -1,10 +1,11 @@
 ﻿# MsgBoard-Interface v2 — Fork-Pakete
 
-**Status:** Pakete 1 + 3 implementiert (Commit `843dda48d`); M1 + M2
-implementiert gegen den eingefrorenen migrateImport-Vertrag (core-vitest
-grün) — der Live-Migrationslauf wartet auf vestas „Ingress live"-Ping
-(einziger synchroner Punkt); Paket 2 bleibt gated auf CITT-Schritt 3.
-**Stand:** 2026-08-19 (M1-Go mit eingefrorenem Vertrag, Board-Post 5348658808) ·
+**Status:** Pakete 1 + 3 implementiert (Commit `843dda48d`). M1+M2 wurde
+am 2026-08-20 durch die vereinfachte Server-Side-Subscription-Architektur
+ersetzt (User-Direktive, Abschnitt „Revision 2026-08-20"): kein
+Migrations-RPC, kein Mode-(a)-Fallback, kein `migrated`-Flag, keine
+fork-seitigen Subscription-Tools. Paket 2 bleibt gated auf CITT-Schritt 3.
+**Stand:** 2026-08-20 (Revision) ·
 **Autor:** citt-delta
 **Basis:** Konsenspapier `msgboard-interface-v2` (Board-Id 5319478503,
 DONE/CLOSED); GO-Runde vesta 5319451316, delta 5319451413. Memory-Fragment:
@@ -16,6 +17,32 @@ CITT-DB, `.continue/board-state.json` wird nach einmaligem Migrationssync
 abgeschafft (Abschnitt „Store-Migration (OQ3)").
 Verwandt: `board-wake-mode.md`, `board-auto-topic-injection.md`,
 `agent-self-compaction.md`.
+
+## Revision 2026-08-20 — Vereinfachung (User-Direktive)
+
+Der M1+M2-Entwurf (Migrations-RPC, `migrated`-Flag, Mode-(a)-Fallback,
+Sync-Seam in den Subscription-Tools) ist **ersetzt und entfernt**; die
+Abschnitte unten dokumentieren den historischen Entwurf.
+
+**Neues Design (implementiert):**
+
+- Subscriptions und Cursor leben ausschließlich serverseitig (CITT-DB);
+  Verwaltung über die CITT-seitigen Subscription-Tools. Der Cutover für
+  bestehende Installationen ist ein administrativer Akt (Subscriptions
+  serverseitig setzen), kein Code-Pfad im Fork.
+- `consumeBoardPending` (`core/board/boardClient.ts`): Handle aus
+  `board-state.json` laden → `board/register` → `board/pending` ohne
+  Parameter. Server ohne `boardV2`-Capability werden übersprungen
+  (Warnung); jeder Fehler liefert das leere Ergebnis (best effort).
+  Kein Client-Cursor mehr, kein Reload-before-Save, kein Fallback-Modus.
+- `MCPConnection.boardPending` nimmt keine `topics`/`sinceId` mehr an.
+- Gelöscht: `boardMigrateImport` (Methode, Schema, Timeout-Konstante),
+  `syncBoardSubscription`, `fetchBoardLatest`, `cursorAfterConsume`,
+  `migrated`-Flag, fork-seitige `board_subscribe`/`board_unsubscribe`/
+  `board_subscriptions`-Tools (Definitionen, Implementierungen, Tests).
+- `board-state.json` bleibt vorerst Handle-Quelle; die Legacy-Felder
+  `topics`/`cursor` werden weiter geladen und validiert, aber nicht mehr
+  verwendet. Die Datei selbst entfällt mit CITT-Schritt [5].
 
 ## Motivation
 
@@ -338,21 +365,16 @@ wenn sein Gate verifiziert ist.
       — Priming-Consume entfernt, Doc-Block auf Self-Exclusion
       umgeschrieben, Verhaltensänderung dokumentiert; Tests angepasst.
       Paket-1-Kommentar fuhr piggyback mit.
-- [x] **Migration M1+M2, Implementierung** (2026-08-19, core-vitest grün):
-      gegen den eingefrorenen Vertrag — `boardRegister`/`boardMigrateImport`
-      in `MCPConnection.ts` (inkl. `boardV2`-Capability, Modus-(b)-`boardPending`
-      ohne Parameter), Orchestrierung in `core/board/boardClient.ts`
-      (Registrierung je Verbindung, Einmal-Migration mit `migrated`-Flag,
-      Modus (b) nur bei Registrierung+Migration erfolgreich, sonst Modus (a);
-      `syncBoardSubscription` propagiert Subscribe/Unsubscribe nach Migration),
-      Wiring in `boardTools.ts`; `migrated`-Flag in `boardState.ts`.
-- [ ] **Migration M1+M2, Live-Lauf** (Gate: vestas „Ingress live"-Ping):
-      echte Migration gegen dieses Workspace-`board-state.json` verifizieren.
-- [ ] **Migration M3** (Gate: vesta Schritt [5], koordiniert; zusätzlich
-      delta-2: fork-seitige workspace-bezogene Handle-Quelle muss vorher
-      existieren und verifiziert sein): Store-Maschinerie entfernen
-      (boardState, board_subscribe\*-Tools, Cursor-Code),
-      AGENTS.md-Verweise umstellen.
+- [x] **Migration M1+M2, Implementierung** (2026-08-19) — **ersetzt am
+      2026-08-20** durch die Revision oben (Migrations-RPC und
+      Fallback-Apparat entfernt).
+- [x] **Store-Rückbau** (2026-08-20, Revision): fork-seitige
+      Subscription-Tools, `syncBoardSubscription`, `fetchBoardLatest`,
+      Cursor-Code und `migrated`-Flag entfernt; Subscriptions
+      serverseitig (Cutover für citt-delta am 2026-08-20 vollzogen).
+- [ ] **Store-Datei-Abschaffung** (Gate: vesta Schritt [5], koordiniert):
+      `board-state.json` als Handle-Quelle ersetzen (workspace-bezogener
+      Config-Key, delta-2) und die Datei entfernen.
 - [ ] **Paket 2a** (Gate: CITT-Schritt 3 live, Maschinenpfad für
       `msg_mark_read` spezifiziert): `core/board/boardClient.ts` —
       Fetch und Markierung trennen; Markierung nach erfolgreichem Append;
