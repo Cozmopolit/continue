@@ -85,10 +85,10 @@ export const selectIsConversationIdle = createSelector(
 // belongs to the user. "Started" means: at least one user message OR at
 // least one item carrying a conversation summary — a fork-with-summary
 // session holds only the synthetic summary item and is a continuation, not
-// a fresh conversation (amendment 2026-08-17). The watcher keeps polling
-// and consuming while blocked (accumulated messages render in the first
-// real run's injection block), but never dispatches a wake into a
-// conversation that has not started yet.
+// a fresh conversation (amendment 2026-08-17). Deliver-before-consume
+// (amendment 2026-08-21): while blocked the watcher neither consumes nor
+// wakes — the messages stay server-side and the first real run's run-start
+// fetch delivers them.
 export const selectConversationIsStarted = createSelector(
   (store: RootState) => store.session.history,
   (history) =>

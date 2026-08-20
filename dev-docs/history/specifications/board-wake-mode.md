@@ -296,3 +296,80 @@ den Injection-Block sieht.
 **Tests:** `selectToolCalls.test.ts` +2 (nur Fork-Summary-Item → true;
 Summary als Leerstring → false), `useBoardWatch.test.tsx` +1 (Wake in die
 Fork-Conversation; der bestehende Frisch-Conversation-Fall bleibt grün).
+
+## Amendment 2026-08-21: Deliver-before-consume (to-zenith Nachrichtenverlust-Incident)
+
+**Anlass:** Incident 2026-08-20, entdeckt durch den User, forensisch
+dokumentiert von zenith (to-delta-Nachricht 5362472562): deltas Nachricht
+5362014552 (to-zenith, gepostet 21:33:19 UTC) wurde 21:34:03 UTC vom
+zenith-Fork via `board/pending` abgeholt — der CITT-Cursor
+(`WatcherTopics.ConsumedCommentId`) wurde dabei server-seitig fortgesetzt —
+aber der zenith-Agent hat sie nie gesehen: Die Session war busy (DONE-Post
+erst 21:35:52 UTC), unmittelbar danach lief eine Compaction, dann idle.
+Kein Wake, keine sichtbare Injection, keine Re-Delivery möglich.
+
+**Root Cause (strukturell):** `board/pending` IST der Consume — CITT setzt
+den Cursor beim Fetch hoch. Fork-seitig lebt eine konsumierte Nachricht nur
+im volatilen, **pro-Session** geführten Board-Buffer (Redux
+`session.board`), bis sie erstmals in einen Injection-Block gerendert wird.
+`newSession` setzt diesen Buffer **bedingungslos** zurück — bei jedem
+Session-Wechsel, jeder frischen Session und jeder abschließenden Compaction
+(`loadSession` läuft durch `newSession`). Jeder Consume, dessen Buffer-Eintrag
+vor dem ersten Render zurückgesetzt wird, ist damit endgültig verloren:
+Cursor fort, Buffer fort, kein Retry, keine Queue. Das bisherige Design
+(„Watcher konsumiert auch bei blockiertem Wake; angesammelte Messages
+rendern im nächsten Run") verließ sich darauf, dass dieser nächste Run vor
+jedem Session-Reset kommt — die Compaction am Run-Ende widerlegt das.
+Betroffen sind alle Agenten (gleicher Code), nicht nur zenith.
+
+**Verlustpfade (vor dem Fix):**
+
+1. Watcher-Tick konsumiert, Wake durch Guard blockiert (busy-Race,
+   Composer, frische Conversation) → Buffer-Reset vor dem nächsten Run →
+   Verlust. (Beobachteter Incident; Kandidat A.)
+2. Run-Start-Pfad (`streamNormalInput`, TTL-gegatet auf jedem LLM-Call)
+   konsumiert → Run abortet/fehlt vor dem Request → Verlust.
+3. Session-Wechsel des Users mit ungerenderten Messages im Buffer →
+   Verlust.
+
+Für den konkreten Incident kommt zusätzlich Kandidat B in Betracht: Der
+Consume 21:34:03 stammte vom Run-Start-Pfad des noch laufenden zenith-Runs
+— dann war die Nachricht im System-Prompt genau dieses LLM-Calls
+(der Block wird unmittelbar nach dem Fetch, vor dem Message-Aufbau
+gerendert) und wurde nur durch die anschließende Compaction aus dem
+sichtbaren Kontext entfernt. Diskriminierender Beleg: der CITT-Proxylog
+zeniths LLM-Requests um 21:34 UTC (enthält der System-Prompt den
+Nachrichtentext?).
+
+**Änderung:** Deliver-before-consume — ein Watcher-Tick fetcht nur noch,
+wenn er zustellen kann. Die Gates (idle, Conversation gestartet, keine
+Compaction laufend/pending, Composer leer, Editor vorhanden) wandern **vor**
+den `fetchBoardPending`-Aufruf; der Recheck nach dem Fetch bleibt (er fasst
+jetzt auch den Editor-Check). Damit rückt der Cursor nur noch, wenn
+unmittelbar danach der Wake-Dispatch in einen Run geht, der den Buffer
+rendert. Blockierte Phasen (busy, Composer, frische Conversation,
+Compaction) lassen die Nachrichten server-seitig stehen; Zustellung dann
+über den Run-Start-Fetch des nächsten Runs (rendert im selben Call) oder
+den ersten freien Tick. Nebenwirkung erwünscht: weniger `board/pending`-
+Aufrufe in blockierten Phasen (GitHub-Quota, board-rate-limit-polling-regime.md).
+
+**Restrisiken (dokumentiert, akzeptiert):**
+
+- ms-Fenster zwischen Pre-Gate und Post-Fetch-Recheck: beginnt ein Run
+  oder eine Compaction während des Fetches, ist der Consume bereits
+  geschehen und der Wake blockiert — Buffer-Zustand wie vor dem Fix, aber
+  das Fenster ist jetzt Millisekunden statt Minuten.
+- Run-Start-Pfad: Consume gehört dort zur Zustellung selbst; abortiert der
+  Run zwischen Consume und erfolgreichem Request, ist die Nachricht weg
+  (Verlustpfad 2). Vollständig schließt das nur Fetch/Ack-Entkopplung:
+  `board/pending` ohne Cursor-Fortschritt plus expliziter `board/ack` nach
+  erfolgreichem Request — CITT-seitige Änderung, Anker im geparkten
+  Mid-Turn-Injection-Workstream (vesta), bei Bedarf später.
+
+**Umsetzung:** `useBoardWatch.ts` (Gates vor den Fetch verlegt, Header-Doc),
+`useBoardWatch.test.tsx` (Composer-/Editor-/Frisch-Conversation-Tests auf
+„kein Consume" umgestellt; Restfenster-Tests dokumentieren das akzeptierte
+Verhalten), Kommentar in `selectToolCalls.ts` aktualisiert.
+
+**Tests:** `node scripts/run-all-tests.mjs --only gui --filter board` —
+54 Tests grün; `tsc:check` gui sauber.

@@ -68,25 +68,32 @@ const WAKE_DOC: JSONContent = {
  *   Deliberate behavior change: foreign messages that piled up while a run
  *   was active wake in the first tick after activation instead of rendering
  *   silently in the next run.
+ * - Deliver-before-consume (amendment 2026-08-21, to-zenith loss incident
+ *   2026-08-20): `board/pending` IS the consume — CITT advances the cursor
+ *   on fetch — and consumed messages live only in the volatile per-session
+ *   board buffer until their first render, which `newSession` resets
+ *   (session switch, fresh session, finishing compaction). A consume while
+ *   busy/blocked could therefore advance the cursor and then vanish when
+ *   the buffer resets: the message is lost forever. A tick now only fetches
+ *   when it can deliver: conversation idle and started, no compaction
+ *   running or pending, composer empty. While blocked, messages stay
+ *   server-side and are delivered by the first run-start fetch of the next
+ *   run (rendered in the same call) or the first unblocked tick. Residual:
+ *   the ms-window between the pre-gate and the post-fetch recheck.
  * - Compaction pause: while a compaction runs OR a self-compaction is
  *   pending, the watcher is fully paused. The finishing loadSession resets
  *   the board buffer, so no consume may race it
  *   (agent-self-compaction.md, board-wake-mode.md).
- * - Composer guard: never dispatch while the user has text in the composer;
- *   accumulated messages render in the next run regardless.
- * - Fresh-conversation guard: never dispatch into a conversation that has
- *   not started yet (no user message and no conversation summary) — the
- *   first message of a fresh conversation belongs to the user, not the
- *   board. A fork-with-summary session counts as started: it is a
- *   continuation, not a fresh conversation (amendment 2026-08-17).
- *   Consuming continues; accumulated messages render in the first real
- *   run's injection block.
- * - Compaction gate: while a compaction is in flight (inline compact or
- *   fork-with-summary), skip the whole tick — no consume, no wake. The
- *   finishing loadSession runs through the newSession reducer and resets the
- *   per-session board buffer, so messages consumed mid-compaction would
- *   advance the board cursor and then vanish from the context window. They
- *   stay on the board and arrive in the first tick after completion.
+ * - Composer guard: while the user has text in the composer, neither
+ *   consume nor dispatch (deliver-before-consume, amendment 2026-08-21);
+ *   the run-start fetch of the run the user sends delivers the messages.
+ * - Fresh-conversation guard: never consume or dispatch into a conversation
+ *   that has not started yet (no user message and no conversation summary)
+ *   — the first message of a fresh conversation belongs to the user, not
+ *   the board. A fork-with-summary session counts as started: it is a
+ *   continuation, not a fresh conversation (amendment 2026-08-17). The
+ *   first real run's run-start fetch delivers the messages
+ *   (amendment 2026-08-21).
  * - Cadence: 60 s ± 25 % jitter per tick (nextWatchDelayMs). The
  *   rate-limit incident (2026-08-18) showed phase-synchronized windows
  *   bursting every 30 s into the shared GitHub quota. Jitter is a stagger,
@@ -122,32 +129,46 @@ export function useBoardWatch() {
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const tick = async () => {
-      // Compaction gate: skip the whole tick (no consume, no wake) while a
-      // compaction is in flight — the board buffer is about to be reset by
-      // the finishing loadSession (board-wake-mode.md).
-      if (selectIsCompactionRunning(store.getState())) {
+      // Deliver-before-consume gate (board-wake-mode.md, amendment
+      // 2026-08-21): `board/pending` IS the consume — the CITT cursor
+      // advances on fetch — and what is consumed here can only reach the
+      // model via the volatile per-session board buffer, which `newSession`
+      // resets (session switch, fresh session, finishing compaction). A
+      // consume while blocked could advance the cursor and then vanish when
+      // the buffer resets (to-zenith loss incident 2026-08-20). So never
+      // fetch unless this tick can deliver: idle, started, no compaction,
+      // empty composer. Messages arriving while blocked stay server-side
+      // and are delivered by the first run-start fetch of the next run
+      // (rendered in the same call) or the first unblocked tick.
+      const pre = store.getState();
+      if (
+        selectIsCompactionRunning(pre) ||
+        !selectIsConversationIdle(pre) ||
+        !selectConversationIsStarted(pre)
+      ) {
+        return;
+      }
+      const editor = mainEditorRef.current;
+      if (!editor || hasValidEditorContent(editor.getJSON())) {
         return;
       }
       const result = await fetchBoardPending(dispatch, ideMessenger);
       if (cancelled || !result || result.messages.length === 0) {
         return;
       }
-      const editor = mainEditorRef.current;
-      if (!editor || hasValidEditorContent(editor.getJSON())) {
-        // No composer access or user is typing: stay quiet — the messages
-        // are accumulated and will render in the next run.
-        return;
-      }
-      // Recheck immediately before dispatching: a user-started run or a
-      // compaction may have begun while the fetch was in flight, and a
-      // conversation that has not started yet (no user message, no
-      // summary) may never receive a synthetic [board-wake] as its first
-      // message (board-wake-mode.md).
+      // Recheck immediately before dispatching: a user-started run, a
+      // compaction or composer input may have begun while the fetch was in
+      // flight. This is the residual ms-window in which a consume can still
+      // miss its wake — the messages then stay in the buffer and render in
+      // the next run (board-wake-mode.md, amendment 2026-08-21).
       const state = store.getState();
+      const postEditor = mainEditorRef.current;
       if (
         !selectIsConversationIdle(state) ||
         !selectConversationIsStarted(state) ||
-        selectIsCompactionRunning(state)
+        selectIsCompactionRunning(state) ||
+        !postEditor ||
+        hasValidEditorContent(postEditor.getJSON())
       ) {
         return;
       }

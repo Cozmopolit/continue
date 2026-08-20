@@ -205,50 +205,48 @@ describe("useBoardWatch", () => {
     expect(wakeCalls()).toHaveLength(1);
   });
 
-  it("does not wake when the composer has content (user is typing)", async () => {
+  it("does not consume when the composer has content (user is typing)", async () => {
+    // Deliver-before-consume (board-wake-mode.md, amendment 2026-08-21):
+    // the messages stay server-side; the run the user sends delivers them
+    // via its run-start fetch.
     mockMainEditor(TYPED_EDITOR_JSON);
-    const { messenger, store } = setup();
-    messenger.responses["board/consumePending"] = EMPTY_RESULT;
+    const { messenger, store, boardCalls } = setup();
+    messenger.responses["board/consumePending"] = PENDING_RESULT;
     await renderProbe(store, messenger);
 
-    messenger.responses["board/consumePending"] = PENDING_RESULT;
     await tick();
 
+    expect(boardCalls()).toHaveLength(0);
     expect(wakeCalls()).toHaveLength(0);
-    // still consumed — the messages render in the next run's injection block
-    expect((store.getState() as RootState).session.board.messages).toEqual([
-      BOARD_MESSAGE,
-    ]);
+    expect((store.getState() as RootState).session.board.messages).toEqual([]);
   });
 
-  it("does not wake without an editor instance", async () => {
+  it("does not consume without an editor instance", async () => {
     mockMainEditor(null);
-    const { messenger, store } = setup();
-    messenger.responses["board/consumePending"] = EMPTY_RESULT;
+    const { messenger, store, boardCalls } = setup();
+    messenger.responses["board/consumePending"] = PENDING_RESULT;
     await renderProbe(store, messenger);
 
-    messenger.responses["board/consumePending"] = PENDING_RESULT;
     await tick();
 
+    expect(boardCalls()).toHaveLength(0);
     expect(wakeCalls()).toHaveLength(0);
-    expect((store.getState() as RootState).session.board.messages).toEqual([
-      BOARD_MESSAGE,
-    ]);
+    expect((store.getState() as RootState).session.board.messages).toEqual([]);
   });
 
-  it("does not wake into a fresh conversation (no user message, no summary)", async () => {
-    const { messenger, store } = setup({ history: [] });
-    messenger.responses["board/consumePending"] = EMPTY_RESULT;
+  it("does not consume into a fresh conversation (no user message, no summary)", async () => {
+    // Deliver-before-consume (board-wake-mode.md, amendment 2026-08-21):
+    // the messages stay server-side; the first real run's run-start fetch
+    // delivers them.
+    const { messenger, store, boardCalls } = setup({ history: [] });
+    messenger.responses["board/consumePending"] = PENDING_RESULT;
     await renderProbe(store, messenger);
 
-    messenger.responses["board/consumePending"] = PENDING_RESULT;
     await tick();
 
+    expect(boardCalls()).toHaveLength(0);
     expect(wakeCalls()).toHaveLength(0);
-    // still consumed — the messages render in the first real run's injection
-    expect((store.getState() as RootState).session.board.messages).toEqual([
-      BOARD_MESSAGE,
-    ]);
+    expect((store.getState() as RootState).session.board.messages).toEqual([]);
   });
 
   it("wakes into a forked conversation whose only item carries a summary", async () => {
@@ -327,14 +325,18 @@ describe("useBoardWatch", () => {
     await tick();
 
     expect(wakeCalls()).toHaveLength(0);
-    // consumed anyway (consume happens before the re-check) — the messages
-    // render in the next run's injection block
+    // consumed anyway (consume happens before the re-check) — the residual
+    // ms-window of deliver-before-consume (board-wake-mode.md, amendment
+    // 2026-08-21); the messages render in the next run's injection block
     expect((store.getState() as RootState).session.board.messages).toEqual([
       BOARD_MESSAGE,
     ]);
   });
 
   it("does not wake when a run starts while the fetch is in flight", async () => {
+    // Residual ms-window of deliver-before-consume (board-wake-mode.md,
+    // amendment 2026-08-21): the pre-gate passed, then the run started
+    // mid-fetch — no wake; the messages render in the run that started.
     const { messenger, store } = setup();
     let calls = 0;
     messenger.responseHandlers["board/consumePending"] = async () => {
