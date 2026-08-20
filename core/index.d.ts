@@ -2009,6 +2009,15 @@ export interface BoardPendingResult {
   warning?: string;
 }
 
+// Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): `board/pending`
+// is a non-consuming peek; the per-topic consumption cursor advances only
+// through `board/ack`. One ack entry = a monotone topic high-water mark; the
+// gateway max-merges, so replays are idempotent.
+export interface BoardAck {
+  topic: string;
+  upToCommentId: number;
+}
+
 // continue-transcript-dump.md: top-level config.yaml block for transcript
 // dumps to CITT memory.
 export interface TranscriptDumpConfig {

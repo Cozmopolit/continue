@@ -19,6 +19,7 @@ import { WebSocketClientTransport } from "@modelcontextprotocol/sdk/client/webso
 import { Agent as HttpsAgent } from "https";
 import { z } from "zod";
 import {
+  BoardAck,
   BoardPendingResult,
   IDE,
   InternalMcpOptions,
@@ -80,10 +81,21 @@ export const BOARD_PENDING_TIMEOUT = 5_000; // 5 seconds
 // fork's perspective. Exported for test assertions.
 export const BOARD_REGISTER_TIMEOUT = 5_000; // 5 seconds
 
+// Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): `board/ack` is a
+// one-shot DB write like `board/register` — same 5 s budget, best-effort
+// from the fork's perspective. Exported for test assertions.
+export const BOARD_ACK_TIMEOUT = 5_000; // 5 seconds
+
 // MsgBoard v2 (msgboard-v2-fork-packages.md): registration response.
 const BoardRegisterResultSchema = z.object({
   ok: z.boolean(),
   handle: z.string(),
+});
+
+// Fetch/ack decoupling: the ack response carries no load — `ok` is optional
+// so the schema stays permissive against gateway response evolution.
+const BoardAckResultSchema = z.object({
+  ok: z.boolean().optional(),
 });
 
 // continue-transcript-dump.md: transcript payloads are larger than
@@ -463,6 +475,22 @@ class MCPConnection {
       BoardRegisterResultSchema,
       { signal: options?.signal, timeout: BOARD_REGISTER_TIMEOUT },
     );
+  }
+
+  /**
+   * Advances this connection's per-topic board cursors at the CITT gateway
+   * (`board/ack`, board-wake-fetch-ack-entkopplung): monotone high-water
+   * marks, server-side max-merge keeps replays idempotent. Best-effort:
+   * callers swallow errors.
+   */
+  async boardAck(
+    acks: BoardAck[],
+    options?: { signal?: AbortSignal },
+  ): Promise<{ ok?: boolean }> {
+    return await this.callMethod("board/ack", { acks }, BoardAckResultSchema, {
+      signal: options?.signal,
+      timeout: BOARD_ACK_TIMEOUT,
+    });
   }
 
   /**

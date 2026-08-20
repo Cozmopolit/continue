@@ -16,6 +16,7 @@ import { GlobalContextModelSelections } from "../util/GlobalContext";
 
 import {
   BaseSessionMetadata,
+  BoardAck,
   BoardPendingResult,
   BrowserSerializedContinueConfig,
   ChatMessage,
@@ -165,9 +166,16 @@ export type ToCoreFromIdeOrWebviewProtocol = {
     void,
   ];
   // Board auto-topic-injection (board-auto-topic-injection.md): run-start
-  // fetch of subscribed topics + cursor advance. Best-effort: empty result
-  // on any failure, never blocks the run.
+  // peek of subscribed topics. Since the fetch/ack decoupling
+  // (board-wake-fetch-ack-entkopplung) this fetch is NON-consuming — the
+  // cursor advances only through `board/ack`. Best-effort: empty result on
+  // any failure, never blocks the run.
   "board/consumePending": [undefined, BoardPendingResult];
+  // Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): acknowledges
+  // per-topic high-water marks after the injection block was delivered by a
+  // successful LLM call. Fire-and-forget; a lost ack only costs a
+  // dedupe-filtered re-delivery.
+  "board/ack": [{ acks: BoardAck[] }, void];
   "context/getSymbolsForFiles": [{ uris: string[] }, FileSymbolMap];
   "context/loadSubmenuItems": [{ title: string }, ContextSubmenuItem[]];
   "autocomplete/complete": [AutocompleteInput, string[]];

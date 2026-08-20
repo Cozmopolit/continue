@@ -1,15 +1,17 @@
-﻿import { BoardPendingResult } from "core";
+﻿import { BoardAck, BoardPendingResult } from "core";
 import { IIdeMessenger } from "../../context/IdeMessenger";
 import { appendBoardMessages } from "../slices/sessionSlice";
 import { AppDispatch } from "../store";
 
 /**
- * Shared MsgBoard consumption (board-wake-mode.md): fetch pending messages
- * for the workspace's subscriptions and accumulate them into session state.
- * Extracted from streamNormalInput so the run path (TTL-gated there) and the
- * idle watcher (60 s tick + jitter) consume through one seam. Best-effort:
- * failures are logged and swallowed — a board failure never blocks a run or
- * the watcher.
+ * Shared MsgBoard seam (board-wake-mode.md): peek the pending messages for
+ * the workspace's subscriptions and accumulate them into session state.
+ * Since the fetch/ack decoupling (board-wake-fetch-ack-entkopplung) the
+ * fetch is a non-consuming peek; acknowledgment happens via
+ * `ackBoardMessages` below after successful delivery. Extracted from
+ * streamNormalInput so the run path (TTL-gated there) and the idle watcher
+ * (60 s tick + jitter) fetch through one seam. Best-effort: failures are
+ * logged and swallowed — a board failure never blocks a run or the watcher.
  *
  * Returns the result on success (callers may inspect `messages`), undefined
  * on failure.
@@ -37,5 +39,30 @@ export async function fetchBoardPending(
       `Board injection skipped: ${e instanceof Error ? e.message : String(e)}`,
     );
     return undefined;
+  }
+}
+
+/**
+ * Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): acknowledges the
+ * per-topic high-water marks after the injection block was delivered by a
+ * successful LLM call. Fire-and-forget by contract — a lost ack only costs a
+ * dedupe-filtered re-delivery; never blocks a run.
+ */
+export async function ackBoardMessages(
+  ideMessenger: IIdeMessenger,
+  acks: BoardAck[],
+): Promise<void> {
+  if (acks.length === 0) {
+    return;
+  }
+  try {
+    const res = await ideMessenger.request("board/ack", { acks });
+    if (res.status === "error") {
+      console.warn(`MsgBoard ack skipped: ${res.error}`);
+    }
+  } catch (e) {
+    console.warn(
+      `MsgBoard ack skipped: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 }

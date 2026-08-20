@@ -373,3 +373,40 @@ Verhalten), Kommentar in `selectToolCalls.ts` aktualisiert.
 
 **Tests:** `node scripts/run-all-tests.mjs --only gui --filter board` —
 54 Tests grün; `tsc:check` gui sauber.
+
+## Amendment 2026-08-21 (Fetch/Ack-Entkopplung, "Option B")
+
+**Kontext:** User-GO aus Topic `board-wake-fetch-ack-entkopplung`
+(GitHub issue #43) — die im Fix-A-Amendment benannte vollständige
+Schließung von Verlustpfad 2. Beidseitige Umsetzung (Fork + CITT) mit
+simultanem Deploy, bewusst ohne Kompat-Mechanik (KISS-Vorgabe des Users).
+Server-Seite (vesta/CITT): `board/pending` wird zum nicht-konsumierenden
+Peek, Gateway-Selektion FIFO (oldest-first), neuer `board/ack`-Handler
+mit Max-Merge über `UpdateWatcherTopicAsync`.
+
+**Änderung Fork-Seite:**
+
+- `board/pending` rückt keinen Cursor mehr; Fortschritt nur über
+  `board/ack` — Array von `{topic, upToCommentId}`, ein Call pro Run,
+  idempotent durch serverseitiges Max-Merge.
+- `accumulateBoardFetch` deduped per Message-Id gegen Buffer +
+  `tooLargeIds` (Re-Delivery nach verlorenem Ack ist der Normalfall) und
+  trackt `ackByTopic`-High-Water-Marken im Session-State — inklusive der
+  tooLarge-Ids: unter FIFO würde eine ungeackte übergroße Nachricht die
+  Pending-Spitze dauerhaft verstopfen.
+- Ack-Firing in `streamNormalInput` hinter dem Stale-Turn-Guard nach
+  erfolgreichem Abschluss des LLM-Calls, der den Block gerendert hat
+  (fire-and-forget); abortierte/stale Runs acken nicht, der Block bleibt
+  pending und wird neu zugestellt.
+- Transport: `board/ack` in `core/protocol/core.ts` + `passThrough.ts`
+  (inkl. IntelliJ-`MessageTypes.kt`-Sync), `ackBoardMessages` in
+  `fetchBoardPending.ts`, `ackBoard` in `core/board/boardClient.ts`,
+  `boardAck` in `MCPConnection.ts` (5-s-Budget wie register/pending).
+
+**Akzeptierte Randfälle:** Ack verloren → Doppelinjektion (Dedupe
+filtert sie); Ack gegen einen Gateway-Build ohne `board/ack`-Handler
+schlägt fehl → self-healing wie verlorener Ack.
+
+**Verifikation:** User-Vorgabe für diese Umsetzung: keine neuen Tests,
+Build/Typecheck als Gate (core-Build + gui `tsc:check`). Gezielte Tests
+gegen die finale Implementierung sind nachgeschoben.

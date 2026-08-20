@@ -24,6 +24,13 @@ export interface BoardSessionState {
   omittedOldestId?: number;
   /** Ids of messages that alone exceed the char cap (msg_read retrieval pointers). */
   tooLargeIds: number[];
+  /**
+   * Per-topic high-water marks of message ids this session has seen
+   * (injected messages + oversized pointers) — the `board/ack` payload
+   * source (board-wake-fetch-ack-entkopplung). Never cleared; the
+   * server-side max-merge makes re-acking idempotent.
+   */
+  ackByTopic: Record<string, number>;
   /** Epoch ms of the last board/consumePending attempt; undefined = never. */
   lastFetchAt?: number;
 }
@@ -34,6 +41,7 @@ export const EMPTY_BOARD_SESSION_STATE: BoardSessionState = {
   omittedTotal: 0,
   omittedOldestId: undefined,
   tooLargeIds: [],
+  ackByTopic: {},
   lastFetchAt: undefined,
 };
 
@@ -51,14 +59,33 @@ export function shouldFetchBoard(
 /**
  * Pure accumulation of one board/consumePending result into the session
  * state: appends new messages, enforces the window caps (dropping oldest),
- * accumulates server-side omission info. `lastFetchAt` is carried through
- * untouched — the caller stamps the attempt separately.
+ * accumulates server-side omission info and tracks the per-topic ack
+ * high-water marks. `lastFetchAt` is carried through untouched — the caller
+ * stamps the attempt separately.
  */
 export function accumulateBoardFetch(
   current: BoardSessionState,
   result: BoardPendingResult,
 ): BoardSessionState {
-  const messages = [...current.messages, ...result.messages];
+  // Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): the pending
+  // fetch is a non-consuming peek, so an unacked (or lost-ack) message is
+  // re-delivered on the next fetch — dedupe by id against everything the
+  // session has already seen and track the per-topic high-water marks.
+  const knownIds = new Set<number>([
+    ...current.messages.map((m) => m.id),
+    ...current.tooLargeIds,
+  ]);
+  const ackByTopic = { ...current.ackByTopic };
+  const incoming = result.messages.filter((m) => {
+    if (knownIds.has(m.id)) {
+      return false;
+    }
+    knownIds.add(m.id);
+    ackByTopic[m.topic] = Math.max(ackByTopic[m.topic] ?? 0, m.id);
+    return true;
+  });
+
+  const messages = [...current.messages, ...incoming];
   let droppedCount = current.droppedCount;
 
   const excess = messages.length - BOARD_WINDOW_MAX_MESSAGES;
@@ -78,12 +105,18 @@ export function accumulateBoardFetch(
   // A single message that alone exceeds the char cap is dropped with a
   // retrieval pointer instead of blowing up the system message every turn;
   // the full text stays reachable via msg_read (contract omitted pattern).
+  // Fetch/ack decoupling: the oversized id is acked too — under FIFO it
+  // would otherwise clog the pending head permanently.
   const tooLargeIds = [...current.tooLargeIds];
   if (
     messages.length === 1 &&
     messages[0].body.length > BOARD_WINDOW_MAX_CHARS
   ) {
     tooLargeIds.push(messages[0].id);
+    ackByTopic[messages[0].topic] = Math.max(
+      ackByTopic[messages[0].topic] ?? 0,
+      messages[0].id,
+    );
     messages.length = 0;
   }
 
@@ -93,6 +126,7 @@ export function accumulateBoardFetch(
     droppedCount,
     omittedTotal: current.omittedTotal + (omitted?.count ?? 0),
     tooLargeIds,
+    ackByTopic,
     omittedOldestId:
       omitted && omitted.count > 0
         ? Math.min(

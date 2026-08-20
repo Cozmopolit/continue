@@ -93,6 +93,7 @@ describe("sessionSlice streamUpdate", () => {
       omittedTotal: 0,
       omittedOldestId: undefined,
       tooLargeIds: [],
+      ackByTopic: {},
       lastFetchAt: undefined,
     },
   });
@@ -499,6 +500,7 @@ describe("sessionSlice setContextPercentage", () => {
       omittedTotal: 0,
       omittedOldestId: undefined,
       tooLargeIds: [],
+      ackByTopic: {},
       lastFetchAt: undefined,
     },
   });
@@ -599,6 +601,7 @@ describe("sessionSlice endActiveReasoning", () => {
       omittedTotal: 0,
       omittedOldestId: undefined,
       tooLargeIds: [],
+      ackByTopic: {},
       lastFetchAt: undefined,
     },
   });
@@ -716,6 +719,7 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
       omittedTotal: 0,
       omittedOldestId: undefined,
       tooLargeIds: [],
+      ackByTopic: {},
       lastFetchAt: undefined,
     },
   });
@@ -994,6 +998,7 @@ describe("sessionSlice newSession board reset", () => {
       omittedTotal: 1,
       omittedOldestId: 3,
       tooLargeIds: [5],
+      ackByTopic: { t: 5 },
       lastFetchAt: 123,
     },
   });
@@ -1009,6 +1014,7 @@ describe("sessionSlice newSession board reset", () => {
       omittedTotal: 0,
       omittedOldestId: undefined,
       tooLargeIds: [],
+      ackByTopic: {},
       lastFetchAt: undefined,
     });
     expect(newState.history).toHaveLength(0);
@@ -1104,6 +1110,7 @@ describe("Thinking reasoning_details stream accumulation (resent-user-messages i
       omittedTotal: 0,
       omittedOldestId: undefined,
       tooLargeIds: [],
+      ackByTopic: {},
       lastFetchAt: undefined,
     },
   });
@@ -1281,6 +1288,7 @@ describe("sessionSlice clearDanglingMessages tool-call cancellation", () => {
       omittedTotal: 0,
       omittedOldestId: undefined,
       tooLargeIds: [],
+      ackByTopic: {},
       lastFetchAt: undefined,
     },
   });

@@ -129,6 +129,8 @@ class MessageTypes {
             // Board auto-topic-injection (board-auto-topic-injection.md).
             // Keep in sync with core/protocol/passThrough.ts.
             "board/consumePending",
+            // Fetch/ack decoupling (board-wake-fetch-ack-entkopplung).
+            "board/ack",
             "stats/getTokensPerDay",
             "stats/getTokensPerModel",
             // Codebase

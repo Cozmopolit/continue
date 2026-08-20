@@ -69,20 +69,19 @@ const WAKE_DOC: JSONContent = {
  *   was active wake in the first tick after activation instead of rendering
  *   silently in the next run.
  * - Deliver-before-consume (amendment 2026-08-21, to-zenith loss incident
- *   2026-08-20): `board/pending` IS the consume — CITT advances the cursor
- *   on fetch — and consumed messages live only in the volatile per-session
- *   board buffer until their first render, which `newSession` resets
- *   (session switch, fresh session, finishing compaction). A consume while
- *   busy/blocked could therefore advance the cursor and then vanish when
- *   the buffer resets: the message is lost forever. A tick now only fetches
- *   when it can deliver: conversation idle and started, no compaction
- *   running or pending, composer empty. While blocked, messages stay
- *   server-side and are delivered by the first run-start fetch of the next
- *   run (rendered in the same call) or the first unblocked tick. Residual:
- *   the ms-window between the pre-gate and the post-fetch recheck.
+ *   2026-08-20): since the fetch/ack decoupling (board-wake-fetch-ack-
+ *   entkopplung) `board/pending` is a NON-consuming peek — the cursor
+ *   advances only through `board/ack`, fired after a successful render —
+ *   so a fetch can no longer lose messages by itself. The gates remain: a
+ *   tick only fetches when it can deliver (conversation idle and started,
+ *   no compaction running or pending, composer empty), keeping wakes
+ *   well-formed and avoiding pointless re-peeks that would re-wake every
+ *   tick on unacked messages. While blocked, messages stay server-side and
+ *   are delivered by the first run-start fetch of the next run (rendered
+ *   in the same call) or the first unblocked tick.
  * - Compaction pause: while a compaction runs OR a self-compaction is
  *   pending, the watcher is fully paused. The finishing loadSession resets
- *   the board buffer, so no consume may race it
+ *   the board buffer, so no wake may race it
  *   (agent-self-compaction.md, board-wake-mode.md).
  * - Composer guard: while the user has text in the composer, neither
  *   consume nor dispatch (deliver-before-consume, amendment 2026-08-21);
@@ -130,16 +129,13 @@ export function useBoardWatch() {
 
     const tick = async () => {
       // Deliver-before-consume gate (board-wake-mode.md, amendment
-      // 2026-08-21): `board/pending` IS the consume — the CITT cursor
-      // advances on fetch — and what is consumed here can only reach the
-      // model via the volatile per-session board buffer, which `newSession`
-      // resets (session switch, fresh session, finishing compaction). A
-      // consume while blocked could advance the cursor and then vanish when
-      // the buffer resets (to-zenith loss incident 2026-08-20). So never
-      // fetch unless this tick can deliver: idle, started, no compaction,
-      // empty composer. Messages arriving while blocked stay server-side
-      // and are delivered by the first run-start fetch of the next run
-      // (rendered in the same call) or the first unblocked tick.
+      // 2026-08-21): since the fetch/ack decoupling the fetch is a
+      // non-consuming peek — nothing can be lost by fetching — but a tick
+      // still only fetches when it can deliver: idle, started, no
+      // compaction, empty composer. Unacked messages would otherwise
+      // re-wake every tick. Messages arriving while blocked are delivered
+      // by the first run-start fetch of the next run (rendered in the same
+      // call) or the first unblocked tick.
       const pre = store.getState();
       if (
         selectIsCompactionRunning(pre) ||
@@ -158,9 +154,10 @@ export function useBoardWatch() {
       }
       // Recheck immediately before dispatching: a user-started run, a
       // compaction or composer input may have begun while the fetch was in
-      // flight. This is the residual ms-window in which a consume can still
-      // miss its wake — the messages then stay in the buffer and render in
-      // the next run (board-wake-mode.md, amendment 2026-08-21).
+      // flight. Under peek semantics nothing is lost here — the messages
+      // stay in the buffer (dedupe-filtered) and render in the next run;
+      // they are acked only after a successful delivery
+      // (board-wake-fetch-ack-entkopplung).
       const state = store.getState();
       const postEditor = mainEditorRef.current;
       if (

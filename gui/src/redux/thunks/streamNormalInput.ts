@@ -44,7 +44,7 @@ import {
 import { fileUriToNativePath } from "../../util/fileUriToNativePath";
 import { callToolById } from "./callToolById";
 import { evaluateToolPolicies } from "./evaluateToolPolicies";
-import { fetchBoardPending } from "./fetchBoardPending";
+import { ackBoardMessages, fetchBoardPending } from "./fetchBoardPending";
 import { preprocessToolCalls } from "./preprocessToolCallArgs";
 import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
 
@@ -366,6 +366,19 @@ export const streamNormalInput = createAsyncThunk<
       !state1.session.isStreaming
     ) {
       return;
+    }
+
+    // Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): the LLM call
+    // above delivered the accumulated injection block — ack the per-topic
+    // high-water marks so the gateway stops re-serving them. Fire-and-forget;
+    // a lost ack only costs a dedupe-filtered re-delivery. Aborted/stale
+    // turns return above without acking, so an undelivered block stays
+    // pending and is re-delivered on the next fetch.
+    const boardAcks = Object.entries(getState().session.board.ackByTopic).map(
+      ([topic, upToCommentId]) => ({ topic, upToCommentId }),
+    );
+    if (boardAcks.length > 0) {
+      void ackBoardMessages(extra.ideMessenger, boardAcks);
     }
 
     // Rescue partial reasoning when a turn ends regularly but produced no

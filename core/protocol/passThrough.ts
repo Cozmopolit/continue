@@ -69,6 +69,9 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     // and the GUI await never settles — the 2026-08-14 generating-hang
     // incident. Keep in sync with extensions/intellij/.../MessageTypes.kt.
     "board/consumePending",
+    // Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): cursor ack
+    // after successful delivery — same pass-through requirement as above.
+    "board/ack",
     "stats/getTokensPerDay",
     "stats/getTokensPerModel",
     // Codebase

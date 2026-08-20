@@ -50,7 +50,7 @@ import {
 
 import { ConfigYaml } from "@continuedev/config-yaml";
 import { getDiffFn, GitDiffCache } from "./autocomplete/snippets/gitDiffCache";
-import { consumeBoardPending } from "./board/boardClient";
+import { ackBoard, consumeBoardPending } from "./board/boardClient";
 import { stringifyMcpPrompt } from "./commands/slash/mcpSlashCommand";
 import { createNewAssistantFile } from "./config/createNewAssistantFile";
 import {
@@ -520,6 +520,11 @@ export class Core {
     // Board auto-topic-injection (board-auto-topic-injection.md)
     on("board/consumePending", async () => {
       return await consumeBoardPending(this.ide);
+    });
+    // Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): cursor ack
+    // after successful delivery — best-effort, never blocks a run.
+    on("board/ack", async (msg) => {
+      await ackBoard(this.ide, msg.data.acks);
     });
 
     // Context providers
