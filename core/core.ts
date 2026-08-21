@@ -50,7 +50,11 @@ import {
 
 import { ConfigYaml } from "@continuedev/config-yaml";
 import { getDiffFn, GitDiffCache } from "./autocomplete/snippets/gitDiffCache";
-import { ackBoard, consumeBoardPending } from "./board/boardClient";
+import {
+  ackBoard,
+  consumeBoardPending,
+  registerBoardIdentity,
+} from "./board/boardClient";
 import { stringifyMcpPrompt } from "./commands/slash/mcpSlashCommand";
 import { createNewAssistantFile } from "./config/createNewAssistantFile";
 import {
@@ -150,6 +154,12 @@ export class Core {
 
       MCPManagerSingleton.getInstance().onConnectionsRefreshed = () => {
         void this.configHandler.reloadConfig("MCP Connections refreshed");
+
+        // Board identity is infrastructure, not a feature
+        // (msgboard-v2-fork-packages.md, Revision 2026-08-21): register on
+        // every connection establishment, independent of the board-watch
+        // toggle. Best-effort, retries while CITT.MCP is still booting.
+        void registerBoardIdentity(this.ide);
 
         // Refresh @mention dropdown submenu items for MCP providers
         const mcpManager = MCPManagerSingleton.getInstance();

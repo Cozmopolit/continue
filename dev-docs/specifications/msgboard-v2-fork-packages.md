@@ -7,8 +7,10 @@ Migrations-RPC, kein Mode-(a)-Fallback, kein `migrated`-Flag, keine
 fork-seitigen Subscription-Tools. Ebenfalls 2026-08-20: M3 gestrichen
 (`board-state.json` bleibt dauerhaft Handle-Quelle) und Handle-only-Cleanup
 (Legacy-Felder entfernt, s. Abschnitt „Revision 2026-08-20"). Paket 2a
-bleibt gated auf CITT-Schritt 3.
-**Stand:** 2026-08-20 (Revision + Handle-only-Cleanup) ·
+bleibt gated auf CITT-Schritt 3. 2026-08-21: Registrierung an den
+Verbindungsaufbau verlegt (Retry 2 s / 20 s), unabhängig vom
+Board-Watch-Toggle — s. Abschnitt „Revision 2026-08-21".
+**Stand:** 2026-08-21 (Registrierung beim Verbindungsaufbau) ·
 **Autor:** citt-delta
 **Basis:** Konsenspapier `msgboard-interface-v2` (Board-Id 5319478503,
 DONE/CLOSED); GO-Runde vesta 5319451316, delta 5319451413. Memory-Fragment:
@@ -20,6 +22,37 @@ CITT-DB, `.continue/board-state.json` wird nach einmaligem Migrationssync
 abgeschafft (Abschnitt „Store-Migration (OQ3)").
 Verwandt: `board-wake-mode.md`, `board-auto-topic-injection.md`,
 `agent-self-compaction.md`.
+
+## Revision 2026-08-21 — Registrierung beim Verbindungsaufbau (User-Direktive)
+
+**Anlass:** Deploy-Finding 2026-08-21 — nach CITT.MCP-Restart mit
+ausgeschaltetem Board-Watch-Toggle blieb die Handle-Registrierung aus: Seit
+der Run-Pfad-Abschaltung (Amendment in `board-wake-mode.md`) ist der
+Board-Watcher der einzige Caller von `consumeBoardPending`, und nur dort
+fand Registrierung statt. Die Identität hing damit an einem Feature-Toggle;
+Bootstrap-Läufe mit Watch aus liefen gegen eine unregistrierte Gateway.
+
+**Neues Design (implementiert):**
+
+- Neu in `core/board/boardClient.ts`: `tryRegisterBoardIdentity`
+  (Einzelversuch; Ergebnis `registered` / `skipped` / `retryable`) und
+  `registerBoardIdentity` (Retry-Schleife): Versuch bei t=0, dann alle
+  `BOARD_REGISTER_RETRY_INTERVAL_MS` (2 s), bis
+  `BOARD_REGISTER_RETRY_WINDOW_MS` (20 s) abgelaufen sind — max. 11
+  Versuche; CITT.MCP startet langsam und braucht unter Systemlast >10 s.
+  Jeder Versuch liest die Live-Connection-Map neu (ein Gateway, das
+  mitten im Fenster bereit wird, wird eingefangen). Concurrency-Guard
+  verhindert gestapelte Loops bei mehrfachen Refresh-Triggern; nach einem
+  beendeten Loop startet der nächste Refresh einen frischen Versuch
+  (nötig nach CITT-Neustarts — die Registry ist prozess-scoped).
+  Best-effort, wirft nie.
+- Trigger: `core.ts` ruft `registerBoardIdentity` in
+  `onConnectionsRefreshed` auf — Startup, Refresh, Re-Auth, Reconnect —
+  unabhängig vom Watch-Toggle.
+- Keine `board-state.json` → `skipped` (terminal; ein Workspace ohne
+  Identitätsdatei hat nichts zu registrieren).
+- Die Registrierung in `consumeBoardPending`/`ackBoard` bleibt als
+  Sicherheitsnetz (idempotent).
 
 ## Revision 2026-08-20 — Vereinfachung (User-Direktive)
 

@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./boardState", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./boardState")>();
@@ -17,7 +17,12 @@ vi.mock("../context/mcp/MCPManagerSingleton", () => ({
 import { BoardPendingResult, IDE } from "..";
 import { MCPManagerSingleton } from "../context/mcp/MCPManagerSingleton";
 
-import { consumeBoardPending, findBoardConnection } from "./boardClient";
+import {
+  consumeBoardPending,
+  findBoardConnection,
+  registerBoardIdentity,
+  tryRegisterBoardIdentity,
+} from "./boardClient";
 import { BoardState, loadBoardState } from "./boardState";
 
 const mockLoad = vi.mocked(loadBoardState);
@@ -175,5 +180,157 @@ describe("consumeBoardPending", () => {
     setConnections(makeConnection());
 
     await expect(consumeBoardPending(mockIde)).resolves.toEqual(EMPTY_RESULT);
+  });
+});
+
+// Board handle registration at connection setup (msgboard-v2-fork-packages.md,
+// Revision 2026-08-21): identity must never depend on the board-watch toggle.
+describe("tryRegisterBoardIdentity", () => {
+  it("returns skipped without RPC when no state exists", async () => {
+    mockLoad.mockResolvedValue(undefined);
+    const boardRegister = vi.fn();
+    setConnections(makeConnection({ boardRegister }));
+
+    await expect(tryRegisterBoardIdentity(mockIde)).resolves.toBe("skipped");
+    expect(boardRegister).not.toHaveBeenCalled();
+  });
+
+  it("returns retryable when no board connection is connected", async () => {
+    mockLoad.mockResolvedValue(state());
+    setConnections();
+
+    await expect(tryRegisterBoardIdentity(mockIde)).resolves.toBe("retryable");
+  });
+
+  it("returns retryable against a non-v2 gateway", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardRegister = vi.fn();
+    setConnections(makeConnection({ boardV2Capability: false, boardRegister }));
+
+    await expect(tryRegisterBoardIdentity(mockIde)).resolves.toBe("retryable");
+    expect(boardRegister).not.toHaveBeenCalled();
+  });
+
+  it("registers the handle from the state file", async () => {
+    mockLoad.mockResolvedValue(state({ handle: "citt-delta" }));
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "citt-delta" });
+    setConnections(makeConnection({ boardRegister }));
+
+    await expect(tryRegisterBoardIdentity(mockIde)).resolves.toBe("registered");
+    expect(boardRegister).toHaveBeenCalledWith("citt-delta");
+  });
+
+  it("returns retryable when the RPC fails", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardRegister = vi.fn().mockRejectedValue(new Error("-32002"));
+    setConnections(makeConnection({ boardRegister }));
+
+    await expect(tryRegisterBoardIdentity(mockIde)).resolves.toBe("retryable");
+  });
+});
+
+describe("registerBoardIdentity", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("registers on the first attempt without waiting", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    setConnections(makeConnection({ boardRegister }));
+
+    await expect(registerBoardIdentity(mockIde)).resolves.toBe(true);
+    expect(boardRegister).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries every 2 s until the gateway comes up", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardRegister = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("econnrefused"))
+      .mockRejectedValueOnce(new Error("econnrefused"))
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    setConnections(makeConnection({ boardRegister }));
+
+    const result = registerBoardIdentity(mockIde);
+    await vi.advanceTimersByTimeAsync(4_000);
+    await expect(result).resolves.toBe(true);
+    expect(boardRegister).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up after the 20 s window (attempts at t=0..20, 11 total)", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardRegister = vi.fn().mockRejectedValue(new Error("down"));
+    setConnections(makeConnection({ boardRegister }));
+
+    const result = registerBoardIdentity(mockIde);
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(result).resolves.toBe(false);
+    expect(boardRegister).toHaveBeenCalledTimes(11);
+    expect(console.warn).toHaveBeenCalled();
+  });
+
+  it("stops without retrying when there is no board identity", async () => {
+    mockLoad.mockResolvedValue(undefined);
+    const boardRegister = vi.fn();
+    setConnections(makeConnection({ boardRegister }));
+
+    const result = registerBoardIdentity(mockIde);
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(result).resolves.toBe(false);
+    expect(boardRegister).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it("does not stack a second loop while one is in flight", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardRegister = vi.fn().mockRejectedValue(new Error("down"));
+    setConnections(makeConnection({ boardRegister }));
+
+    const first = registerBoardIdentity(mockIde);
+    await vi.advanceTimersByTimeAsync(0); // first attempt done, now sleeping
+    await expect(registerBoardIdentity(mockIde)).resolves.toBe(false);
+    expect(boardRegister).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(first).resolves.toBe(false);
+  });
+
+  it("picks up a gateway that becomes ready mid-window", async () => {
+    mockLoad.mockResolvedValue(state());
+    setConnections(); // nothing connected yet
+
+    const boardRegister = vi
+      .fn()
+      .mockResolvedValue({ ok: true, handle: "delta" });
+    const result = registerBoardIdentity(mockIde);
+    await vi.advanceTimersByTimeAsync(1_000);
+    setConnections(makeConnection({ boardRegister }));
+    await vi.advanceTimersByTimeAsync(1_000); // t=2 s attempt sees the connection
+
+    await expect(result).resolves.toBe(true);
+    expect(boardRegister).toHaveBeenCalledTimes(1);
+  });
+
+  it("respects intervalMs/windowMs overrides", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardRegister = vi.fn().mockRejectedValue(new Error("down"));
+    setConnections(makeConnection({ boardRegister }));
+
+    const result = registerBoardIdentity(mockIde, {
+      intervalMs: 1_000,
+      windowMs: 5_000,
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(result).resolves.toBe(false);
+    expect(boardRegister).toHaveBeenCalledTimes(6); // t=0..5
   });
 });
