@@ -5,6 +5,7 @@ vi.mock("./boardState", async (importOriginal) => {
   return {
     ...actual,
     loadBoardState: vi.fn(),
+    saveBoardState: vi.fn(),
   };
 });
 
@@ -23,9 +24,10 @@ import {
   registerBoardIdentity,
   tryRegisterBoardIdentity,
 } from "./boardClient";
-import { BoardState, loadBoardState } from "./boardState";
+import { BoardState, loadBoardState, saveBoardState } from "./boardState";
 
 const mockLoad = vi.mocked(loadBoardState);
+const mockSave = vi.mocked(saveBoardState);
 const mockGetInstance = vi.mocked(MCPManagerSingleton.getInstance);
 
 const mockIde = {} as unknown as IDE;
@@ -332,5 +334,92 @@ describe("registerBoardIdentity", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     await expect(result).resolves.toBe(false);
     expect(boardRegister).toHaveBeenCalledTimes(6); // t=0..5
+  });
+});
+
+describe("consumeBoardPending — close notification (diffClosedTopics)", () => {
+  // Close notification (msgboard-v2-fork-packages.md, Revision 2026-08-21):
+  // the gateway lists ALL subscribed closed topics on every response (state
+  // listing) — core diffs against the board-state last-seen set, reports
+  // only fresh entries and persists the new seen set.
+  const closedResult = (closedTopics?: string[]): BoardPendingResult => ({
+    messages: [],
+    latestByTopic: { t1: 10 },
+    ...(closedTopics ? { closedTopics } : {}),
+  });
+
+  it("reports new closed topics and persists the seen state", async () => {
+    mockLoad.mockResolvedValue(state());
+    const boardPending = vi.fn().mockResolvedValue(closedResult(["a", "b"]));
+    setConnections(makeConnection({ boardPending }));
+
+    await expect(consumeBoardPending(mockIde)).resolves.toEqual({
+      ...closedResult(["a", "b"]),
+      newClosedTopics: ["a", "b"],
+    });
+    expect(mockSave).toHaveBeenCalledWith(
+      mockIde,
+      state({ closedTopicsSeen: ["a", "b"] }),
+    );
+  });
+
+  it("does not re-report already-seen closes and does not rewrite unchanged state", async () => {
+    mockLoad.mockResolvedValue(state({ closedTopicsSeen: ["a"] }));
+    const boardPending = vi.fn().mockResolvedValue(closedResult(["a"]));
+    setConnections(makeConnection({ boardPending }));
+
+    await expect(consumeBoardPending(mockIde)).resolves.toEqual(
+      closedResult(["a"]),
+    );
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("reports only the unseen entries when the closed set grows", async () => {
+    mockLoad.mockResolvedValue(state({ closedTopicsSeen: ["a"] }));
+    const boardPending = vi.fn().mockResolvedValue(closedResult(["a", "b"]));
+    setConnections(makeConnection({ boardPending }));
+
+    const result = await consumeBoardPending(mockIde);
+    expect(result.newClosedTopics).toEqual(["b"]);
+    expect(mockSave).toHaveBeenCalledWith(
+      mockIde,
+      state({ closedTopicsSeen: ["a", "b"] }),
+    );
+  });
+
+  it("drops the seen-mark of reopened topics", async () => {
+    mockLoad.mockResolvedValue(state({ closedTopicsSeen: ["a", "b"] }));
+    const boardPending = vi.fn().mockResolvedValue(closedResult(["a"]));
+    setConnections(makeConnection({ boardPending }));
+
+    const result = await consumeBoardPending(mockIde);
+    expect(result.newClosedTopics).toBeUndefined();
+    expect(mockSave).toHaveBeenCalledWith(
+      mockIde,
+      state({ closedTopicsSeen: ["a"] }),
+    );
+  });
+
+  it("wipes the seen state when no topics are closed anymore", async () => {
+    mockLoad.mockResolvedValue(state({ closedTopicsSeen: ["a"] }));
+    const boardPending = vi.fn().mockResolvedValue(closedResult(undefined));
+    setConnections(makeConnection({ boardPending }));
+
+    const result = await consumeBoardPending(mockIde);
+    expect(result.newClosedTopics).toBeUndefined();
+    expect(mockSave).toHaveBeenCalledWith(mockIde, state());
+  });
+
+  it("keeps delivering the diff when persistence fails (best-effort)", async () => {
+    mockLoad.mockResolvedValue(state());
+    mockSave.mockRejectedValue(new Error("disk full"));
+    const boardPending = vi.fn().mockResolvedValue(closedResult(["a"]));
+    setConnections(makeConnection({ boardPending }));
+
+    const result = await consumeBoardPending(mockIde);
+    expect(result.newClosedTopics).toEqual(["a"]);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("close-seen state not persisted"),
+    );
   });
 });

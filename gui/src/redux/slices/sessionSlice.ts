@@ -4,7 +4,7 @@ import {
   ApplyState,
   AssistantChatMessage,
   BaseSessionMetadata,
-  BoardPendingResult,
+  BoardConsumeResult,
   ChatHistoryItem,
   ChatMessage,
   ContextItem,
@@ -1172,7 +1172,7 @@ export const sessionSlice = createSlice({
     setBoardFetchAttempted: (state, action: PayloadAction<number>) => {
       state.board.lastFetchAt = action.payload;
     },
-    appendBoardMessages: (state, action: PayloadAction<BoardPendingResult>) => {
+    appendBoardMessages: (state, action: PayloadAction<BoardConsumeResult>) => {
       state.board = accumulateBoardFetch(state.board, action.payload);
     },
     setIsInEdit: (state, action: PayloadAction<boolean>) => {

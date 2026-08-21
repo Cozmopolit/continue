@@ -1,4 +1,4 @@
-﻿import { BoardMessage, BoardPendingResult } from "core";
+﻿import { BoardConsumeResult, BoardMessage } from "core";
 import { describe, expect, it } from "vitest";
 import {
   accumulateBoardFetch,
@@ -34,10 +34,10 @@ function makeMessage(
 }
 
 const result = (
-  overrides: Partial<BoardPendingResult> & {
+  overrides: Partial<BoardConsumeResult> & {
     messages: BoardMessage[];
   },
-): BoardPendingResult => ({
+): BoardConsumeResult => ({
   latestByTopic: {},
   ...overrides,
 });
@@ -323,5 +323,86 @@ describe("boardInjectionRule", () => {
 
   it("uses the stable rule name", () => {
     expect(BOARD_INJECTION_RULE_NAME).toBe("MsgBoard Injection");
+  });
+});
+
+describe("accumulateBoardFetch — close notification", () => {
+  // V11b fork side (msgboard-v2-fork-packages.md, Revision 2026-08-21):
+  // `newClosedTopics` is already the core-side last-seen diff — the session
+  // only accumulates it deduped against re-delivered fetches.
+  it("appends fresh closed topics to closedTopicsNotified", () => {
+    const next = accumulateBoardFetch(EMPTY_BOARD_SESSION_STATE, {
+      messages: [],
+      latestByTopic: {},
+      newClosedTopics: ["x", "y"],
+    });
+    expect(next.closedTopicsNotified).toEqual(["x", "y"]);
+  });
+
+  it("dedupes re-delivered close notifications", () => {
+    const once = accumulateBoardFetch(EMPTY_BOARD_SESSION_STATE, {
+      messages: [],
+      latestByTopic: {},
+      newClosedTopics: ["x"],
+    });
+    const twice = accumulateBoardFetch(once, {
+      messages: [],
+      latestByTopic: {},
+      newClosedTopics: ["x"],
+    });
+    expect(twice.closedTopicsNotified).toEqual(["x"]);
+  });
+
+  it("keeps notified closes across fetches and appends new ones", () => {
+    const first = accumulateBoardFetch(EMPTY_BOARD_SESSION_STATE, {
+      messages: [],
+      latestByTopic: {},
+      newClosedTopics: ["x"],
+    });
+    const second = accumulateBoardFetch(first, {
+      messages: [],
+      latestByTopic: {},
+      newClosedTopics: ["y"],
+    });
+    expect(second.closedTopicsNotified).toEqual(["x", "y"]);
+  });
+
+  it("leaves closedTopicsNotified untouched when the result carries no diff", () => {
+    const next = accumulateBoardFetch(
+      stateWith({ closedTopicsNotified: ["x"] }),
+      result({ messages: [] }),
+    );
+    expect(next.closedTopicsNotified).toEqual(["x"]);
+  });
+});
+
+describe("renderBoardInjectionBlock — close notification", () => {
+  it("renders close lines as a clearly marked non-message section", () => {
+    const block = renderDefined(
+      stateWith({ closedTopicsNotified: ["x", "y"] }),
+    );
+    expect(block).toContain("## Geschlossene Topics (keine Nachrichten)");
+    expect(block).toContain("- Topic 'x' wurde geschlossen");
+    expect(block).toContain("- Topic 'y' wurde geschlossen");
+    expect(block).not.toContain("[cittmsg]");
+  });
+
+  it("renders a block for close lines alone (no messages)", () => {
+    const block = renderBoardInjectionBlock(
+      stateWith({ closedTopicsNotified: ["x"] }),
+      FETCHED_AT,
+    );
+    expect(block).toBeDefined();
+  });
+
+  it("renders close lines alongside message sections", () => {
+    const block = renderDefined(
+      stateWith({
+        messages: [makeMessage({ id: 1, topic: "t" })],
+        closedTopicsNotified: ["x"],
+      }),
+    );
+    expect(block).toContain("## Topic: t");
+    expect(block).toContain("## Geschlossene Topics (keine Nachrichten)");
   });
 });

@@ -9,8 +9,12 @@ fork-seitigen Subscription-Tools. Ebenfalls 2026-08-20: M3 gestrichen
 (Legacy-Felder entfernt, s. Abschnitt „Revision 2026-08-20"). Paket 2a
 bleibt gated auf CITT-Schritt 3. 2026-08-21: Registrierung an den
 Verbindungsaufbau verlegt (Retry 2 s / 20 s), unabhängig vom
-Board-Watch-Toggle — s. Abschnitt „Revision 2026-08-21".
-**Stand:** 2026-08-21 (Registrierung beim Verbindungsaufbau) ·
+Board-Watch-Toggle — s. Abschnitt „Revision 2026-08-21". Ebenfalls
+2026-08-21: Close-Notification (Vorschlag 11b, Fork-Seite) — Wake bei neuen
+Close-Einträgen, Close-Zeile als Nicht-Nachricht im Injection-Block,
+Last-Seen-State in `board-state.json` — s. Abschnitt „Revision 2026-08-21 —
+Close-Notification".
+**Stand:** 2026-08-21 (Close-Notification + Registrierung beim Verbindungsaufbau) ·
 **Autor:** citt-delta
 **Basis:** Konsenspapier `msgboard-interface-v2` (Board-Id 5319478503,
 DONE/CLOSED); GO-Runde vesta 5319451316, delta 5319451413. Memory-Fragment:
@@ -22,6 +26,52 @@ CITT-DB, `.continue/board-state.json` wird nach einmaligem Migrationssync
 abgeschafft (Abschnitt „Store-Migration (OQ3)").
 Verwandt: `board-wake-mode.md`, `board-auto-topic-injection.md`,
 `agent-self-compaction.md`.
+
+## Revision 2026-08-21 — Close-Notification (Vorschlag 11b, Fork-Seite)
+
+**Anlass:** Fixierter Board-Härtungs-Draft
+(`2026-08-21-agent-wake-und-board-haertung-design-draft.md`, Eimer B,
+Schritt 4): Topic-Closes ohne Note waren für Fork-Agenten unsichtbar. Die
+CITT-Seite (Schritt 2) exponiert `closedTopics` als strukturiertes Feld in
+der `board/pending`-Response; diese Revision ist die zugehörige
+Fork-Minimaländerung (die einzige Fork-Änderung des gesamten Proposals).
+
+**Design:**
+
+- Wire-Format (CITT-seitig implementiert, Best-Effort/EMPTY_RESULT):
+  `closedTopics` = Array von Topic-Namen (Strings), nur vorhanden, wenn
+  mindestens ein abonniertes Topic geschlossen ist. Zustandsliste, kein
+  Event-Stream — jeder Call listet alle geschlossenen abonnierten Topics
+  erneut; die Legacy-Warning-Zeile bleibt parallel erhalten.
+- `MCPConnection.boardPending`: `closedTopics` im Zod-Schema ergänzt — ohne
+  den Eintrag würde das strikte Parsing das Feld entfernen.
+- Last-Seen-Diff in `consumeBoardPending` (core): das Ergebnis wird um
+  `newClosedTopics` erweitert (Typ `BoardConsumeResult`) = closedTopics
+  minus dem in `board-state.json` persistierten Seen-State
+  (`BoardState.closedTopicsSeen`). Topics, die nicht mehr gelistet werden
+  (reopened oder drained+pruned), verlieren ihren Seen-Mark — ein erneuter
+  Close weckt wieder. Persistenz best-effort (Save-Fehler loggt nur, der
+  nächste Fetch difft gegen den alten Stand); `saveBoardState` schreibt
+  atomar (tmp+rename) und ist die erste Code-Schreibzugriff auf die Datei.
+- GUI: `BoardSessionState.closedTopicsNotified` (Session-Dedupe gegen
+  Re-Delivery), eigener Abschnitt im Injection-Block („Geschlossene Topics
+  (keine Nachrichten)" mit `- Topic 'X' wurde geschlossen` je Topic — klar
+  als Nicht-Nachricht), Wake-Bedingung erweitert auf
+  `messages.length > 0 || newClosedTopics.length > 0` mit eigenem Wake-Text
+  für Close-only-Fälle (`buildWakeDoc`).
+- Keine Ack-Semantik für Closes (cursorlos); keine BC-Mechanik —
+  Deploy-Reihenfolge flexibel: altes CITT = Feld abwesend = No-Op, neues
+  CITT + alter Fork = Feld wird ignoriert.
+- Restrisiko (akzeptiert, Best-Effort per Draft): Seen-Persistenz bei
+  Fetch-Zeit — endet eine Session nach einem Fetch ohne weiteren Run, kann
+  ein Close ungesehen bleiben.
+
+**Implementierung:** `core/index.d.ts` (Wire-Feld + `BoardConsumeResult`),
+`core/context/mcp/MCPConnection.ts` (Schema), `core/board/boardState.ts`
+(State-Feld + `saveBoardState`), `core/board/boardClient.ts`
+(`diffClosedTopics`), `core/protocol/core.ts`, `gui/src/util/
+boardInjection.ts`, `gui/src/redux/thunks/fetchBoardPending.ts`,
+`gui/src/redux/slices/sessionSlice.ts`, `gui/src/hooks/useBoardWatch.ts`.
 
 ## Revision 2026-08-21 — Registrierung beim Verbindungsaufbau (User-Direktive)
 

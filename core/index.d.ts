@@ -2007,7 +2007,24 @@ export interface BoardPendingResult {
   emptyTopics?: string[];
   omitted?: { count: number; oldestOmittedId: number };
   warning?: string;
+  /**
+   * Subscribed topics currently closed (V11b close notification,
+   * msgboard-v2-fork-packages.md Revision 2026-08-21). Best-effort: ABSENT
+   * when nothing is closed — the fork diffs this list against its last-seen
+   * state in board-state.json.
+   */
+  closedTopics?: string[];
 }
+
+// Fork-side consumption result (msgboard-v2-fork-packages.md, Revision
+// 2026-08-21 "Close-Notification"): the board/pending wire result plus the
+// fork-computed close diff. `newClosedTopics` carries only the closed topics
+// not yet reported on this workspace (last-seen state in
+// `.continue/board-state.json`); absent when nothing is new. Not part of the
+// wire format — added by core's consumeBoardPending.
+export type BoardConsumeResult = BoardPendingResult & {
+  newClosedTopics?: string[];
+};
 
 // Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): `board/pending`
 // is a non-consuming peek; the per-topic consumption cursor advances only

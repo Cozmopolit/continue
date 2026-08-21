@@ -17,6 +17,7 @@ import { GlobalContextModelSelections } from "../util/GlobalContext";
 import {
   BaseSessionMetadata,
   BoardAck,
+  BoardConsumeResult,
   BoardPendingResult,
   BrowserSerializedContinueConfig,
   ChatMessage,
@@ -169,8 +170,10 @@ export type ToCoreFromIdeOrWebviewProtocol = {
   // peek of subscribed topics. Since the fetch/ack decoupling
   // (board-wake-fetch-ack-entkopplung) this fetch is NON-consuming — the
   // cursor advances only through `board/ack`. Best-effort: empty result on
-  // any failure, never blocks the run.
-  "board/consumePending": [undefined, BoardPendingResult];
+  // any failure, never blocks the run. The result carries the fork-side
+  // close-notification diff (`newClosedTopics`, msgboard-v2-fork-packages.md
+  // Revision 2026-08-21).
+  "board/consumePending": [undefined, BoardConsumeResult];
   // Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): acknowledges
   // per-topic high-water marks after the injection block was delivered by a
   // successful LLM call. Fire-and-forget; a lost ack only costs a

@@ -1,4 +1,4 @@
-﻿import { BoardMessage, BoardPendingResult } from "core";
+﻿import { BoardConsumeResult, BoardMessage, BoardPendingResult } from "core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { appendBoardMessages } from "../slices/sessionSlice";
@@ -108,5 +108,26 @@ describe("fetchBoardPending", () => {
     expect(warnSpy).toHaveBeenCalledWith(
       "Board injection skipped: plain string failure",
     );
+  });
+});
+
+describe("fetchBoardPending — close notification", () => {
+  it("passes the close-notification diff through and accumulates it", async () => {
+    // V11b fork side (msgboard-v2-fork-packages.md, Revision 2026-08-21):
+    // the core-side diff (`newClosedTopics`) rides the same response and
+    // reaches the session accumulation untouched.
+    const messenger = new MockIdeMessenger();
+    const withCloses: BoardConsumeResult = {
+      ...BOARD_RESULT,
+      newClosedTopics: ["some-topic"],
+    };
+    messenger.responses["board/consumePending"] = withCloses;
+    const dispatch = vi.fn();
+
+    const result = await fetchBoardPending(dispatch as any, messenger);
+
+    expect(result).toEqual(withCloses);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(appendBoardMessages(withCloses));
   });
 });

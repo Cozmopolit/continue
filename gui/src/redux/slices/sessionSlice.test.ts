@@ -95,6 +95,7 @@ describe("sessionSlice streamUpdate", () => {
       tooLargeIds: [],
       ackByTopic: {},
       lastFetchAt: undefined,
+      closedTopicsNotified: [],
     },
   });
 
@@ -502,6 +503,7 @@ describe("sessionSlice setContextPercentage", () => {
       tooLargeIds: [],
       ackByTopic: {},
       lastFetchAt: undefined,
+      closedTopicsNotified: [],
     },
   });
 
@@ -603,6 +605,7 @@ describe("sessionSlice endActiveReasoning", () => {
       tooLargeIds: [],
       ackByTopic: {},
       lastFetchAt: undefined,
+      closedTopicsNotified: [],
     },
   });
 
@@ -721,6 +724,7 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
       tooLargeIds: [],
       ackByTopic: {},
       lastFetchAt: undefined,
+      closedTopicsNotified: [],
     },
   });
 
@@ -1000,6 +1004,7 @@ describe("sessionSlice newSession board reset", () => {
       tooLargeIds: [5],
       ackByTopic: { t: 5 },
       lastFetchAt: 123,
+      closedTopicsNotified: [],
     },
   });
 
@@ -1016,6 +1021,7 @@ describe("sessionSlice newSession board reset", () => {
       tooLargeIds: [],
       ackByTopic: {},
       lastFetchAt: undefined,
+      closedTopicsNotified: [],
     });
     expect(newState.history).toHaveLength(0);
     expect(newState.id).not.toBe("test-session-id");
@@ -1112,6 +1118,7 @@ describe("Thinking reasoning_details stream accumulation (resent-user-messages i
       tooLargeIds: [],
       ackByTopic: {},
       lastFetchAt: undefined,
+      closedTopicsNotified: [],
     },
   });
 
@@ -1290,6 +1297,7 @@ describe("sessionSlice clearDanglingMessages tool-call cancellation", () => {
       tooLargeIds: [],
       ackByTopic: {},
       lastFetchAt: undefined,
+      closedTopicsNotified: [],
     },
   });
 

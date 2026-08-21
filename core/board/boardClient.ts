@@ -1,7 +1,7 @@
-﻿import { BoardAck, BoardPendingResult, IDE } from "..";
+﻿import { BoardAck, BoardConsumeResult, BoardPendingResult, IDE } from "..";
 import { MCPManagerSingleton } from "../context/mcp/MCPManagerSingleton";
 
-import { loadBoardState } from "./boardState";
+import { BoardState, loadBoardState, saveBoardState } from "./boardState";
 
 // MsgBoard consumption (msgboard-v2-fork-packages.md): subscriptions live
 // SERVER-SIDE and are managed via CITT's subscription tools; the fork
@@ -29,7 +29,7 @@ export function findBoardConnection() {
 /** Structural type for the board gateway surface this module drives. */
 type BoardConnection = NonNullable<ReturnType<typeof findBoardConnection>>;
 
-const EMPTY_RESULT: BoardPendingResult = { messages: [], latestByTopic: {} };
+const EMPTY_RESULT: BoardConsumeResult = { messages: [], latestByTopic: {} };
 
 // Board handle registration at connection setup (msgboard-v2-fork-packages.md,
 // Revision 2026-08-21): identity is infrastructure, not a feature — the
@@ -120,12 +120,14 @@ export async function registerBoardIdentity(
  * idempotent), then peek the pending messages the gateway resolves for this
  * handle's server-side subscriptions. Since the fetch/ack decoupling
  * (board-wake-fetch-ack-entkopplung) this fetch is NON-consuming — the
- * cursor advances only through `ackBoard` below. Requires a v2 gateway; any
- * failure is logged and swallowed.
+ * cursor advances only through `ackBoard` below. Also diffs the gateway's
+ * closed-topic list against the workspace's last-seen state and reports
+ * fresh closes as `newClosedTopics` (close notification, Revision
+ * 2026-08-21). Requires a v2 gateway; any failure is logged and swallowed.
  */
 export async function consumeBoardPending(
   ide: IDE,
-): Promise<BoardPendingResult> {
+): Promise<BoardConsumeResult> {
   try {
     const state = await loadBoardState(ide);
     if (!state) {
@@ -145,13 +147,56 @@ export async function consumeBoardPending(
       return EMPTY_RESULT;
     }
     await connection.boardRegister(state.handle);
-    return await connection.boardPending();
+    const result = await connection.boardPending();
+    return await diffClosedTopics(ide, state, result);
   } catch (e) {
     console.warn(
       `Board injection skipped: ${e instanceof Error ? e.message : String(e)}`,
     );
     return EMPTY_RESULT;
   }
+}
+
+// Close notification (msgboard-v2-fork-packages.md, Revision 2026-08-21):
+// the gateway lists ALL subscribed closed topics on every board/pending
+// response — a state listing, not an event stream. The fork keeps the
+// per-topic last-seen state in board-state.json and reports only fresh
+// entries as `newClosedTopics` (wake only on the last-seen diff). Anything
+// not listed this time is either not closed anymore (reopened) or no longer
+// subscribed (drained+pruned) — its seen-mark is dropped, so a later close
+// wakes again. Best-effort: a persistence failure only logs; the next fetch
+// re-diffs against the stale state.
+async function diffClosedTopics(
+  ide: IDE,
+  state: BoardState,
+  result: BoardPendingResult,
+): Promise<BoardConsumeResult> {
+  const closedTopics = result.closedTopics ?? [];
+  const seen = new Set(state.closedTopicsSeen ?? []);
+  const newClosedTopics = closedTopics.filter((topic) => !seen.has(topic));
+
+  const newSeen = new Set(closedTopics);
+  const unchanged =
+    newSeen.size === seen.size && [...newSeen].every((t) => seen.has(t));
+  if (!unchanged) {
+    try {
+      await saveBoardState(ide, {
+        ...state,
+        closedTopicsSeen: newSeen.size > 0 ? [...newSeen] : undefined,
+      });
+    } catch (e) {
+      console.warn(
+        `Board close-seen state not persisted: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+  }
+
+  if (newClosedTopics.length === 0) {
+    return result;
+  }
+  return { ...result, newClosedTopics };
 }
 
 /**

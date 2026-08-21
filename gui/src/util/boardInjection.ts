@@ -1,4 +1,4 @@
-﻿import { BoardMessage, BoardPendingResult, RuleWithSource } from "core";
+﻿import { BoardConsumeResult, BoardMessage, RuleWithSource } from "core";
 
 // Board auto-topic-injection (board-auto-topic-injection.md, revision 2):
 // consumed messages accumulate in session state (bounded window) and are
@@ -45,6 +45,13 @@ export interface BoardSessionState {
   ackByTopic: Record<string, number>;
   /** Epoch ms of the last board/consumePending attempt; undefined = never. */
   lastFetchAt?: number;
+  /**
+   * Topics whose "closed" line is shown in this session — close-notification
+   * dedupe (msgboard-v2-fork-packages.md, Revision 2026-08-21). Core already
+   * diffs against board-state.json; this list guards re-delivered fetches
+   * within the session.
+   */
+  closedTopicsNotified: string[];
 }
 
 export const EMPTY_BOARD_SESSION_STATE: BoardSessionState = {
@@ -55,6 +62,7 @@ export const EMPTY_BOARD_SESSION_STATE: BoardSessionState = {
   tooLargeIds: [],
   ackByTopic: {},
   lastFetchAt: undefined,
+  closedTopicsNotified: [],
 };
 
 /**
@@ -71,13 +79,14 @@ export function shouldFetchBoard(
 /**
  * Pure accumulation of one board/consumePending result into the session
  * state: appends new messages, enforces the window caps (dropping oldest),
- * accumulates server-side omission info and tracks the per-topic ack
- * high-water marks. `lastFetchAt` is carried through untouched — the caller
- * stamps the attempt separately.
+ * accumulates server-side omission info, tracks the per-topic ack
+ * high-water marks and appends fresh close-notification lines
+ * (msgboard-v2-fork-packages.md, Revision 2026-08-21). `lastFetchAt` is
+ * carried through untouched — the caller stamps the attempt separately.
  */
 export function accumulateBoardFetch(
   current: BoardSessionState,
-  result: BoardPendingResult,
+  result: BoardConsumeResult,
 ): BoardSessionState {
   // Fetch/ack decoupling (board-wake-fetch-ack-entkopplung): the pending
   // fetch is a non-consuming peek, so an unacked (or lost-ack) message is
@@ -132,6 +141,16 @@ export function accumulateBoardFetch(
     messages.length = 0;
   }
 
+  // Close notification (V11b fork side): `newClosedTopics` is already the
+  // core-side last-seen diff — accumulate deduped so a re-delivered fetch
+  // never repeats a close line within the session.
+  const closedTopicsNotified = [...current.closedTopicsNotified];
+  for (const topic of result.newClosedTopics ?? []) {
+    if (!closedTopicsNotified.includes(topic)) {
+      closedTopicsNotified.push(topic);
+    }
+  }
+
   const omitted = result.omitted;
   return {
     messages,
@@ -147,6 +166,7 @@ export function accumulateBoardFetch(
           )
         : current.omittedOldestId,
     lastFetchAt: current.lastFetchAt,
+    closedTopicsNotified,
   };
 }
 
@@ -163,7 +183,8 @@ export function renderBoardInjectionBlock(
     board.messages.length === 0 &&
     board.droppedCount === 0 &&
     board.omittedTotal === 0 &&
-    board.tooLargeIds.length === 0
+    board.tooLargeIds.length === 0 &&
+    board.closedTopicsNotified.length === 0
   ) {
     return undefined;
   }
@@ -185,6 +206,14 @@ export function renderBoardInjectionBlock(
       sections.push(
         `\n_[cittmsg] id ${message.id} · from: ${message.from} → to: ${message.to}${re} · ${message.createdAt}_\n\n${message.body}`,
       );
+    }
+  }
+  // Close notification (V11b fork side): own section, clearly a non-message —
+  // a close is lifecycle information, not a posted comment.
+  if (board.closedTopicsNotified.length > 0) {
+    sections.push(`\n## Geschlossene Topics (keine Nachrichten)`);
+    for (const topic of board.closedTopicsNotified) {
+      sections.push(`- Topic '${topic}' wurde geschlossen`);
     }
   }
   if (board.droppedCount > 0 && board.messages.length > 0) {

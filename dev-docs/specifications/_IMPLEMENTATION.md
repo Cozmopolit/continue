@@ -13,7 +13,7 @@
 dev-docs/design-proposals/ ──┐
  (Idee ohne Lösung)          ├──→ dev-docs/specifications/ ──→ Implementierung
 dev-docs/technical-debts/ ───┘    (Spec per _TEMPLATE.md)          ──→ (optional: CodeRabbit)
- (Problem ohne Lösung)            ──→ Tests ──→ dev-docs/history/specifications/
+ (Problem ohne Lösung)            ──→ (optional: Tests) ──→ dev-docs/history/specifications/
 
 Incidents:  offen/Analyse ──→ dev-docs/technical-debts/
             abgeschlossen ──→ dev-docs/history/incidents/
@@ -28,7 +28,7 @@ Incidents:  offen/Analyse ──→ dev-docs/technical-debts/
 
 ## 2. Phasenmodell
 
-**Verbindlich ist die Reihenfolge der Phasen, nicht die Chat-Mechanik.** Ob eine Spec-Umsetzung in einem Chat (ggf. mit Conversation-Summary/Compaction zwischendurch), in mehreren Chats oder als getrennte Workstreams abläuft, ist frei. Verbindlich ist: **keine Test-Planung in der Spec, keine Tests vor Abschluss der Implementierung.**
+**Verbindlich ist die Reihenfolge der Phasen, nicht die Chat-Mechanik.** Ob eine Spec-Umsetzung in einem Chat (ggf. mit Conversation-Summary/Compaction zwischendurch), in mehreren Chats oder als getrennte Workstreams abläuft, ist frei. Verbindlich ist: **keine Test-Planung in der Spec. Tests sind die Ausnahme** — Standard ist keine neuen Tests; geschrieben wird nur, was der User explizit verlangt, dann minimal und gezielt.
 
 ### Phase 1: Recon & Readiness-Check (immer zuerst, read-only)
 
@@ -46,7 +46,7 @@ Ziel: Verifizieren, dass die Spec wie geschrieben gegen den echten Code umsetzba
 - **Die Spec ist die Single Source of Truth.** Nicht neu verhandeln, nicht still „verbessern". Neue Lücke mitten in der Implementierung entdeckt → stoppen und zurückmelden, nicht improvisieren.
 - **Konventionen folgen**: bestehende Muster des jeweiligen Packages übernehmen.
 - **Mechanische Edits an `run_file_editor` delegieren** (vollständige Pfade + klare Änderungsbeschreibung) — oft massiv token-effizienter als Serien von Einzel-Ersetzungen.
-- **Keine Tests.** Keine Test-Dateien anlegen, keine Test-Strategie diskutieren — Tests sind Phase 4.
+- **Keine Tests während der Implementierung.** Ob danach Tests entstehen, entscheidet der User — Phase 4 ist optional.
 - **Verifikation**: Build des betroffenen Packages muss grün sein (`npm run build` / `tsc`). **Junction-Regel**: nach Änderungen an `packages/fetch` oder `packages/openai-adapters` diese erst bauen, bevor abhängige Pakete getestet werden (Details: `how-tos/environment-gotchas.md`).
 - **Spec nachziehen** (vor dem Abschluss-Report): erledigte Checklist-Items auf `[x]`, Status → **Implementiert**.
 - **Abschluss-Report**: pro Checklist-Item kurz (was geändert, wo). Jede Abweichung von der Spec explizit nennen.
@@ -58,16 +58,17 @@ Ziel: Verifizieren, dass die Spec wie geschrieben gegen den echten Code umsetzba
 - Fixes für verifizierte Probleme implementieren; Build danach wieder grün.
 - Wird Phase 3 übersprungen: Self-Review des Diffs (`git diff`) vor dem Test-Start.
 
-### Phase 4: Tests (erst nach Abschluss der Implementierung)
+### Phase 4: Tests (optional — nur auf ausdrücklichen Wunsch des Users)
 
-- Tests werden **gegen die finale Implementierung** geschrieben, nicht gegen die Spec.
-- Neue pure Funktionen: Unit-Tests für Normalfälle, Edge-Cases und Grenzfälle. Suite-Konventionen des jeweiligen Packages folgen (jest/vitest, Tests liegen neben dem Code).
-- **Verifikation**: gezielte Suites laufen lassen; bei Änderungen an Kern-Paketen (`packages/fetch`, `packages/openai-adapters`, `core`) Regression über den Runner: `node scripts/run-all-tests.mjs --only …` (Details: `how-tos/running-tests.md`; lange Läufe im Hintergrund + Polling).
-- **Baseline-Abgleich** gegen `how-tos/test-baseline.md`: dokumentierte pre-existing Failures sind ok, neue sind es nicht.
+Standard: **keine neuen Tests** — Verifikation der Implementierung ist der grüne Build des betroffenen Packages (Phase 2). Nur wenn der User Tests explizit verlangt:
+
+- Gegen die **finale Implementierung**, minimal und gezielt (ein paar Fälle für die geänderte Logik — keine Vollabdeckung, keine Strategie-Diskussion). Suite-Konventionen des jeweiligen Packages folgen (jest/vitest, Tests liegen neben dem Code).
+- Ausschließlich **gefiltert** über den Runner: `node scripts/run-all-tests.mjs --only … --filter …` (Details: `how-tos/running-tests.md`; lange Läufe im Hintergrund + Polling). Keine Voll-Suiten für kleine Änderungen.
+- Unabhängig davon Pflicht: nach Typ-/Interface-Änderungen müssen bestehende Test-Dateien wieder kompilieren — Compile-Fixes sind Implementierungsarbeit, keine neuen Tests.
 
 ### Commits
 
-- **Ein Commit pro Workstream** (AGENTS.md Regel 8): Code + Spec + Doku + Tests zusammen, grobe Granularität — **kein Aufteilen** in Feature-/Test-Commits. Commit-Punkt typischerweise nach Abschluss von Phase 4.
+- **Ein Commit pro Workstream** (AGENTS.md Regel 8): Code + Spec + Doku (+ Tests, falls gewünscht) zusammen, grobe Granularität — **kein Aufteilen** in Feature-/Test-Commits. Commit-Punkt typischerweise nach Abschluss von Phase 2 (nach Phase 4 nur, falls Tests gewünscht waren).
 - **Piggyback**: zum Commit-Zeitpunkt alles Dirty im Worktree mitnehmen — keine Dateiauswahl, keine Kleinst-Commits für Liegengebliebenes oder thematisch Fremdes.
 - **Kein Commit ohne explizites Go des Users** — der Agent schlägt Commit-Punkte vor, committet aber niemals eigenständig. Messages kompakt halten.
 - Commit-Message ist ein **Einzeiler** per `git commit -m "…"` (wenn das nicht reicht, ist die Message zu komplex); lint-staged/prettier formatiert gestagte Dateien beim Commit nach — kurz gegenprüfen.

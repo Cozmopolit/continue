@@ -477,3 +477,25 @@ describe("nextWatchDelayMs", () => {
     expect(nextWatchDelayMs()).toBeCloseTo(74_970);
   });
 });
+
+describe("useBoardWatch — close notification (V11b)", () => {
+  // Close notification (msgboard-v2-fork-packages.md, Revision 2026-08-21):
+  // fresh topic closes (core-side last-seen diff) wake exactly like
+  // messages.
+  it("combines messages and close notifications in one wake doc", async () => {
+    const { messenger, store } = setup();
+    messenger.responses["board/consumePending"] = {
+      ...PENDING_RESULT,
+      newClosedTopics: ["some-topic"],
+    };
+    await renderProbe(store, messenger);
+
+    await tick(0); // immediate first tick
+
+    expect(wakeCalls()).toHaveLength(1);
+    const text = (wakeCalls()[0][0] as any).editorState.content[0].content[0]
+      .text;
+    expect(text).toContain("Neue Nachrichten");
+    expect(text).toContain("'some-topic' geschlossen");
+  });
+});

@@ -104,7 +104,8 @@ gearbeitet wird.
 ## Hard Rules
 
 1. **Keine Test-Planung vor Abschluss der Implementierung** — Tests sind die
-   letzte Phase, geschrieben gegen die finale Implementierung
+   letzte Phase, minimal und nur wo wirklich sinnvoll. Default ist keine
+   neuen Tests; Verifikation ist der grüne Build
    (Workflow: `dev-docs/specifications/_IMPLEMENTATION.md`).
 2. **Tests immer sequentiell über den Runner**:
    `node scripts/run-all-tests.mjs [--only …] [--filter …]` — niemals

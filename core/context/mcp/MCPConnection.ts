@@ -143,6 +143,9 @@ const BoardPendingSchema = z.object({
   latestByTopic: z.record(z.string(), z.number()),
   // Additive contract annex (5291256996): existing topics without comments.
   emptyTopics: z.array(z.string()).optional(),
+  // V11b close notification (msgboard-v2-fork-packages.md, Revision
+  // 2026-08-21): subscribed topics currently closed; absent when none.
+  closedTopics: z.array(z.string()).optional(),
   omitted: z
     .object({ count: z.number(), oldestOmittedId: z.number() })
     .optional(),

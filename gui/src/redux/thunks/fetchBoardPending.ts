@@ -1,4 +1,4 @@
-﻿import { BoardAck, BoardPendingResult } from "core";
+﻿import { BoardAck, BoardConsumeResult } from "core";
 import { IIdeMessenger } from "../../context/IdeMessenger";
 import { appendBoardMessages } from "../slices/sessionSlice";
 import { AppDispatch } from "../store";
@@ -21,7 +21,7 @@ import { AppDispatch } from "../store";
 export async function fetchBoardPending(
   dispatch: AppDispatch,
   ideMessenger: IIdeMessenger,
-): Promise<BoardPendingResult | undefined> {
+): Promise<BoardConsumeResult | undefined> {
   try {
     const boardRes = await ideMessenger.request(
       "board/consumePending",

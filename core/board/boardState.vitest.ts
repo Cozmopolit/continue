@@ -9,6 +9,7 @@ import {
   BOARD_STATE_DIR_NAME,
   BOARD_STATE_FILE_NAME,
   loadBoardState,
+  saveBoardState,
   validateBoardHandle,
 } from "./boardState";
 
@@ -131,4 +132,79 @@ describe("loadBoardState", () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("legacy"));
     },
   );
+});
+
+describe("loadBoardState — closedTopicsSeen (V11b close notification)", () => {
+  it("parses a valid closedTopicsSeen list", async () => {
+    writeStateFile(
+      JSON.stringify({ handle: "delta", closedTopicsSeen: ["a", "b"] }),
+    );
+    expect(await loadBoardState(wsIde())).toEqual({
+      handle: "delta",
+      closedTopicsSeen: ["a", "b"],
+    });
+  });
+
+  it("filters invalid entries down to non-empty strings", async () => {
+    writeStateFile(
+      JSON.stringify({
+        handle: "delta",
+        closedTopicsSeen: ["a", 42, "", "   ", null, "b"],
+      }),
+    );
+    expect(await loadBoardState(wsIde())).toEqual({
+      handle: "delta",
+      closedTopicsSeen: ["a", "b"],
+    });
+  });
+
+  it("drops the field when nothing valid remains", async () => {
+    writeStateFile(JSON.stringify({ handle: "delta", closedTopicsSeen: [] }));
+    expect(await loadBoardState(wsIde())).toEqual({ handle: "delta" });
+  });
+
+  it("still rejects the legacy shape when closedTopicsSeen is also present", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    writeStateFile(
+      JSON.stringify({
+        handle: "delta",
+        topics: ["t1"],
+        closedTopicsSeen: ["a"],
+      }),
+    );
+    expect(await loadBoardState(wsIde())).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("legacy"));
+  });
+});
+
+describe("saveBoardState", () => {
+  it("writes pretty JSON with a trailing newline", async () => {
+    await saveBoardState(wsIde(), { handle: "delta" });
+    expect(fs.readFileSync(stateFilePath(), "utf8")).toBe(
+      `${JSON.stringify({ handle: "delta" }, null, 2)}\n`,
+    );
+  });
+
+  it("creates the .continue directory when missing", async () => {
+    // beforeEach gives a fresh empty workspace dir — no .continue yet.
+    await saveBoardState(wsIde(), { handle: "delta" });
+    expect(fs.existsSync(stateFilePath())).toBe(true);
+  });
+
+  it("leaves no tmp file behind", async () => {
+    await saveBoardState(wsIde(), { handle: "delta" });
+    expect(fs.existsSync(`${stateFilePath()}.tmp`)).toBe(false);
+  });
+
+  it("round-trips through loadBoardState", async () => {
+    const state = { handle: "delta", closedTopicsSeen: ["a"] };
+    await saveBoardState(wsIde(), state);
+    expect(await loadBoardState(wsIde())).toEqual(state);
+  });
+
+  it("throws when no workspace is open", async () => {
+    await expect(
+      saveBoardState(makeIde([]), { handle: "delta" }),
+    ).rejects.toThrow("no workspace open");
+  });
 });

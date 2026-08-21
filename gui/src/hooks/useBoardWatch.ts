@@ -39,20 +39,35 @@ const WAKE_MODIFIERS: InputModifiers = {
   noContext: true,
 };
 
-const WAKE_DOC: JSONContent = {
-  type: "doc",
-  content: [
-    {
-      type: "paragraph",
-      content: [
-        {
-          type: "text",
-          text: "[board-wake] Neue Nachrichten in subscribed Topics (Injection oben im Kontext). Prüfen; bei Nichtbedarf diesen Run sofort beenden.",
-        },
-      ],
-    },
-  ],
-};
+/**
+ * Builds the synthetic wake message (msgboard-v2-fork-packages.md, Revision
+ * 2026-08-21): the message-wake text as before, a close-notification text
+ * when only fresh topic closes arrived, and a combination when both did.
+ */
+function buildWakeDoc(
+  hasMessages: boolean,
+  newClosedTopics: string[],
+): JSONContent {
+  const closeList = newClosedTopics.map((t) => `'${t}'`).join(", ");
+  let text: string;
+  if (hasMessages && newClosedTopics.length > 0) {
+    text = `[board-wake] Neue Nachrichten in subscribed Topics; außerdem Topic-Close: ${closeList} geschlossen (Injection oben im Kontext). Prüfen; bei Nichtbedarf diesen Run sofort beenden.`;
+  } else if (hasMessages) {
+    text =
+      "[board-wake] Neue Nachrichten in subscribed Topics (Injection oben im Kontext). Prüfen; bei Nichtbedarf diesen Run sofort beenden.";
+  } else {
+    text = `[board-wake] Topic-Close erkannt: ${closeList} geschlossen (Injection oben im Kontext; keine Nachrichten). Zur Kenntnis nehmen; bei Nichtbedarf diesen Run sofort beenden.`;
+  }
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text }],
+      },
+    ],
+  };
+}
 
 /**
  * Board wake mode (board-wake-mode.md): while the mode is toggled on and the
@@ -84,6 +99,10 @@ const WAKE_DOC: JSONContent = {
  *   pending, the watcher is fully paused. The finishing loadSession resets
  *   the board buffer, so no wake may race it
  *   (agent-self-compaction.md, board-wake-mode.md).
+ * - Close notification (msgboard-v2-fork-packages.md, Revision 2026-08-21):
+ *   fresh topic closes (core-side last-seen diff, `newClosedTopics`) wake
+ *   exactly like messages and render as a non-message line in the injection
+ *   block.
  * - Composer guard: while the user has text in the composer, neither
  *   consume nor dispatch (deliver-before-consume, amendment 2026-08-21);
  *   the first unblocked tick after that run ends delivers the messages.
@@ -154,7 +173,15 @@ export function useBoardWatch() {
         return;
       }
       const result = await fetchBoardPending(dispatch, ideMessenger);
-      if (cancelled || !result || result.messages.length === 0) {
+      // Close notification (msgboard-v2-fork-packages.md, Revision
+      // 2026-08-21): fresh topic closes wake exactly like messages —
+      // `newClosedTopics` is the core-side last-seen diff.
+      const newClosedTopics = result?.newClosedTopics ?? [];
+      if (
+        cancelled ||
+        !result ||
+        (result.messages.length === 0 && newClosedTopics.length === 0)
+      ) {
         return;
       }
       // Recheck immediately before dispatching: a user-started run, a
@@ -176,7 +203,10 @@ export function useBoardWatch() {
       }
       dispatch(
         streamResponseThunk({
-          editorState: WAKE_DOC,
+          editorState: buildWakeDoc(
+            result.messages.length > 0,
+            newClosedTopics,
+          ),
           modifiers: WAKE_MODIFIERS,
         }),
       );
