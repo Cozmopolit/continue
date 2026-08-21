@@ -45,9 +45,20 @@ import { getOauthToken } from "./MCPOauth";
 // Timeout for initial connection to MCP server (connectivity check)
 const DEFAULT_MCP_CONNECTION_TIMEOUT = 30_000; // 30 seconds
 
-// Timeout for MCP tool execution - much higher as tools can run complex workflows
-// This is exported for use in callTool.ts
-export const DEFAULT_MCP_TOOL_CALL_TIMEOUT = 900_000; // 15 minutes
+// Timeout for MCP tool execution. Blocking CITT tools (msg_poll, msg_post
+// with waitForReply, long wait_seconds) legitimately run for hours: the
+// server side caps the wait at 10,800 s and then returns its designed
+// timedOut:true result instead of an error. The client budget must sit
+// above that cap or the transport timeout (-32001) cuts the designed
+// result off (mcp-transport-timeout-blocking-calls.md); 11,000 s leaves
+// ~200 s slack for latency. Exported for use in callTool.ts.
+export const DEFAULT_MCP_TOOL_CALL_TIMEOUT = 11_000_000; // 11,000 seconds
+
+// Fallback timeout for proxy/http requests (chat completions through the
+// tunnel) — deliberately separate from the tool-call budget: a hung
+// completion should fail after 15 minutes, not hours. Exported for test
+// assertions.
+export const PROXY_HTTP_TIMEOUT = 900_000; // 15 minutes
 
 // Timeout for each individual proxy discovery RPC
 // (proxy/capabilities, proxy/endpoints, proxy/key)
@@ -552,7 +563,7 @@ class MCPConnection {
         // Non-streaming chat completions can take minutes; the SDK default
         // (60s) is far too low. Streaming requests resolve quickly with the
         // stream-start result, so a generous timeout is harmless there.
-        timeout: options?.timeout ?? DEFAULT_MCP_TOOL_CALL_TIMEOUT,
+        timeout: options?.timeout ?? PROXY_HTTP_TIMEOUT,
       },
     );
 

@@ -10,6 +10,7 @@ import MCPConnection, {
   BOARD_PENDING_TIMEOUT,
   BOARD_REGISTER_TIMEOUT,
   DEFAULT_MCP_TOOL_CALL_TIMEOUT,
+  PROXY_HTTP_TIMEOUT,
 } from "./MCPConnection";
 
 // Mock the shell path utility
@@ -18,6 +19,22 @@ vi.mock("../../util/shellPath", () => ({
     .fn()
     .mockResolvedValue("/usr/local/bin:/usr/bin:/bin"),
 }));
+
+describe("timeout budgets", () => {
+  it("tool-call budget clears the CITT server-side blocking cap", () => {
+    // Blocking CITT tools (msg_poll, msg_post waitForReply) wait up to
+    // 10,800 s server-side and then return their designed timedOut:true
+    // result — the client must not cut them off first with -32001
+    // (mcp-transport-timeout-blocking-calls.md).
+    expect(DEFAULT_MCP_TOOL_CALL_TIMEOUT).toBeGreaterThan(10_800_000);
+  });
+
+  it("proxy/http keeps its own 15-minute budget", () => {
+    // Deliberately NOT coupled to the tool-call budget: a hung chat
+    // completion should fail after 15 minutes, not hours.
+    expect(PROXY_HTTP_TIMEOUT).toBe(900_000);
+  });
+});
 
 describe("MCPConnection", () => {
   beforeEach(() => {
@@ -441,7 +458,7 @@ describe("MCPConnection", () => {
       expect(requestSpy).toHaveBeenCalledWith(
         { method: "proxy/http", params: proxyHttpParams },
         expect.anything(),
-        { signal: undefined, timeout: DEFAULT_MCP_TOOL_CALL_TIMEOUT },
+        { signal: undefined, timeout: PROXY_HTTP_TIMEOUT },
       );
     });
 
