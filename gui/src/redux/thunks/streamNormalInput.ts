@@ -37,6 +37,7 @@ import {
 import { getBaseSystemMessage } from "../util/getBaseSystemMessage";
 import { getPlatform } from "../../util";
 import {
+  BOARD_RUN_PATH_FETCH_ENABLED,
   boardInjectionRule,
   renderBoardInjectionBlock,
   shouldFetchBoard,
@@ -172,23 +173,20 @@ export const streamNormalInput = createAsyncThunk<
         )
       : baseSystemMessageWithEnv;
 
-    // Board auto-topic-injection (board-auto-topic-injection.md, revision 2):
-    // TTL-throttled consumption on EVERY LLM call — this thunk is the seam for
-    // the first turn and every tool-loop iteration
-    // (streamResponseAfterToolCall recurses into it). The attempt timestamp is
-    // stamped up front (even on failure/empty result) so concurrent paths
-    // never double-fetch within the TTL window. The `state` snapshot was
-    // captured before the getWorkspaceDirs() await, so a concurrent earlier
-    // call may have stamped the attempt during our awaits — read fresh to keep
-    // the gate race-free (gate check + attempt dispatch are synchronous, hence
-    // atomic). Consumed messages accumulate in session state; the rendered
-    // block is re-appended to the system
-    // message every call, like AGENTS.md. Best-effort: any failure skips the
-    // injection, the run always starts.
-    // Consumption goes through the shared seam (board-wake-mode.md) so the
-    // idle watcher consumes identically; gating/stamping stays in this path.
+    // Board auto-topic-injection (board-auto-topic-injection.md, revision 2)
+    // — the run-path fetch is DISABLED (BOARD_RUN_PATH_FETCH_ENABLED,
+    // board-wake-mode.md amendment 2026-08-21 "Run-Pfad-Abschaltung"): an
+    // injection block mutating between tool-loop calls of one run is
+    // invisible to the model, so the board-wake watcher is the only fetcher
+    // now (it polls immediately on every run end). The block below is still
+    // rendered every call — that render is the wake's delivery vehicle. The
+    // gated path stays intact for re-enabling; while disabled it never
+    // fetches and never stamps.
     const now = Date.now();
-    if (shouldFetchBoard(getState().session.board.lastFetchAt, now)) {
+    if (
+      BOARD_RUN_PATH_FETCH_ENABLED &&
+      shouldFetchBoard(getState().session.board.lastFetchAt, now)
+    ) {
       dispatch(setBoardFetchAttempted(now));
       await fetchBoardPending(dispatch, extra.ideMessenger);
     }

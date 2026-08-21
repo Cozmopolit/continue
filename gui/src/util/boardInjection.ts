@@ -1,9 +1,21 @@
 ﻿import { BoardMessage, BoardPendingResult, RuleWithSource } from "core";
 
 // Board auto-topic-injection (board-auto-topic-injection.md, revision 2):
-// consumption runs on every LLM call, throttled by BOARD_FETCH_TTL_MS.
-// Consumed messages accumulate in session state (bounded window) and are
+// consumed messages accumulate in session state (bounded window) and are
 // rendered into an always-apply system-message block, exactly like AGENTS.md.
+// The revision-2 run-path consumption (TTL-gated fetch on every LLM call) is
+// disabled — the board-wake watcher is the only fetcher. See the flag below.
+
+/**
+ * Kill switch for the revision-2 run-path fetch: TTL-gated board consumption
+ * on every LLM call (board-auto-topic-injection.md). Disabled 2026-08-21 —
+ * an injection block that mutates between tool-loop calls of one run is
+ * invisible to the model; delivery is reduced to the board-wake watcher,
+ * which polls immediately on activation and every run end (board-wake-mode.md
+ * amendment 2026-08-21 "Run-Pfad-Abschaltung"). The run path stays intact in
+ * streamNormalInput — flip back to true to re-enable.
+ */
+export const BOARD_RUN_PATH_FETCH_ENABLED = false;
 
 /** At most one board fetch per this many milliseconds per session. */
 export const BOARD_FETCH_TTL_MS = 15_000;

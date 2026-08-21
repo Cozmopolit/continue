@@ -33,9 +33,6 @@ const mockClaudeModel: ModelDescription = {
 // don't import that module and drag its test suite into this file.
 function getRootState(): RootState {
   const state = getEmptyRootState();
-  // Keep the board TTL gate closed so no board fetch actions are produced
-  // (board-auto-topic-injection.md revision 2).
-  state.session.board.lastFetchAt = Date.now();
   return {
     ...state,
     config: {

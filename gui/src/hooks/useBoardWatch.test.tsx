@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { MockIdeMessenger } from "../context/MockIdeMessenger";
-import { setActive, setCompactionLoading } from "../redux/slices/sessionSlice";
+import {
+  setActive,
+  setCompactionLoading,
+  setInactive,
+} from "../redux/slices/sessionSlice";
 import { setBoardWatchMode } from "../redux/slices/uiSlice";
 import { RootState } from "../redux/store";
 import { createMockStore, getEmptyRootState } from "../util/test/mockStore";
@@ -153,20 +157,19 @@ afterEach(() => {
 });
 
 describe("useBoardWatch", () => {
-  it("does not consume on activation — the first tick consumes and wakes", async () => {
+  it("polls immediately on activation and wakes on pending messages", async () => {
     // Paket 3 (msgboard-v2-fork-packages.md): priming is gone — CITT-side
     // self-exclusion keeps own posts out of board/pending, so activation no
     // longer needs a silent consume. Messages pending at activation wake in
-    // the first tick.
+    // the first tick, which fires at delay 0 — no cadence wait (amendment
+    // 2026-08-21 "Run-Pfad-Abschaltung").
     const { messenger, store, boardCalls } = setup();
     messenger.responses["board/consumePending"] = PENDING_RESULT;
 
     await renderProbe(store, messenger);
+    expect(boardCalls()).toHaveLength(0); // scheduled, not yet due
 
-    expect(boardCalls()).toHaveLength(0);
-    expect(wakeCalls()).toHaveLength(0);
-
-    await tick();
+    await tick(0); // immediate first tick
 
     expect(boardCalls()).toHaveLength(1);
     expect(wakeCalls()).toHaveLength(1);
@@ -181,7 +184,7 @@ describe("useBoardWatch", () => {
     await renderProbe(store, messenger);
 
     messenger.responses["board/consumePending"] = PENDING_RESULT;
-    await tick();
+    await tick(0); // immediate first tick delivers
 
     expect(wakeCalls()).toHaveLength(1);
     const arg = wakeCalls()[0][0] as any;
@@ -197,18 +200,19 @@ describe("useBoardWatch", () => {
     await renderProbe(store, messenger);
 
     messenger.responses["board/consumePending"] = PENDING_RESULT;
-    await tick();
+    await tick(0); // immediate first tick wakes
     expect(wakeCalls()).toHaveLength(1);
 
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
-    await tick(90_000);
+    await tick(90_000); // recurring ticks find nothing
     expect(wakeCalls()).toHaveLength(1);
   });
 
   it("does not consume when the composer has content (user is typing)", async () => {
     // Deliver-before-consume (board-wake-mode.md, amendment 2026-08-21):
-    // the messages stay server-side; the run the user sends delivers them
-    // via its run-start fetch.
+    // the messages stay server-side; the first unblocked tick after the run
+    // the user sends delivers them (immediate run-end poll, amendment
+    // 2026-08-21 "Run-Pfad-Abschaltung").
     mockMainEditor(TYPED_EDITOR_JSON);
     const { messenger, store, boardCalls } = setup();
     messenger.responses["board/consumePending"] = PENDING_RESULT;
@@ -236,8 +240,8 @@ describe("useBoardWatch", () => {
 
   it("does not consume into a fresh conversation (no user message, no summary)", async () => {
     // Deliver-before-consume (board-wake-mode.md, amendment 2026-08-21):
-    // the messages stay server-side; the first real run's run-start fetch
-    // delivers them.
+    // the messages stay server-side; the first unblocked watcher tick after
+    // the first real run ends delivers them (immediate run-end poll).
     const { messenger, store, boardCalls } = setup({ history: [] });
     messenger.responses["board/consumePending"] = PENDING_RESULT;
     await renderProbe(store, messenger);
@@ -267,7 +271,7 @@ describe("useBoardWatch", () => {
     await renderProbe(store, messenger);
 
     messenger.responses["board/consumePending"] = PENDING_RESULT;
-    await tick();
+    await tick(0); // immediate first tick delivers
 
     expect(wakeCalls()).toHaveLength(1);
   });
@@ -291,20 +295,26 @@ describe("useBoardWatch", () => {
     expect(wakeCalls()).toHaveLength(0);
     expect((store.getState() as RootState).session.board.messages).toEqual([]);
 
-    // compaction done: re-activation itself consumes nothing (no priming) —
-    // the pending message wakes in the first tick
+    // compaction done: re-activation polls immediately (amendment
+    // 2026-08-21 "Run-Pfad-Abschaltung") — the pending message wakes at
+    // once, no priming needed
     await act(async () => {
       store.dispatch(setCompactionLoading({ index: 2, loading: false }));
     });
-    expect(boardCalls()).toHaveLength(0);
-    expect(wakeCalls()).toHaveLength(0);
+    expect(boardCalls()).toHaveLength(0); // immediate tick scheduled
 
-    await tick();
+    await tick(0); // re-activation polls immediately
     expect(boardCalls()).toHaveLength(1);
     expect(wakeCalls()).toHaveLength(1);
     expect((store.getState() as RootState).session.board.messages).toEqual([
       BOARD_MESSAGE,
     ]);
+
+    // the recurring cadence keeps ticking without re-waking
+    messenger.responses["board/consumePending"] = EMPTY_RESULT;
+    await tick();
+    expect(boardCalls()).toHaveLength(2);
+    expect(wakeCalls()).toHaveLength(1);
   });
 
   it("does not wake when a compaction starts while the fetch is in flight", async () => {
@@ -375,27 +385,27 @@ describe("useBoardWatch", () => {
   });
 
   it("resumes ticking when the mode is toggled off and on", async () => {
-    // no priming on re-activation either — the pending message wakes in the
-    // first tick after re-enabling
+    // no priming on re-activation either — the pending message wakes
+    // immediately on re-enabling (immediate first tick, amendment
+    // 2026-08-21 "Run-Pfad-Abschaltung")
     const { messenger, store, boardCalls } = setup();
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
     await renderProbe(store, messenger);
-    expect(boardCalls()).toHaveLength(0);
+    await tick(0);
+    expect(boardCalls()).toHaveLength(1); // immediate first tick (empty)
 
     await act(async () => {
       store.dispatch(setBoardWatchMode(false));
     });
     await tick(60_000);
-    expect(boardCalls()).toHaveLength(0);
+    expect(boardCalls()).toHaveLength(1); // paused while off
 
     messenger.responses["board/consumePending"] = PENDING_RESULT;
     await act(async () => {
       store.dispatch(setBoardWatchMode(true));
     });
-    expect(boardCalls()).toHaveLength(0);
-
-    await tick();
-    expect(boardCalls()).toHaveLength(1);
+    await tick(0); // immediate poll on re-activation
+    expect(boardCalls()).toHaveLength(2);
     expect(wakeCalls()).toHaveLength(1);
   });
 
@@ -403,30 +413,57 @@ describe("useBoardWatch", () => {
     const { messenger, store, boardCalls } = setup();
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
     const rendered = await renderProbe(store, messenger);
-    expect(boardCalls()).toHaveLength(0);
+    expect(boardCalls()).toHaveLength(0); // immediate tick scheduled
+
+    await tick(0);
+    expect(boardCalls()).toHaveLength(1); // immediate first tick (empty)
 
     rendered.unmount();
     await tick(90_000);
 
-    expect(boardCalls()).toHaveLength(0);
+    expect(boardCalls()).toHaveLength(1); // nothing after unmount
   });
 
-  it("ticks on the jittered delay, not the bare interval", async () => {
-    // random = 0 → delay = 0.75 × 60 s = 45 s (rate-limit interim:
-    // decorrelates phase-locked windows)
+  it("polls immediately, then on the jittered delay", async () => {
+    // random = 0 → recurring delay = 0.75 × 60 s = 45 s (rate-limit
+    // interim: decorrelates phase-locked windows). The first tick is
+    // immediate (amendment 2026-08-21 "Run-Pfad-Abschaltung").
     vi.mocked(Math.random).mockReturnValue(0);
     const { messenger, store, boardCalls } = setup();
     messenger.responses["board/consumePending"] = EMPTY_RESULT;
     await renderProbe(store, messenger);
-    expect(boardCalls()).toHaveLength(0);
+    expect(boardCalls()).toHaveLength(0); // immediate tick scheduled
+
+    await tick(0);
+    expect(boardCalls()).toHaveLength(1); // immediate first tick
 
     await tick(44_000);
-    expect(boardCalls()).toHaveLength(0);
+    expect(boardCalls()).toHaveLength(1); // recurring tick waits out the jitter
     await tick(1_000);
-    expect(boardCalls()).toHaveLength(1); // first jittered tick at 45 s
+    expect(boardCalls()).toHaveLength(2); // fires at 45 s (random = 0)
 
     await tick(45_000);
-    expect(boardCalls()).toHaveLength(2); // re-rolled with the pinned value
+    expect(boardCalls()).toHaveLength(3); // re-rolled with the pinned value
+  });
+
+  it("polls immediately when a run ends (busy→idle transition)", async () => {
+    // Run-end poll (board-wake-mode.md amendment 2026-08-21
+    // "Run-Pfad-Abschaltung"): the watcher re-mounts on every busy→idle
+    // transition and the first tick is immediate — messages that piled up
+    // during the run wake without waiting out the jittered cadence.
+    const { messenger, store, boardCalls } = setup({ isStreaming: true });
+    messenger.responses["board/consumePending"] = PENDING_RESULT;
+    await renderProbe(store, messenger);
+    await tick(90_000);
+    expect(boardCalls()).toHaveLength(0); // paused while the run is active
+
+    await act(async () => {
+      store.dispatch(setInactive());
+    });
+    await tick(0);
+
+    expect(boardCalls()).toHaveLength(1);
+    expect(wakeCalls()).toHaveLength(1);
   });
 });
 

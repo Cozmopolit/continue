@@ -77,28 +77,33 @@ const WAKE_DOC: JSONContent = {
  *   no compaction running or pending, composer empty), keeping wakes
  *   well-formed and avoiding pointless re-peeks that would re-wake every
  *   tick on unacked messages. While blocked, messages stay server-side and
- *   are delivered by the first run-start fetch of the next run (rendered
- *   in the same call) or the first unblocked tick.
+ *   are delivered by the first unblocked tick — with the run-end poll
+ *   (amendment 2026-08-21 "Run-Pfad-Abschaltung") that is immediately after
+ *   the blocking run ends.
  * - Compaction pause: while a compaction runs OR a self-compaction is
  *   pending, the watcher is fully paused. The finishing loadSession resets
  *   the board buffer, so no wake may race it
  *   (agent-self-compaction.md, board-wake-mode.md).
  * - Composer guard: while the user has text in the composer, neither
  *   consume nor dispatch (deliver-before-consume, amendment 2026-08-21);
- *   the run-start fetch of the run the user sends delivers the messages.
+ *   the first unblocked tick after that run ends delivers the messages.
  * - Fresh-conversation guard: never consume or dispatch into a conversation
  *   that has not started yet (no user message and no conversation summary)
  *   — the first message of a fresh conversation belongs to the user, not
  *   the board. A fork-with-summary session counts as started: it is a
  *   continuation, not a fresh conversation (amendment 2026-08-17). The
- *   first real run's run-start fetch delivers the messages
- *   (amendment 2026-08-21).
+ *   first unblocked tick after the first real run ends delivers the
+ *   messages (amendment 2026-08-21 "Run-Pfad-Abschaltung").
  * - Cadence: 60 s ± 25 % jitter per tick (nextWatchDelayMs). The
  *   rate-limit incident (2026-08-18) showed phase-synchronized windows
  *   bursting every 30 s into the shared GitHub quota. Jitter is a stagger,
  *   not a guard: no further guards by design (no backoff/rate-limits/
  *   filters), the mode toggle is the kill switch. The 403/429 backoff
  *   lives CITT-side (vesta, KISS interim).
+ * - Immediate first tick (amendment 2026-08-21 "Run-Pfad-Abschaltung"): the
+ *   watcher effect re-mounts on every busy→idle transition and its first
+ *   tick fires at delay 0 — every run end and every (re-)activation polls
+ *   at once; the jittered cadence shapes the recurring ticks only.
  */
 export function useBoardWatch() {
   const dispatch = useAppDispatch();
@@ -134,8 +139,8 @@ export function useBoardWatch() {
       // still only fetches when it can deliver: idle, started, no
       // compaction, empty composer. Unacked messages would otherwise
       // re-wake every tick. Messages arriving while blocked are delivered
-      // by the first run-start fetch of the next run (rendered in the same
-      // call) or the first unblocked tick.
+      // by the first unblocked tick — immediately after the blocking run
+      // ends (run-end poll).
       const pre = store.getState();
       if (
         selectIsCompactionRunning(pre) ||
@@ -179,17 +184,23 @@ export function useBoardWatch() {
 
     // Recursive setTimeout instead of setInterval: every round re-rolls the
     // jittered delay (decorrelates phase-locked windows), and a slow fetch
-    // can never overlap the next tick.
-    const scheduleNext = () => {
-      timer = setTimeout(() => {
-        void tick().finally(() => {
-          if (!cancelled) {
-            scheduleNext();
-          }
-        });
-      }, nextWatchDelayMs());
+    // can never overlap the next tick. The first tick fires immediately
+    // (amendment 2026-08-21 "Run-Pfad-Abschaltung"): this effect re-mounts
+    // on every busy→idle transition, so each run end and each
+    // (re-)activation polls at once instead of waiting out the cadence.
+    const scheduleNext = (first = false) => {
+      timer = setTimeout(
+        () => {
+          void tick().finally(() => {
+            if (!cancelled) {
+              scheduleNext();
+            }
+          });
+        },
+        first ? 0 : nextWatchDelayMs(),
+      );
     };
-    scheduleNext();
+    scheduleNext(true);
 
     return () => {
       cancelled = true;

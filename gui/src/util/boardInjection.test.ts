@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 import {
   accumulateBoardFetch,
-  BOARD_FETCH_TTL_MS,
   BOARD_INJECTION_RULE_NAME,
   BOARD_WINDOW_MAX_CHARS,
   BOARD_WINDOW_MAX_MESSAGES,
@@ -10,12 +9,13 @@ import {
   BoardSessionState,
   EMPTY_BOARD_SESSION_STATE,
   renderBoardInjectionBlock,
-  shouldFetchBoard,
 } from "./boardInjection";
 
 // Board auto-topic-injection (board-auto-topic-injection.md, revision 2):
-// pure unit tests for the TTL gate, the bounded accumulation and the block
-// rendering.
+// pure unit tests for the bounded accumulation and the block rendering.
+// (The TTL gate of the disabled run path is untested by design —
+// BOARD_RUN_PATH_FETCH_ENABLED, board-wake-mode.md amendment 2026-08-21
+// "Run-Pfad-Abschaltung".)
 
 // Explicit timestamp keeps all assertions deterministic (the production
 // default is `new Date()`).
@@ -57,28 +57,9 @@ const renderDefined = (board: BoardSessionState): string => {
 };
 
 describe("constants", () => {
-  it("uses the agreed TTL and window caps", () => {
-    expect(BOARD_FETCH_TTL_MS).toBe(15_000);
+  it("uses the agreed window caps", () => {
     expect(BOARD_WINDOW_MAX_MESSAGES).toBe(20);
     expect(BOARD_WINDOW_MAX_CHARS).toBe(40_000);
-  });
-});
-
-describe("shouldFetchBoard", () => {
-  it("fetches when never fetched", () => {
-    expect(shouldFetchBoard(undefined, 0)).toBe(true);
-  });
-
-  it("does not fetch within the TTL window", () => {
-    expect(shouldFetchBoard(1_000, 1_000 + BOARD_FETCH_TTL_MS - 1)).toBe(false);
-  });
-
-  it("fetches exactly at the TTL boundary", () => {
-    expect(shouldFetchBoard(1_000, 1_000 + BOARD_FETCH_TTL_MS)).toBe(true);
-  });
-
-  it("fetches beyond the TTL", () => {
-    expect(shouldFetchBoard(1_000, 1_000 + BOARD_FETCH_TTL_MS + 1)).toBe(true);
   });
 });
 

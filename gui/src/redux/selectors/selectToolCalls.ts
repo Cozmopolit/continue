@@ -87,8 +87,9 @@ export const selectIsConversationIdle = createSelector(
 // session holds only the synthetic summary item and is a continuation, not
 // a fresh conversation (amendment 2026-08-17). Deliver-before-consume
 // (amendment 2026-08-21): while blocked the watcher neither consumes nor
-// wakes — the messages stay server-side and the first real run's run-start
-// fetch delivers them.
+// wakes — the messages stay server-side; the first unblocked watcher tick
+// after the first real run ends delivers them (immediate run-end poll,
+// amendment 2026-08-21 "Run-Pfad-Abschaltung").
 export const selectConversationIsStarted = createSelector(
   (store: RootState) => store.session.history,
   (history) =>

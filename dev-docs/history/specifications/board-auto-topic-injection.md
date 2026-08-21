@@ -1,6 +1,10 @@
 # Board Auto-Topic-Injection (Fork Side)
 
-**Status:** Implementiert (Revision 2: LLM-Call-Level-Consumption)
+**Status:** Implementiert, Run-Pfad abgeschaltet (Revision 2: LLM-Call-Level-
+Consumption; der TTL-Fetch auf LLM-Call-Ebene ist seit 2026-08-21 hinter
+`BOARD_RUN_PATH_FETCH_ENABLED` deaktiviert — Zustellung nur noch über den
+Board-Wake-Watcher, siehe board-wake-mode.md Amendment 2026-08-21
+"Run-Pfad-Abschaltung")
 **Date:** 2026-08-14
 
 ### Revision 3 (2026-08-14, erster Live-Test nach Incident-Fix)

@@ -410,3 +410,45 @@ schlägt fehl → self-healing wie verlorener Ack.
 **Verifikation:** User-Vorgabe für diese Umsetzung: keine neuen Tests,
 Build/Typecheck als Gate (core-Build + gui `tsc:check`). Gezielte Tests
 gegen die finale Implementierung sind nachgeschoben.
+
+## Amendment 2026-08-21 (Run-Pfad-Abschaltung, Post-Run-Poll)
+
+**Kontext:** Revision 2 der In-Turn-Injection
+(board-auto-topic-injection.md) hat sich in der Praxis nicht bewährt:
+ein Injections-Block, der sich zwischen Tool-Loop-Calls eines Runs
+verändert, ist für das Modell unsichtbar — Agents reagieren nicht auf
+Nachrichten, die mitten im Turn ankommen. User-Entscheidung (2026-08-21):
+Funktionalität auf das reine Board-Wake reduzieren; der Codepfad wird
+nicht entfernt, sondern abgeschaltet (Reaktivierung im Zuge eines
+späteren Refactorings möglich).
+
+**Änderung 1 — Run-Pfad-Abschaltung:** Der TTL-gated Fetch auf
+LLM-Call-Ebene in `streamNormalInput` liegt hinter
+`BOARD_RUN_PATH_FETCH_ENABLED = false` (gui/src/util/boardInjection.ts);
+der Watcher ist der einzige Fetcher. Rendering des Blocks (weiterhin bei
+jedem Call) und der Ack hinter dem Stale-Turn-Guard bleiben aktiv — das
+Rendering ist das Transportvehikel des Wake-Blocks, der Ack räumt die
+Cursor ab. Die Testsuite des abgeschalteten Pfads
+(`streamResponse_boardInjection.test.ts`) wurde auf User-Anweisung
+gelöscht; die TTL-Gate-Tests in `boardInjection.test.ts` ebenfalls.
+
+**Änderung 2 — unmittelbarer Post-Run-Poll:** Der Watcher-Effekt
+re-mountet bei jedem busy→idle-Übergang; der erste Tick nach
+(Re-)Aktivierung feuert jetzt mit Delay 0 (`scheduleNext(first)`), erst
+die Folgeticks nutzen die gejitterte 60-s-Kadenz. Nachrichten, die
+während eines Runs auflaufen, werden unmittelbar nach Run-Ende
+zugestellt statt mit bis zu ~75 s Delay; Wake-Ketten drainieren ohne
+Wartezeit. Alle bestehenden Gates gelten unverändert.
+
+**Superseded:** Alle älteren Aussagen in diesem Dokument und in
+Code-Kommentaren, wonach blockierte Zustellung über den Run-Start-Fetch
+des nächsten Runs erfolgt — einen Run-Start-Fetch gibt es nicht mehr;
+Zustellung ausschließlich über den ersten freien Watcher-Tick, der nach
+Änderung 2 unmittelbar nach Ende des blockierenden Runs kommt.
+
+**Konsequenzen:** Wake-Mode aus = Board komplett still (keine
+Run-Start-Zustellung mehr). Poll-Frequenz koppelt an Run-Frequenz statt
+an die Uhr — ein `board/pending`-RPC pro Run-Ende; Hinweis für das
+CITT-seitige 403/429-Backoff. Ein Abort löst den Post-Run-Poll ebenfalls
+aus (ggf. Wake direkt nach manuellem Stopp) — ohne Zusatzlogik
+akzeptiert; der Mode-Toggle bleibt der Kill Switch.

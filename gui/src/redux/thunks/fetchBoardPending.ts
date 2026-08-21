@@ -8,10 +8,12 @@ import { AppDispatch } from "../store";
  * the workspace's subscriptions and accumulate them into session state.
  * Since the fetch/ack decoupling (board-wake-fetch-ack-entkopplung) the
  * fetch is a non-consuming peek; acknowledgment happens via
- * `ackBoardMessages` below after successful delivery. Extracted from
- * streamNormalInput so the run path (TTL-gated there) and the idle watcher
- * (60 s tick + jitter) fetch through one seam. Best-effort: failures are
- * logged and swallowed — a board failure never blocks a run or the watcher.
+ * `ackBoardMessages` below after successful delivery. The idle watcher
+ * (60 s tick + jitter, immediate on run end) is the only caller: the
+ * run-path fetch is disabled (BOARD_RUN_PATH_FETCH_ENABLED,
+ * board-wake-mode.md amendment 2026-08-21 "Run-Pfad-Abschaltung").
+ * Best-effort: failures are logged and swallowed — a board failure never
+ * blocks a run or the watcher.
  *
  * Returns the result on success (callers may inspect `messages`), undefined
  * on failure.
