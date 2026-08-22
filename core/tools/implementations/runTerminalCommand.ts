@@ -97,6 +97,92 @@ const getColorEnv = () => ({
   CLICOLOR_FORCE: "1",
 });
 
+// Terminal output sanitization — see terminal-output-noise.md.
+// TUI-style commands (listr2 spinners, progress bars) produce massively
+// bloated output (ANSI escapes + redraw frames) that would otherwise be
+// persisted 1:1 into the tool message and re-sent with every subsequent
+// request. Sanitize once at close: escape sequences can be split across
+// chunk boundaries, so per-chunk stripping is unreliable. Live partial
+// output stays raw so the GUI keeps its colors while the command runs.
+
+const MAX_OUTPUT_LINES = 500;
+const MAX_OUTPUT_CHARS = 20_000;
+
+// CSI sequences (ESC [ ... final byte), OSC sequences (ESC ] ... BEL/ST)
+// and other two-byte escapes. Inline regex: the strip-ansi package is
+// ESM-only and only a dependency of extensions/vscode.
+const ANSI_REGEX =
+  /(\u001B\[[0-?]*[ -/]*[@-~])|(\u001B\][^\u0007\u001B]*(?:\u001B\\|\u0007)?)|(\u001B[@-Z\\-_])/g;
+
+function keepLastCarriageReturnSegment(line: string): string {
+  if (!line.includes("\r")) {
+    return line;
+  }
+  // Carriage-return overwrite emulation: keep the last non-empty segment
+  // (progress-bar frames collapse into their final frame).
+  const segments = line.split("\r");
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i].length > 0) {
+      return segments[i];
+    }
+  }
+  return "";
+}
+
+function collapseRepeatedLines(text: string): string {
+  const result: string[] = [];
+  let previous: string | undefined;
+  for (const line of text.split("\n")) {
+    // Blank lines are never collapsed; runs of identical non-blank lines
+    // (redrawn frames) collapse to their first occurrence.
+    if (line.trim() !== "" && line === previous) {
+      continue;
+    }
+    result.push(line);
+    previous = line;
+  }
+  return result.join("\n");
+}
+
+function capOutput(text: string): string {
+  let result = text;
+  let linesTruncated = 0;
+
+  const lines = result.split("\n");
+  if (lines.length > MAX_OUTPUT_LINES) {
+    linesTruncated = lines.length - MAX_OUTPUT_LINES;
+    result = lines.slice(linesTruncated).join("\n");
+  }
+
+  if (result.length > MAX_OUTPUT_CHARS) {
+    const charsRemoved = result.length - MAX_OUTPUT_CHARS;
+    result = result.slice(charsRemoved);
+    const marker =
+      linesTruncated > 0
+        ? `(previous output truncated: ${linesTruncated} lines and ${charsRemoved} characters removed)`
+        : `(previous ${charsRemoved} characters truncated)`;
+    return `${marker}\n\n${result}`;
+  }
+
+  if (linesTruncated > 0) {
+    return `(previous ${linesTruncated} lines truncated)\n\n${result}`;
+  }
+  return result;
+}
+
+export function sanitizeTerminalOutput(raw: string): string {
+  if (!raw) {
+    return raw;
+  }
+  const stripped = raw.replace(ANSI_REGEX, "");
+  const normalized = stripped
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map(keepLastCarriageReturnSegment)
+    .join("\n");
+  return capOutput(collapseRepeatedLines(normalized));
+}
+
 // Only spawn processes locally when there is no remote workspace.
 // With extensionKind: ["ui", "workspace"], the extension host almost always
 // runs on the local machine. childProcess.spawn() executes on the extension
@@ -302,7 +388,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
                   {
                     name: "Terminal",
                     description: "Terminal command output",
-                    content: terminalOutput,
+                    content: sanitizeTerminalOutput(terminalOutput),
                     status: status,
                   },
                 ]);
@@ -312,7 +398,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
                   {
                     name: "Terminal",
                     description: "Terminal command output",
-                    content: terminalOutput,
+                    content: sanitizeTerminalOutput(terminalOutput),
                     status: status,
                   },
                 ]);
@@ -330,7 +416,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
                     {
                       name: "Terminal",
                       description: "Terminal command output",
-                      content: terminalOutput,
+                      content: sanitizeTerminalOutput(terminalOutput),
                       status: status,
                     },
                   ],
@@ -483,7 +569,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
             {
               name: "Terminal",
               description: "Terminal command output",
-              content: output.stdout ?? "",
+              content: sanitizeTerminalOutput(output.stdout ?? ""),
               status: status,
             },
           ];
@@ -493,7 +579,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
             {
               name: "Terminal",
               description: "Terminal command output",
-              content: error.stderr ?? error.toString(),
+              content: sanitizeTerminalOutput(error.stderr ?? error.toString()),
               status: status,
             },
           ];
