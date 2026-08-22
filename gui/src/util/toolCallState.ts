@@ -2,6 +2,11 @@ import { ToolCallDelta, ToolCallState } from "core";
 import { BuiltInToolNames } from "core/tools/builtIn";
 import { incrementalParseJson } from "core/util/incrementalParseJson";
 
+// Tool calls for which we already warned about post-completion argument
+// deltas — warn once per call, not once per delta.
+// See tool-call-args-discard-observability.md.
+const postCompletionDeltaWarned = new Set<string>();
+
 // Merge streamed tool calls
 // See example of data coming in here:
 // https://platform.openai.com/docs/guides/function-calling?api-mode=chat#streaming
@@ -44,6 +49,16 @@ export function addToolCallDeltaToState(
   try {
     // If args is JSON parseable, it is complete, don't add to it
     JSON.parse(currentArgs);
+    if (argsDelta && callId && !postCompletionDeltaWarned.has(callId)) {
+      // Non-empty deltas arriving after complete JSON are discarded above —
+      // either trailing provider noise or a model that closed the tool-call
+      // JSON prematurely and kept emitting. Surface it once per call so the
+      // case is attributable from the devtools console alone.
+      postCompletionDeltaWarned.add(callId);
+      console.warn(
+        `[toolCallState] discarding argument deltas after complete tool-call JSON (id: ${callId}, name: ${mergedName || "unknown"})`,
+      );
+    }
   } catch (e) {
     // Model streams in args in parts e.g. "{"file": "file1"" -> ", "line": 1}"
     mergedArgs = currentArgs + argsDelta;
