@@ -54,3 +54,14 @@ Effekt: max. 1 event-getriebener Full-Walk pro Fenster und Client; zwischen crea
 - [x] `core/core.ts` `files/*`-Handler: `[fs-watch]`-Info-Log mit Batch-Counts
 - [x] `core/context/providers/FileContextProvider.ts`: `[fs-watch]`-Info-Log in `loadSubmenuItems` (Dauer, Item-Count)
 - [x] Spec-Status → Implementiert, Checklist abhaken
+
+## Testabdeckung
+
+Das Wiring in `core/core.ts` ist durch den Integrationstest
+`core/filesChangedWiring.vitest.ts` abgesichert (InProcessMessenger als
+IDE-Seite + FileSystemIde über dem TEST_DIR):
+
+- `files/changed` lässt den `walkDirCache` intakt; der Ignore-File-Zweig
+  invalidiert weiterhin über `index/forceReIndex`
+- N created-Batches innerhalb eines Fensters erzeugen genau einen Send pro
+  Fensterkante (Coalescer-Wiring)
