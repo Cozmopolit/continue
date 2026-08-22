@@ -119,6 +119,10 @@ gearbeitet wird.
    Umformatierungen (History/Blame). `docs/` = Produktdoku (Mintlify);
    interne Doku ausschließlich in `dev-docs/`, zeitlos formuliert — dauerhafte
    Regeln, keine Datumsstempel, keine „User-Direktive"/Status-Tracker-Vermerke.
+   Specs sind dauerhafte Designdokumente: normativ (Was/Wie/Warum), kein
+   Implementierungsstatus, keine offenen Punkte/Deliverables/Owner/nächsten
+   Schritte — einzige Status-Angabe ist die Kopfzeile. Schreibtest: Würde der
+   Satz noch stimmen, wenn sechs Monate lang nichts passiert?
 6. **Kein Commit ohne explizites Go des Users** — Commit-Punkte gerne
    vorschlagen, aber niemals eigenständig committen. Wenn das Go kommt:
    alles Dirty committen — keine Dateiauswahl, keine Diskussion
