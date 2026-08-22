@@ -17,10 +17,6 @@ import {
 // BOARD_RUN_PATH_FETCH_ENABLED, board-wake-mode.md amendment 2026-08-21
 // "Run-Pfad-Abschaltung".)
 
-// Explicit timestamp keeps all assertions deterministic (the production
-// default is `new Date()`).
-const FETCHED_AT = new Date("2026-08-14T10:00:00.000Z");
-
 function makeMessage(
   overrides: Partial<BoardMessage> & Pick<BoardMessage, "id" | "topic">,
 ): BoardMessage {
@@ -51,7 +47,7 @@ const stateWith = (
 
 /** Renders and asserts a defined block; the undefined case is tested separately. */
 const renderDefined = (board: BoardSessionState): string => {
-  const block = renderBoardInjectionBlock(board, FETCHED_AT);
+  const block = renderBoardInjectionBlock(board);
   expect(block).toBeDefined();
   return block as string;
 };
@@ -187,17 +183,24 @@ describe("accumulateBoardFetch", () => {
 describe("renderBoardInjectionBlock", () => {
   it("returns undefined when there is nothing to show", () => {
     expect(
-      renderBoardInjectionBlock(EMPTY_BOARD_SESSION_STATE, FETCHED_AT),
+      renderBoardInjectionBlock(EMPTY_BOARD_SESSION_STATE),
     ).toBeUndefined();
   });
 
-  it("renders the header with ISO timestamp", () => {
+  it("renders the header with the newest rendered message createdAt (board-injection-delivered-marking.md)", () => {
     const block = renderBoardInjectionBlock(
-      stateWith({ messages: [makeMessage({ id: 1, topic: "t" })] }),
-      FETCHED_AT,
+      stateWith({
+        messages: [
+          makeMessage({ id: 1, topic: "t", createdAt: "2026-08-14T09:30:00Z" }),
+          makeMessage({ id: 2, topic: "t", createdAt: "2026-08-14T11:45:00Z" }),
+        ],
+      }),
     );
-    expect(block).toBe(
-      `# MsgBoard — neue Nachrichten (Stand: 2026-08-14T10:00:00.000Z)\n\n## Topic: t\n\n_[cittmsg] id 1 · from: delta → to: * · 2026-08-14T09:30:00Z_\n\nmessage body`,
+    expect(block).toContain(
+      "# MsgBoard — neue Nachrichten (Stand: 2026-08-14T11:45:00Z)",
+    );
+    expect(block).toContain(
+      "_[cittmsg] id 1 · from: delta → to: * · 2026-08-14T09:30:00Z_",
     );
   });
 
@@ -387,12 +390,12 @@ describe("renderBoardInjectionBlock — close notification", () => {
     expect(block).not.toContain("[cittmsg]");
   });
 
-  it("renders a block for close lines alone (no messages)", () => {
+  it("renders a block for close lines alone (no messages, no timestamp)", () => {
     const block = renderBoardInjectionBlock(
       stateWith({ closedTopicsNotified: ["x"] }),
-      FETCHED_AT,
     );
     expect(block).toBeDefined();
+    expect(block).not.toContain("Stand:");
   });
 
   it("renders close lines alongside message sections", () => {

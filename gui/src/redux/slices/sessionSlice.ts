@@ -36,6 +36,7 @@ import {
   accumulateBoardFetch,
   BoardSessionState,
   EMPTY_BOARD_SESSION_STATE,
+  markDelivered,
 } from "../../util/boardInjection";
 import { RootState } from "../store";
 import { streamResponseThunk } from "../thunks/streamResponse";
@@ -1183,6 +1184,12 @@ export const sessionSlice = createSlice({
     appendBoardMessages: (state, action: PayloadAction<BoardConsumeResult>) => {
       state.board = accumulateBoardFetch(state.board, action.payload);
     },
+    // Delivered marking at turn end (board-injection-delivered-marking.md):
+    // the injection block was part of a completed run; later runs render
+    // only fresh content.
+    markBoardDelivered: (state) => {
+      state.board = markDelivered(state.board);
+    },
     setIsInEdit: (state, action: PayloadAction<boolean>) => {
       state.isInEdit = action.payload;
     },
@@ -1322,6 +1329,7 @@ export const {
   setMode,
   setBoardFetchAttempted,
   appendBoardMessages,
+  markBoardDelivered,
   setIsSessionMetadataLoading,
   setAllSessionMetadata,
   addSessionMetadata,

@@ -52,6 +52,20 @@ export interface BoardSessionState {
    * within the session.
    */
   closedTopicsNotified: string[];
+  /**
+   * Window ids (message ids + oversized pointers) already delivered to the
+   * model by a completed turn (board-injection-delivered-marking.md).
+   * Render filter only — the window keeps the delivered content as the
+   * dedupe basis of accumulateBoardFetch. Pruned to the surviving window on
+   * each accumulation.
+   */
+  deliveredIds: number[];
+  /**
+   * Subset of closedTopicsNotified already delivered by a completed turn;
+   * render filter for the close lines. closedTopicsNotified itself stays
+   * the fetch-dedupe guard and is never cleared.
+   */
+  closedTopicsDelivered: string[];
 }
 
 export const EMPTY_BOARD_SESSION_STATE: BoardSessionState = {
@@ -63,6 +77,8 @@ export const EMPTY_BOARD_SESSION_STATE: BoardSessionState = {
   ackByTopic: {},
   lastFetchAt: undefined,
   closedTopicsNotified: [],
+  deliveredIds: [],
+  closedTopicsDelivered: [],
 };
 
 /**
@@ -152,6 +168,17 @@ export function accumulateBoardFetch(
   }
 
   const omitted = result.omitted;
+  // Delivered marking (board-injection-delivered-marking.md): prune the
+  // delivered render filter to the ids still present in messages ∪
+  // tooLargeIds after the eviction paths — ids evicted from the window need
+  // no filter entry.
+  const survivingIds = new Set<number>([
+    ...messages.map((m) => m.id),
+    ...tooLargeIds,
+  ]);
+  const deliveredIds = current.deliveredIds.filter((id) =>
+    survivingIds.has(id),
+  );
   return {
     messages,
     droppedCount,
@@ -167,41 +194,93 @@ export function accumulateBoardFetch(
         : current.omittedOldestId,
     lastFetchAt: current.lastFetchAt,
     closedTopicsNotified,
+    deliveredIds,
+    closedTopicsDelivered: current.closedTopicsDelivered,
   };
 }
 
 /**
- * Renders the accumulated session board state into the system-message block.
- * Returns undefined when there is nothing to show (no messages, no notes) so
- * the caller can skip adding the always-apply rule.
+ * Marks everything currently renderable as delivered
+ * (board-injection-delivered-marking.md) — called via the sessionSlice
+ * action at turn end, after the injection block was part of a completed
+ * run. The window keeps the delivered content (dedupe basis of
+ * accumulateBoardFetch); deliveredIds/closedTopicsDelivered are render
+ * filters only. The dropped/omitted notes belong to the delivered block and
+ * are zeroed with it.
+ */
+export function markDelivered(board: BoardSessionState): BoardSessionState {
+  const deliveredIds = new Set(board.deliveredIds);
+  for (const message of board.messages) {
+    deliveredIds.add(message.id);
+  }
+  for (const id of board.tooLargeIds) {
+    deliveredIds.add(id);
+  }
+  return {
+    ...board,
+    deliveredIds: [...deliveredIds],
+    // closedTopicsDelivered ⊆ closedTopicsNotified always holds and
+    // notified only grows within the session — copying is the union.
+    closedTopicsDelivered: [...board.closedTopicsNotified],
+    droppedCount: 0,
+    omittedTotal: 0,
+    omittedOldestId: undefined,
+  };
+}
+
+/**
+ * Renders the UNDELIVERED part of the accumulated session board state into
+ * the system-message block (board-injection-delivered-marking.md): messages
+ * and close lines already delivered by a completed turn are filtered out, so
+ * a later run never sees them again as „neue Nachrichten". Returns undefined
+ * when nothing undelivered remains, so the caller skips the always-apply
+ * rule entirely.
  */
 export function renderBoardInjectionBlock(
   board: BoardSessionState,
-  fetchedAt: Date = new Date(),
 ): string | undefined {
+  const delivered = new Set(board.deliveredIds);
+  const messages = board.messages.filter((m) => !delivered.has(m.id));
+  const tooLargeIds = board.tooLargeIds.filter((id) => !delivered.has(id));
+  const closedTopics = board.closedTopicsNotified.filter(
+    (topic) => !board.closedTopicsDelivered.includes(topic),
+  );
+
   if (
-    board.messages.length === 0 &&
+    messages.length === 0 &&
     board.droppedCount === 0 &&
     board.omittedTotal === 0 &&
-    board.tooLargeIds.length === 0 &&
-    board.closedTopicsNotified.length === 0
+    tooLargeIds.length === 0 &&
+    closedTopics.length === 0
   ) {
     return undefined;
   }
 
   const byTopic = new Map<string, BoardMessage[]>();
-  for (const message of board.messages) {
+  for (const message of messages) {
     const list = byTopic.get(message.topic) ?? [];
     list.push(message);
     byTopic.set(message.topic, list);
   }
 
+  // Honest freshness (board-injection-delivered-marking.md): the newest
+  // createdAt among the rendered messages, not the render time (ISO strings
+  // compare lexicographically). Close/notes-only blocks carry no timestamp.
+  const newestCreatedAt = messages.reduce<string | undefined>(
+    (newest, message) =>
+      newest === undefined || message.createdAt > newest
+        ? message.createdAt
+        : newest,
+    undefined,
+  );
   const sections: string[] = [
-    `# MsgBoard — neue Nachrichten (Stand: ${fetchedAt.toISOString()})`,
+    newestCreatedAt !== undefined
+      ? `# MsgBoard — neue Nachrichten (Stand: ${newestCreatedAt})`
+      : `# MsgBoard — neue Nachrichten`,
   ];
-  for (const [topic, messages] of byTopic) {
+  for (const [topic, topicMessages] of byTopic) {
     sections.push(`\n## Topic: ${topic}`);
-    for (const message of messages) {
+    for (const message of topicMessages) {
       const re = message.re != null ? ` · re: #${message.re}` : "";
       sections.push(
         `\n_[cittmsg] id ${message.id} · from: ${message.from} → to: ${message.to}${re} · ${message.createdAt}_\n\n${message.body}`,
@@ -209,16 +288,17 @@ export function renderBoardInjectionBlock(
     }
   }
   // Close notification (V11b fork side): own section, clearly a non-message —
-  // a close is lifecycle information, not a posted comment.
-  if (board.closedTopicsNotified.length > 0) {
+  // a close is lifecycle information, not a posted comment. Rendered until
+  // delivered (board-injection-delivered-marking.md).
+  if (closedTopics.length > 0) {
     sections.push(`\n## Geschlossene Topics (keine Nachrichten)`);
-    for (const topic of board.closedTopicsNotified) {
+    for (const topic of closedTopics) {
       sections.push(`- Topic '${topic}' wurde geschlossen`);
     }
   }
-  if (board.droppedCount > 0 && board.messages.length > 0) {
+  if (board.droppedCount > 0 && messages.length > 0) {
     sections.push(
-      `\n_${board.droppedCount} ältere Nachrichten dieser Session sind nicht mehr im Block (älter als #${board.messages[0].id}) — bei Bedarf per msg_list/msg_read nachladen._`,
+      `\n_${board.droppedCount} ältere Nachrichten dieser Session sind nicht mehr im Block (älter als #${messages[0].id}) — bei Bedarf per msg_list/msg_read nachladen._`,
     );
   }
   if (board.omittedTotal > 0) {
@@ -226,9 +306,9 @@ export function renderBoardInjectionBlock(
       `\n_${board.omittedTotal} weitere Nachrichten (älter als #${board.omittedOldestId}) wurden nicht injiziert — bei Bedarf per msg_list/msg_read nachladen._`,
     );
   }
-  if (board.tooLargeIds.length > 0) {
+  if (tooLargeIds.length > 0) {
     sections.push(
-      `\n_${board.tooLargeIds.length} Nachricht(en) übersteigen das Session-Fenster (~${BOARD_WINDOW_MAX_CHARS} Chars) und wurden nicht injiziert: ${board.tooLargeIds
+      `\n_${tooLargeIds.length} Nachricht(en) übersteigen das Session-Fenster (~${BOARD_WINDOW_MAX_CHARS} Chars) und wurden nicht injiziert: ${tooLargeIds
         .map((id) => `#${id}`)
         .join(", ")} — vollständig per msg_read nachladen._`,
     );

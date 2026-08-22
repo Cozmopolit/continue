@@ -175,7 +175,7 @@ Ergebnis-Block oben.
 
 ---
 
-**Verwandt:** `board-watch-followups.md` (Tech-Debt, Fork-Seite),
+**Verwandt:** `board-injection-delivered-marking.md` (Spec, Fork-Seite),
 `board-wake-mode.md` (Spec-Archiv), MsgBoard-v2-Design-Meeting
 (2026-08-17), Migrations-Entscheidung (Memory-Fragment
 `msgboard-migration-weg-von-github_2026_08_16`).

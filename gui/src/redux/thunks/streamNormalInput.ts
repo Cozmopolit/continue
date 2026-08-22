@@ -10,6 +10,7 @@ import {
   addPromptCompletionPair,
   endActiveReasoning,
   errorToolCall,
+  markBoardDelivered,
   rescueInterruptedReasoning,
   setActive,
   setAppliedRulesAtIndex,
@@ -432,6 +433,19 @@ export const streamNormalInput = createAsyncThunk<
 
     // 4. Execute remaining tool calls
     if (originalToolCalls.length === 0) {
+      // Board delivered marking (board-injection-delivered-marking.md): the
+      // turn completed without further tool calls — the injection block was
+      // part of this run's system message, so mark it delivered; the next
+      // run renders only fresh content. Staleness guard as in step 1: a
+      // replaced/aborted thunk must not mark into the newer turn's state —
+      // undelivered blocks re-render in the next run (the safe direction).
+      const freshState = getState();
+      if (
+        !streamAborter.signal.aborted &&
+        freshState.session.streamAborter === streamAborter
+      ) {
+        dispatch(markBoardDelivered());
+      }
       dispatch(setInactive());
     } else if (needsApprovalPolicies.length > 0) {
       const builtInReadonlyAutoApproved = autoApprovedPolicies.filter(

@@ -697,7 +697,7 @@ class VsCodeIde implements IDE {
       autoApproveAllTools: settings.get<boolean>("autoApproveAllTools", false),
       // Persisted via the Yolo path (setIdeSettings → continue.boardWatchMode,
       // registered in package.json); read back here so the mode survives
-      // window restarts (board-watch-followups.md).
+      // window restarts (board-wake-mode.md).
       boardWatchMode: settings.get<boolean>("boardWatchMode", false),
     };
     return ideSettings;
