@@ -627,6 +627,14 @@ export const sessionSlice = createSlice({
         delete state.contextTokens;
       }
     },
+    // Overloaded retries replace the aborted attempt instead of appending a
+    // second copy of its history mutations (overloaded-retry-history-rewind.md):
+    // the retrying closure truncates back to its pre-attempt snapshot length
+    // before re-executing its submits/appends.
+    truncateHistoryToLength: (state, { payload }: PayloadAction<number>) => {
+      const length = Math.max(0, Math.min(payload, state.history.length));
+      state.history = state.history.slice(0, length);
+    },
     deleteMessage: (state, action: PayloadAction<number>) => {
       // Deletes the current assistant message and the previous user message
       state.history.splice(action.payload - 1, 2);
@@ -1292,6 +1300,7 @@ export const {
   endActiveReasoning,
   setActive,
   submitEditorAndInitAtIndex,
+  truncateHistoryToLength,
   truncateHistoryToMessage,
   updateHistoryItemAtIndex,
   clearDanglingMessages,

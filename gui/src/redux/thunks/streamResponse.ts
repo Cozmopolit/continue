@@ -9,6 +9,7 @@ import {
   resetNextCodeBlockToApplyIndex,
   setPendingSelfCompaction,
   submitEditorAndInitAtIndex,
+  truncateHistoryToLength,
   updateHistoryItemAtIndex,
 } from "../slices/sessionSlice";
 import { ThunkApiType } from "../store";
@@ -28,11 +29,26 @@ export const streamResponseThunk = createAsyncThunk<
 >(
   "chat/streamResponse",
   async ({ editorState, modifiers, index }, { dispatch, extra, getState }) => {
+    // Overloaded retries replace the aborted attempt
+    // (overloaded-retry-history-rewind.md): the wrapper re-runs this whole
+    // closure, and re-submitting at history.length would append a second
+    // copy of the user message whenever the aborted attempt left captured
+    // content behind (partial text or thinking items). Snapshot the
+    // pre-submit length on the first attempt; retries truncate back to it
+    // first. Explicit-index submits (edit/resend) need no rewind — the
+    // resubmission branch of submitEditorAndInitAtIndex truncates anyway.
+    let rewindLength: number | undefined;
     await dispatch(
       streamThunkWrapper(async () => {
+        if (rewindLength !== undefined) {
+          dispatch(truncateHistoryToLength(rewindLength));
+        }
         const state = getState();
         const selectedChatModel = selectSelectedChatModel(state);
         const inputIndex = index ?? state.session.history.length; // Either given index or concat to end
+        if (index === undefined) {
+          rewindLength = inputIndex;
+        }
 
         if (!selectedChatModel) {
           throw new Error("No chat model selected");

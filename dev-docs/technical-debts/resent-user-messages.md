@@ -1,6 +1,6 @@
 ﻿# Resent / duplicated user messages without user action
 
-**Status:** Fixed — capture root cause fixed 2026-08-17; resend policy implemented 2026-08-17 (reasoning-resend-policy.md); one follow-up open (corrupted sessions)
+**Status:** Fixed — capture root cause fixed 2026-08-17; resend policy implemented 2026-08-17 (reasoning-resend-policy.md); persisted-duplicate variant fixed 2026-08-22 (overloaded-retry-history-rewind.md); one follow-up open (corrupted sessions)
 **Date:** 2026-08-14 (updated 2026-08-17)
 
 ## Problem
@@ -58,12 +58,14 @@ plus the reasoning-resend design:
    quoted in the model's next thinking → replayed again in every later run
    → **self-reinforcing** (explains "in every run since").
 
-Older incidents (2026-08-10, 2026-08-14) may be a **different variant** in
-this family: they reportedly had a persisted/UI-level duplicate, which the
-mechanism above cannot produce. Prime suspect there remains the
-overloaded-retry path (`streamThunkWrapper.tsx` re-issues
-`submitEditorAndInitAtIndex`, which would append a second
-[user, assistant] pair) — still open, see below.
+Older incidents (2026-08-10, 2026-08-14) were the **persisted-duplicate
+variant**, confirmed and fixed 2026-08-22
+(overloaded-retry-history-rewind.md): on "overloaded"/"529" errors the
+retry in `streamThunkWrapper.tsx` re-ran the whole run closure, re-issuing
+`submitEditorAndInitAtIndex` (a second [user, assistant] pair whenever the
+aborted attempt had captured content) and, in the tool loop, re-appending
+the tool message via `streamUpdate`. Retries now rewind the history to the
+pre-attempt snapshot first.
 
 ## Affected Areas
 
@@ -92,6 +94,8 @@ flags).
 - **Corrupted existing sessions:** sessions written before the fix carry
   corrupted `reasoning_details` permanently; affected agents should start
   fresh sessions rather than continuing them.
-- **Persisted-duplicate variant (08-10/08-14):** check the overloaded-retry
-  path in `streamThunkWrapper.tsx` / `streamResponse.ts` for double
-  `submitEditorAndInitAtIndex` on 429/overloaded retries.
+- **Persisted-duplicate variant (08-10/08-14) — RESOLVED 2026-08-22:**
+  confirmed and fixed per overloaded-retry-history-rewind.md — the retry
+  re-ran the history-mutating dispatches; retries now rewind the history to
+  the pre-attempt snapshot (both the run-start submit and the tool-loop
+  continuation). Recurred once more 2026-08-22 (zenith) before the fix.

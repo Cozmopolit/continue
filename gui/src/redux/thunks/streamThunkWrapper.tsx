@@ -46,7 +46,13 @@ export const streamThunkWrapper = createAsyncThunk<
 
       if (shouldRetry) {
         // Retries replace the attempt — no reasoning rescue here
-        // (rescue-interrupted-reasoning.md).
+        // (rescue-interrupted-reasoning.md). The retried closures rewind the
+        // history to their pre-attempt snapshots before re-executing their
+        // submits/appends, so a retry never appends duplicate messages
+        // (overloaded-retry-history-rewind.md).
+        console.warn(
+          `[stream-retry] overloaded error — retrying run (attempt ${attempt + 1}/${OVERLOADED_RETRIES}): ${message}`,
+        );
         await dispatch(cancelStream({ skipReasoningRescue: true }));
         const delayMs = OVERLOADED_DELAY_MS * 2 ** attempt;
         await new Promise((resolve) => setTimeout(resolve, delayMs));

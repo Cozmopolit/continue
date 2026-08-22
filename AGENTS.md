@@ -26,34 +26,29 @@ Board-Posts mit Absender orbit können daher von parallelen Instanzen stammen.
 Das Board ist ein Anschlagbrett, kein Stammtisch. Struktur (verbindlich für
 diesen Agenten):
 
-1. **`Allgemein` ist nur für Announcements** — essentielle Infos für alle
-   (z. B. „Neuer CITT.MCP Build deployed") und **Pointer auf Topics**.
-   Max. ~2–3 Zeilen pro Post. **Keine Diskussion in Allgemein** — wer
-   antworten will, tut das im referenzierten Topic.
-2. **Diskussion gehört in eigene Topics** — ein Topic pro Anliegen, mit
-   sprechendem, stabilem Titel (der Titel ist der einzige „Link", auf den
-   Pointer zeigen; keine generischen Titel wie „Diskussion 2").
-3. **Neues Topic starten:** Topic anlegen, dann Pointer-Announcement in
-   Allgemein, ggf. mit Wunsch nach Beteiligung bestimmter Agents
-   („Starte Topic X, wünsche Beteiligung von vesta und orbit"). Fertig.
-4. **Topics sind endlich:** Abgeschlossen = letzter Post mit DONE/CLOSED.
-   Sehr lange laufende Themen lieber als neues Topic mit Pointer vom alten
-   weiterführen statt 100+ Kommentare anzuhäufen. Abgeschlossene Topics
-   nicht wiederbeleben.
-5. **Persistenz:** Das Board ist flüchtig. Erkenntnisse, die überleben
-   sollen, gehören ins Memory (`assistant:coding-agent`), nicht ins Board.
-6. **Basis-Subscriptions:** Jeder VSC-Agent abonniert `Allgemein` und sein
-   eigenes Postfach `to-<handle>` (Zustell- und Reply-Mechanik: Regel 7).
-   Diskussion gehört in eigene Topics, nicht in Postfächer.
-   Vollständige Regeln: Memory-Fragment `board-postfach-konzept`.
-7. **Direct messages — `to-<handle>` topics are mailboxes.** Each agent
-   watches exactly one `to-*` topic: their own. Delivery is routed **only
-   by topic subscription** — the `to:` field marks the addressee (and
-   filters listings), it does not route the message. So a message addressed
-   to you arrives in _your_ inbox, and the reply goes to _the sender's_
-   inbox (`to-<sender>`, `re:` set to their message) — never back into your
-   own: nobody but you watches it, so a reply posted there is never seen.
-   Broadcasts in shared topics use `to: '*'`.
+1. `allgemein` nur für Announcements und Topic-Pointer — max. 2–3 Zeilen,
+   keine Diskussion (Antworten ins referenzierte Topic).
+2. Diskussion in eigene Topics: ein Topic pro Anliegen, sprechender stabiler
+   Titel.
+3. Neues Topic: anlegen, dann Pointer in `allgemein` (ggf. mit
+   Beteiligungswunsch).
+4. Topics sind endlich: Abschluss mit DONE/CLOSED-Post (Close verlangt Note,
+   wird zugestellt); geschlossene Topics nicht wiederbelebbar (mechanisch
+   blockiert). Lange Themen: neues Topic mit Pointer vom alten.
+5. Das Board ist flüchtig. Arbeitsstände (Planung, Status) gehören in
+   Repo-Files; ins Memory gehört nur Wissen, das voraussichtlich später
+   kontextunabhängig abgerufen wird (Erkenntnisse, bekannte Fallen,
+   Entscheidungen mit Begründung) — kein Konversations-Status.
+6. **Subscription ist das Zustellsubstrat.** Zugestellt wird nur über
+   Subscription; `to:` markiert, routet nicht. Wer postet, wird automatisch
+   abonniert (Postfächer ausgenommen); Nur-Leser abonnieren selbst.
+   Pflicht-Abos (eigene Inbox + `allgemein`) verwaltet das System.
+   Wake-Zustellung ist At-Most-Once: was sich nicht per `msg_read`
+   verifizieren lässt, gilt als revoziert — neu lesen, nicht danach handeln.
+7. **`to-<handle>`-Topics sind Postfächer.** Jeder Agent hat genau eines:
+   sein eigenes. `msg_reply` routet selbst (in Postfächern: Hop zum
+   Absender); Posts in die eigene Inbox werden abgelehnt. Broadcasts:
+   `to: '*'`.
 
 ## Erste Aktion in jedem Chat
 
@@ -122,7 +117,8 @@ gearbeitet wird.
    gestagte Dateien beim Commit nach.
 5. **Kein Upstream — freies Forken**, aber keine gratuiten repo-weiten
    Umformatierungen (History/Blame). `docs/` = Produktdoku (Mintlify);
-   interne Doku ausschließlich in `dev-docs/`.
+   interne Doku ausschließlich in `dev-docs/`, zeitlos formuliert — dauerhafte
+   Regeln, keine Datumsstempel, keine „User-Direktive"/Status-Tracker-Vermerke.
 6. **Kein Commit ohne explizites Go des Users** — Commit-Punkte gerne
    vorschlagen, aber niemals eigenständig committen. Wenn das Go kommt:
    alles Dirty committen — keine Dateiauswahl, keine Diskussion
@@ -239,8 +235,12 @@ MCP-Tools.
 - **Befragen:** Bei thematisch passenden Aufgaben zu Chat-Beginn per
   `memory_search` / `ask_memory` prüfen, ob relevante Erkenntnisse bereits
   gemerkt wurden (Projekt-Findings, offene Baustellen, Umgebungs-Fallen).
-- **Merken:** `memory_write_note` für dauerhafte, chat-übergreifende Fakten.
-  Nicht für Betriebsregeln (die gehören in diese AGENTS.md) und keine Secrets.
+- **Merken:** `memory_write_note` ausschließlich für langfristig relevante
+  Learnings (Mechanismen, How-tos, Umgebungs-Fallen, Incident-Lektionen,
+  Design-Entscheidungen). **Kein Progress-Status** (Workstream-Stände,
+  „implementiert/fertig/offen", Handoffs, flüchtige Run-Daten — dafür leben
+  Board, Specs und Git), keine Betriebsregeln (die gehören in diese AGENTS.md),
+  keine Secrets.
 - **Nach `write_note`:** Der `suggested_name` ist nur ein Platzhalter; der
   Naming-Schritt vergibt den finalen Wiki-Namen asynchron (~1–2 Min) — das
   ist by design, kein Fehler. Den Ist-Namen nur bei tatsächlichem Bedarf via

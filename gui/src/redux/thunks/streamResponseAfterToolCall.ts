@@ -6,6 +6,7 @@ import {
   ChatHistoryItemWithMessageId,
   resetNextCodeBlockToApplyIndex,
   streamUpdate,
+  truncateHistoryToLength,
 } from "../slices/sessionSlice";
 import { ThunkApiType } from "../store";
 import { streamNormalInput } from "./streamNormalInput";
@@ -41,6 +42,14 @@ export const streamResponseAfterToolCall = createAsyncThunk<
 >(
   "chat/streamAfterToolCall",
   async ({ toolCallId, depth = 0 }, { dispatch, getState }) => {
+    // Overloaded retries replace the aborted attempt
+    // (overloaded-retry-history-rewind.md): the wrapper re-runs this whole
+    // closure, and re-appending the tool message would duplicate it
+    // (streamUpdate never dedupes tool messages), with the failed attempt's
+    // partial assistant tail concatenated by the second stream. Snapshot the
+    // pre-append length on the first attempt; retries truncate back to it
+    // first, so the tool message lands exactly once.
+    let rewindLength: number | undefined;
     await dispatch(
       streamThunkWrapper(async () => {
         const state = getState();
@@ -51,6 +60,12 @@ export const streamResponseAfterToolCall = createAsyncThunk<
 
         if (!toolCallState) {
           return; // in cases where edit tool is cancelled mid apply, this will be triggered
+        }
+
+        if (rewindLength !== undefined) {
+          dispatch(truncateHistoryToLength(rewindLength));
+        } else {
+          rewindLength = state.session.history.length;
         }
 
         const toolOutput = toolCallState.output ?? [];
