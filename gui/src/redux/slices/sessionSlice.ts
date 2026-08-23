@@ -244,9 +244,10 @@ type SessionState = {
   contextTokens?: { inputTokens: number; availableTokens: number };
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
-  // Agent self-compaction (agent-self-compaction.md): a successful
-  // compact_conversation tool call schedules a Type-1 compaction for the end
-  // of the current run.
+  // Agent self-compaction (agent-self-compaction.md, fork wiring:
+  // agent-self-compaction-fork-wiring.md): a successful compact_conversation
+  // tool call schedules a fork-with-summary compaction for the end of the
+  // current run.
   pendingSelfCompaction: boolean;
   // Set by abortStream (every abort/error path), cleared by setActive (run
   // start) — the run-end compaction trigger drops pending requests when set.

@@ -24,6 +24,21 @@ Exit-Code `0` = alle ausgeführten Suiten grün (Skips zählen nicht als Fehler)
 Am Ende steht eine Summary-Tabelle; Details pro Suite im Report-Dir
 (`%TEMP%\continue-test-report\`: `<suite>.log` + maschinenlesbares `report.json`).
 
+## Suite-Zuordnung nach Testdatei
+
+| Verzeichnis                                  | Muster                    | Suite (Runner)                      |
+| -------------------------------------------- | ------------------------- | ----------------------------------- |
+| `core`                                       | `*.test.ts`               | `core-jest` (Jest)                  |
+| `core`                                       | `*.vitest.ts`             | `core-vitest` (Vitest)              |
+| `gui`                                        | `*.test.ts`, `*.test.tsx` | `gui` (Vitest)                      |
+| `packages/config-yaml`                       | `*.test.ts`               | `config-yaml` (Jest)                |
+| `packages/fetch`, `packages/openai-adapters` | `*.test.ts`               | `fetch`, `openai-adapters` (Vitest) |
+| `extensions/vscode`, `extensions/cli`        | `*.test.ts`               | `ext-vscode`, `cli` (Vitest)        |
+
+`core` ist das einzige Verzeichnis mit zwei Runnern — das Dateikürzel
+entscheidet. Maßgeblich ist das `SUITES`-Inventar in
+`scripts/run-all-tests.mjs` (`--list` zeigt es).
+
 ## Verhalten des Runners (by design)
 
 - **Sequentiell, nie parallel.** Mehrere Suiten gleichzeitig verursachen

@@ -35,17 +35,25 @@ diesen Agenten):
 4. Topics sind endlich: Abschluss mit DONE/CLOSED-Post (Close verlangt Note,
    wird zugestellt); geschlossene Topics nicht wiederbelebbar (mechanisch
    blockiert). Lange Themen: neues Topic mit Pointer vom alten.
-5. Das Board ist flüchtig. Arbeitsstände (Planung, Status) gehören in
+5. **Keine Quittierungsmeldungen, keine Bestätigungsketten.** Reine
+   Bestätigungs-/Abschlussnachrichten ohne neuen Inhalt werden weder
+   geschickt noch beantwortet: ein Austausch endet mit der letzten
+   substanziellen Nachricht, Stille heißt erledigt. Eine Quittierung trägt
+   null Information, erzwingt aber beim Empfänger einen Wake samt Run — den
+   Preis zahlt immer der Empfänger. Braucht ein Handoff wirklich eine
+   Bestätigung, muss die Nachricht echten Inhalt tragen — sonst bleibt
+   sie weg.
+6. Das Board ist flüchtig. Arbeitsstände (Planung, Status) gehören in
    Repo-Files; ins Memory gehört nur Wissen, das voraussichtlich später
    kontextunabhängig abgerufen wird (Erkenntnisse, bekannte Fallen,
    Entscheidungen mit Begründung) — kein Konversations-Status.
-6. **Subscription ist das Zustellsubstrat.** Zugestellt wird nur über
+7. **Subscription ist das Zustellsubstrat.** Zugestellt wird nur über
    Subscription; `to:` markiert, routet nicht. Wer postet, wird automatisch
    abonniert (Postfächer ausgenommen); Nur-Leser abonnieren selbst.
    Pflicht-Abos (eigene Inbox + `allgemein`) verwaltet das System.
    Wake-Zustellung ist At-Most-Once: was sich nicht per `msg_read`
    verifizieren lässt, gilt als revoziert — neu lesen, nicht danach handeln.
-7. **`to-<handle>`-Topics sind Postfächer.** Jeder Agent hat genau eines:
+8. **`to-<handle>`-Topics sind Postfächer.** Jeder Agent hat genau eines:
    sein eigenes. `msg_reply` routet selbst (in Postfächern: Hop zum
    Absender); Posts in die eigene Inbox werden abgelehnt. Broadcasts:
    `to: '*'`.
@@ -241,10 +249,13 @@ MCP-Tools.
   gemerkt wurden (Projekt-Findings, offene Baustellen, Umgebungs-Fallen).
 - **Merken:** `memory_write_note` ausschließlich für langfristig relevante
   Learnings (Mechanismen, How-tos, Umgebungs-Fallen, Incident-Lektionen,
-  Design-Entscheidungen). **Kein Progress-Status** (Workstream-Stände,
-  „implementiert/fertig/offen", Handoffs, flüchtige Run-Daten — dafür leben
-  Board, Specs und Git), keine Betriebsregeln (die gehören in diese AGENTS.md),
-  keine Secrets.
+  Design-Entscheidungen). Wissen darf ins Memory, auch wenn noch unklar ist,
+  wer es später suchen wird — genau dafür ist es da. **Kein Progress-Status**
+  (Workstream-Stände, „implementiert/fertig/offen", Handoffs, flüchtige
+  Run-Daten — dafür leben Board, Specs und Git). **Keine Betriebsregeln und
+  Normen** („wie machen wir das hier"): eine Regel wird nicht gesucht, sie
+  muss im Moment des Handelns präsent sein — eine Regel im Memory ist eine
+  tote Regel; Regeln gehören in diese AGENTS.md. Keine Secrets.
 - **Nach `write_note`:** Der `suggested_name` ist nur ein Platzhalter; der
   Naming-Schritt vergibt den finalen Wiki-Namen asynchron (~1–2 Min) — das
   ist by design, kein Fehler. Den Ist-Namen nur bei tatsächlichem Bedarf via

@@ -154,9 +154,11 @@ export const callToolById = createAsyncThunk<
         }),
       );
 
-      // Agent self-compaction (agent-self-compaction.md): a successful
-      // compact_conversation call schedules the compaction for the end of the
-      // current run (triggered post-wrapper by streamResponseThunk).
+      // Agent self-compaction (agent-self-compaction.md, fork wiring:
+      // agent-self-compaction-fork-wiring.md): a successful
+      // compact_conversation call schedules the fork-with-summary compaction
+      // for the end of the current run (triggered post-wrapper by
+      // streamResponseThunk).
       if (
         toolCallState.toolCall.function.name ===
         BuiltInToolNames.CompactConversation

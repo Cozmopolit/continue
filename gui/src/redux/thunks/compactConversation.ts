@@ -6,12 +6,13 @@ import { loadSession } from "./session";
 
 /**
  * Agent self-compaction (agent-self-compaction.md): hook-free Type-1
- * compaction runner shared by the UI button (useCompactConversation) and the
- * run-end trigger (streamResponseThunk). Semantics identical to the former
- * hook body: the compactionLoading flag doubles as the board-wake gate and
- * must only clear once the state swap (which resets the board buffer) is
- * done (board-wake-mode.md, amendment 2026-08-16 II). Errors are logged and
- * swallowed — the flag always clears, the watcher re-activates.
+ * (in-place) compaction runner for the UI button (useCompactConversation).
+ * The agent run-end trigger uses the fork runner instead (forkWithSummary.ts,
+ * agent-self-compaction-fork-wiring.md). The compactionLoading flag doubles
+ * as the board-wake gate and must only clear once the state swap (which
+ * resets the board buffer) is done (board-wake-mode.md, amendment
+ * 2026-08-16 II). Errors are logged and swallowed — the flag always clears,
+ * the watcher re-activates.
  */
 export const compactConversationThunk = createAsyncThunk<
   void,
