@@ -1,5 +1,10 @@
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
-import { LLMFullCompletionOptions, ModelDescription } from "core";
+import {
+  ChatMessage,
+  LLMFullCompletionOptions,
+  ModelDescription,
+  TextMessagePart,
+} from "core";
 import { getRuleId } from "core/llm/rules/getSystemMessageWithRules";
 import { ToCoreProtocol } from "core/protocol";
 import { BUILT_IN_GROUP_NAME } from "core/tools/builtIn";
@@ -219,6 +224,36 @@ export const streamNormalInput = createAsyncThunk<
         index: appliedRuleIndex,
         appliedRules: appliedRules,
       }),
+    );
+
+    // [reinject-forensics] (resent-user-messages family): fingerprint every
+    // outgoing LLM call so a recurrence is attributable. A duplicate user
+    // message in `messages` means injection at/before compile (client side);
+    // a clean fingerprint while the model perceives a resend means
+    // model-side perception. Temporary tripwire, console-only; pair with
+    // experimental.promptLogging for the persisted full payload.
+    const textOf = (m: ChatMessage): string =>
+      typeof m.content === "string"
+        ? m.content
+        : m.content
+            .map((p) => ("text" in p ? (p as TextMessagePart).text : ""))
+            .join("");
+    const lastWireMessage = messages[messages.length - 1];
+    const duplicateUserTail =
+      lastWireMessage?.role === "user" &&
+      messages
+        .slice(0, -1)
+        .some(
+          (m) => m.role === "user" && textOf(m) === textOf(lastWireMessage),
+        );
+    console.warn(
+      `[reinject-forensics] depth=${depth} roles=${messages
+        .map((m) => m.role[0])
+        .join("")} dupUserTail=${duplicateUserTail} lastHead=${
+        lastWireMessage
+          ? textOf(lastWireMessage).slice(0, 60).replace(/\s+/g, " ")
+          : ""
+      }`,
     );
 
     dispatch(setActive());

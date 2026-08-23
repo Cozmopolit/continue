@@ -274,19 +274,24 @@ Naturgewalten. Bei folgenden Situationen **sofort abbrechen und melden**:
 
 ## Conversation compaction
 
-Use the fork-side `compact_conversation` on this chat's history (NOT `citt_compact_conversation` —
-the CITT runtime knows nothing about Continue conversations) regularly at semantically safe
-boundaries to control context cost. Compact after a completed, durably recorded workstream—
-especially after a successful approved commit—or when work is explicitly paused, abandoned,
-or switches to an unrelated topic.
+Compaction ist die Ausnahme, nicht Hygiene: **Default ist keine Compaction.**
+Einzige Trigger: (1) nach einem approved Commit, der einen Workstream
+abschließt, (2) explizite User-Anweisung, (3) Arbeit explizit pausiert/
+aufgegeben oder Wechsel zu einem unabhängigen Thema. **Niemals am Ende eines
+Turns, der mit einer Frage, einem Vorschlag oder einem wartenden Go endet** —
+das ist exakt der Moment, in dem der nächste Schritt den Kontext braucht.
+Eine Compaction, die der User wegwerfen muss, kostet mehr als der Kontext,
+den sie spart.
 
-Do not compact while details remain active working material: between reconnaissance and its
-implementation, during implementation, testing, review or debugging, or while awaiting approval
-for the analyzed approach. Closely coupled follow-up work belongs to the same uncompacted block.
+Tool: die fork-seitige `compact_conversation` (NICHT `citt_compact_conversation` —
+die CITT-Runtime kennt Continue-Conversations nicht).
 
-Before compacting, ensure that outcomes, decisions, test results and open items can be preserved
-in the summary or already exist in a durable artifact. When uncertain whether the next step needs
-exact context, postpone compaction.
+Nicht compacken, solange Details aktives Arbeitsmaterial sind: zwischen Recon
+und ihrer Implementierung, während Implementierung, Tests, Review oder
+Debugging, oder während ein analysierter Ansatz auf Approval wartet. Eng
+gekoppelte Folgearbeit gehört in denselben nicht-gecompacteten Block. Vor
+einer Compaction müssen Ergebnisse/Entscheidungen/offene Punkte im Summary
+oder in einem dauerhaften Artefakt liegen. Bei Unsicherheit: verschieben.
 
 ## Session-Ende ist Sache des Users
 

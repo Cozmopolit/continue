@@ -13,6 +13,7 @@ import {
   setIsSessionMetadataLoading,
   updateSessionMetadata,
 } from "../slices/sessionSlice";
+import { addTab } from "../slices/tabsSlice";
 import { ThunkApiType } from "../store";
 import { updateSelectedModelByRole } from "../thunks/updateSelectedModelByRole";
 
@@ -291,5 +292,36 @@ export const saveCurrentSession = createAsyncThunk<
 
     const result = await dispatch(updateSession(updatedSession));
     unwrapResult(result);
+  },
+);
+
+// "New Session" with a tab guarantee: the new session always opens in its
+// own tab and the previous session's tab stays reachable. The previous
+// session is saved in the background first — saveCurrentSession self-guards
+// on empty history and captures the old session state synchronously, so the
+// newSession dispatch below cannot clobber it. The new tab is added
+// unassigned and active; the TabBar session listener then binds the fresh
+// session to it (handleSessionChange "active tab has no session ID" branch,
+// the pattern of the former TabBar.handleNewTab). Relying on
+// handleSessionChange alone would create no tab for an empty session and
+// would absorb the new session into an unassigned active tab.
+export const newSessionInNewTab = createAsyncThunk<void, void, ThunkApiType>(
+  "session/newSessionInNewTab",
+  async (_, { dispatch, getState }) => {
+    if (getState().session.history.length > 0) {
+      void dispatch(
+        saveCurrentSession({ openNewSession: false, generateTitle: true }),
+      );
+    }
+
+    const nextChatNumber = getState().tabs.tabs.length + 1;
+    dispatch(newSession());
+    dispatch(
+      addTab({
+        id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+        title: `Chat ${nextChatNumber}`,
+        isActive: true,
+      }),
+    );
   },
 );

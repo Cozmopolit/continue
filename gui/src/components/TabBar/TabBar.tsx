@@ -5,14 +5,13 @@ import styled from "styled-components";
 import { defaultBorderRadius } from "..";
 import { newSession } from "../../redux/slices/sessionSlice";
 import {
-  addTab,
   handleSessionChange,
   removeTab,
   setActiveTab,
   setTabs,
 } from "../../redux/slices/tabsSlice";
 import { AppDispatch, RootState } from "../../redux/store";
-import { loadSession, saveCurrentSession } from "../../redux/thunks/session";
+import { loadSession, newSessionInNewTab } from "../../redux/thunks/session";
 import { varWithFallback } from "../../styles/theme";
 
 // Haven't set up theme colors for tabs yet
@@ -155,24 +154,8 @@ export const TabBar = React.forwardRef<HTMLDivElement>((_, ref) => {
     );
   }, [currentSessionId, currentSessionTitle]);
 
-  const handleNewTab = async () => {
-    // Save current session before creating new one
-    if (hasHistory) {
-      await dispatch(
-        saveCurrentSession({ openNewSession: false, generateTitle: true }),
-      );
-    }
-
-    dispatch(newSession());
-
-    dispatch(
-      addTab({
-        id: generateId(),
-        title: `Chat ${tabs.length + 1}`,
-        isActive: true,
-        sessionId: undefined,
-      }),
-    );
+  const handleNewTab = () => {
+    void dispatch(newSessionInNewTab());
   };
 
   useEffect(() => {

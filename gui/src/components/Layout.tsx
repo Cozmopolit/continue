@@ -11,7 +11,7 @@ import { useAppDispatch, useAppSelector } from "../redux/hooks";
 import { setCodeToEdit } from "../redux/slices/editState";
 import { setShowDialog } from "../redux/slices/uiSlice";
 import { enterEdit, exitEdit } from "../redux/thunks/edit";
-import { saveCurrentSession } from "../redux/thunks/session";
+import { newSessionInNewTab } from "../redux/thunks/session";
 import { fontSize, isMetaEquivalentKeyPressed } from "../util";
 import { ROUTES } from "../util/navigation";
 import { FatalErrorIndicator } from "./config/FatalErrorNotice";
@@ -58,12 +58,7 @@ const Layout = () => {
       if (isInEdit) {
         await dispatch(exitEdit({}));
       } else {
-        await dispatch(
-          saveCurrentSession({
-            openNewSession: true,
-            generateTitle: true,
-          }),
-        );
+        await dispatch(newSessionInNewTab());
       }
     },
     [isInEdit],
@@ -89,12 +84,7 @@ const Layout = () => {
           }),
         );
       } else {
-        await dispatch(
-          saveCurrentSession({
-            openNewSession: true,
-            generateTitle: true,
-          }),
-        );
+        await dispatch(newSessionInNewTab());
       }
     },
     [isHome, isInEdit],

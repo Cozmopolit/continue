@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { saveCurrentSession } from "../../redux/thunks/session";
+import { newSessionInNewTab } from "../../redux/thunks/session";
 import { useCompactConversation } from "../../util/compactConversation";
 import { ToolTip } from "../gui/Tooltip";
 
@@ -77,12 +77,7 @@ const ContextStatus = () => {
                   <span
                     className="hover:text-link inline-block cursor-pointer underline"
                     onClick={() => {
-                      void dispatch(
-                        saveCurrentSession({
-                          openNewSession: true,
-                          generateTitle: false,
-                        }),
-                      );
+                      void dispatch(newSessionInNewTab());
                     }}
                   >
                     Start a new session
