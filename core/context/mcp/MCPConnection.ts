@@ -113,11 +113,13 @@ const BoardAckResultSchema = z.object({
 // board/pending responses — dedicated, slightly higher timeout.
 const TRANSCRIPT_DUMP_TIMEOUT = 10_000; // 10 seconds
 
+// continue-transcript-dump.md: fire-and-forget dump — the response is a bare
+// ack carrying nothing the fork acts on (debug log is built from the locally
+// known name). `ok` optional so the schema stays permissive against gateway
+// response evolution; extra keys are stripped (zod default), so CITT may add
+// fields without asking. Same rationale as BoardAckResultSchema above.
 const TranscriptDumpResultSchema = z.object({
-  ok: z.boolean(),
-  fragmentName: z.string(),
-  chunks: z.number(),
-  bytes: z.number(),
+  ok: z.boolean().optional(),
 });
 
 // Contract v1.2 (stateless CITT board gateway). sinceId omitted = init mode.

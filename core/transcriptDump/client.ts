@@ -54,9 +54,10 @@ export async function dumpTranscript(
     const memory =
       settings?.memory ??
       (handle ? `transcripts:${handle}` : TRANSCRIPT_FALLBACK_MEMORY);
+    const name = `transcript-continue-${session.sessionId}`;
     const result = await connection.transcriptDump({
       memory,
-      name: `transcript-continue-${session.sessionId}`,
+      name,
       text: renderTranscript(session),
       meta: {
         workspace: session.workspaceDirectory || undefined,
@@ -64,9 +65,11 @@ export async function dumpTranscript(
         title: session.title,
       },
     });
-    console.debug(
-      `Transcript dumped: ${result.fragmentName} (${result.chunks} chunks, ${result.bytes} bytes)`,
-    );
+    if (result.ok === false) {
+      console.warn(`Transcript dump not acknowledged: ${name}`);
+      return;
+    }
+    console.debug(`Transcript dumped: ${name} → ${memory}`);
   } catch (e) {
     console.warn(
       `Transcript dump skipped: ${e instanceof Error ? e.message : String(e)}`,

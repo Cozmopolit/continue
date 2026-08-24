@@ -2059,11 +2059,11 @@ export interface TranscriptDumpPayload {
   };
 }
 
+// Result of `transcript/dump`: a bare ack. The fork never branches on it;
+// `ok` is optional so the wire shape stays permissive (server may add keys —
+// stripped client-side — and may even drop `ok`).
 export interface TranscriptDumpResult {
-  ok: boolean;
-  fragmentName: string;
-  chunks: number;
-  bytes: number;
+  ok?: boolean;
 }
 
 export interface RuleMetadata {

@@ -98,7 +98,7 @@ Turn-Ende: streamThunkWrapper → saveCurrentSession → "history/save"
 → transcript/dump { memory: string, name: string, text: string,
                     meta?: { workspace?: string, agent?: string,
                              title?: string } }
-← { ok: true, fragmentName, chunks, bytes }   |   JSON-RPC error
+← { ok?: boolean }                    |   JSON-RPC error
 ```
 
 Abweichung vom Sketch: `sessionStart` entfällt (nicht im Save-Payload),
@@ -156,8 +156,11 @@ Gate macht `enabled: true` gefahrlos zum Default: Server ohne
 
 Board-Pattern (`consumeBoardPending` ist die Vorlage): alles try/catch,
 `console.warn`, niemals werfen, kein UI-Signal. Fehler heilt der nächste
-Turn (kumulativ + Replace). Response `{ok, fragmentName, chunks, bytes}`
-nur debug-loggen.
+Turn (kumulativ + Replace). Die Response ist eine Bare-Ack: `{ ok?: boolean }`,
+permissiv validiert (BoardAck-Muster — der Server darf Felder ergänzen oder
+`ok` ganz weglassen, Zod strippt den Rest). `ok === false` → warn; sonst wird
+nur der lokal bekannte Name debug-loggt. Es gibt nichts weiter zu lesen —
+Diagnostik ist Serversache.
 
 ## Implementation Checklist
 
@@ -169,7 +172,7 @@ nur debug-loggen.
       `"transcriptDump"` in der `sections`-Omit-Liste (kein Block-
       Section); `merge.ts` unangetastet (Spread übernimmt den Block)
 - [x] `core/index.d.ts`: `ContinueConfig.transcriptDump?:
-  TranscriptDumpConfig` + `ProxyCapabilities.transcript?: boolean` +
+TranscriptDumpConfig` + `ProxyCapabilities.transcript?: boolean` +
       neue Typen `TranscriptDumpConfig`/`TranscriptDumpPayload`/
       `TranscriptDumpResult`
 - [x] `core/config/yaml/loadYaml.ts`: Passthrough
@@ -184,7 +187,7 @@ nur debug-loggen.
       Raw-Args (`{}`) werden unterdrückt
 - [x] `core/transcriptDump/client.ts` (neu):
       `findTranscriptConnection()` + `dumpTranscript(session, ide,
-  configHandler)` — Skip-Logik (leere History, enabled=false, kein
+configHandler)` — Skip-Logik (leere History, enabled=false, kein
       transcript-fähiger Server), Handle via `loadBoardState(ide)`,
       Memory-Default `transcripts:<handle>` (Fallback
       `transcripts:continue`), meta `{ workspace, agent: handle, title }`
