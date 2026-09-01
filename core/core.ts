@@ -20,6 +20,7 @@ import Ollama from "./llm/llms/Ollama";
 import { EditAggregator } from "./nextEdit/context/aggregateEdits";
 import { createNewPromptFileV2 } from "./promptFiles/createNewPromptFile";
 import { callTool } from "./tools/callTool";
+import { suggestToolNames, toolNotFoundMessage } from "./tools/suggestToolName";
 import { ChatDescriber } from "./util/chatDescriber";
 import { compactConversation } from "./util/conversationCompaction";
 import { forkSessionWithSummary } from "./util/conversationFork";
@@ -1169,7 +1170,15 @@ export class Core {
 
       const tool = config?.tools.find((t) => t.function.name === toolName);
       if (!tool) {
-        throw new Error(`Tool ${toolName} not found`);
+        throw new Error(
+          toolNotFoundMessage(
+            `Tool ${toolName} not found`,
+            suggestToolNames(
+              toolName,
+              config.tools.map((t) => t.function.name),
+            ),
+          ),
+        );
       }
 
       try {
@@ -1240,7 +1249,21 @@ export class Core {
     );
 
     if (!tool) {
-      throw new Error(`Tool ${toolCall.function.name} not found`);
+      // Unknown tool name: report as a tool result error (not a stream
+      // error) so the model can retry with a corrected name
+      // (tool-name-did-you-mean.md).
+      const suggestions = suggestToolNames(
+        toolCall.function.name,
+        config.tools.map((t) => t.function.name),
+      );
+      return {
+        contextItems: [],
+        errorMessage: toolNotFoundMessage(
+          `Tool ${toolCall.function.name} not found`,
+          suggestions,
+        ),
+        errorReason: ContinueErrorReason.ToolNotFound,
+      };
     }
 
     if (!config.selectedModelByRole.chat) {

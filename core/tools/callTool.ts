@@ -27,6 +27,7 @@ import { viewDiffImpl } from "./implementations/viewDiff";
 import { viewRepoMapImpl } from "./implementations/viewRepoMap";
 import { viewSubdirectoryImpl } from "./implementations/viewSubdirectory";
 import { coerceArgsToSchema, safeParseToolCallArgs } from "./parseArgs";
+import { suggestToolNames, toolNotFoundMessage } from "./suggestToolName";
 
 async function callHttpTool(
   url: string,
@@ -232,7 +233,12 @@ export async function callBuiltInTool(
     case BuiltInToolNames.CompactConversation:
       return await compactConversationImpl(args, extras);
     default:
-      throw new Error(`Tool "${functionName}" not found`);
+      throw new Error(
+        toolNotFoundMessage(
+          `Tool "${functionName}" not found`,
+          suggestToolNames(functionName, Object.values(BuiltInToolNames)),
+        ),
+      );
   }
 }
 

@@ -222,6 +222,15 @@ export function McpAppRenderer({
       if (output.status === "error") {
         throw new Error(`Failed to call tool from MCP UI: ${output.error}`);
       }
+      if (output.content.errorMessage) {
+        // Tool-level failure (e.g. unknown tool name, see
+        // tool-name-did-you-mean.md): surface as error result instead of
+        // an empty success.
+        return {
+          content: [{ type: "text", text: output.content.errorMessage }],
+          isError: true,
+        };
+      }
       return {
         content: output.content.contextItems.map((ci) => ({
           type: "text",

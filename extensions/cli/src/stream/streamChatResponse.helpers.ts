@@ -3,6 +3,10 @@
 
 import type { ToolStatus, Usage } from "core/index.js";
 import { calculateRequestCost } from "core/llm/utils/calculateRequestCost.js";
+import {
+  suggestToolNames,
+  toolNotFoundMessage,
+} from "core/tools/suggestToolName.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { ChatCompletionToolMessageParam } from "openai/resources/chat/completions.mjs";
 
@@ -399,7 +403,15 @@ export async function preprocessStreamedToolCalls(
       const availableTools: Tool[] = await getAllAvailableTools(isHeadless);
       const tool = availableTools.find((t) => t.name === toolCall.name);
       if (!tool) {
-        throw new Error(`Tool ${toolCall.name} not found`);
+        throw new Error(
+          toolNotFoundMessage(
+            `Tool ${toolCall.name} not found`,
+            suggestToolNames(
+              toolCall.name,
+              availableTools.map((t) => t.name),
+            ),
+          ),
+        );
       }
 
       validateToolCallArgsPresent(toolCall, tool);
