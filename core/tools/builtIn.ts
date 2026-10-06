@@ -21,6 +21,9 @@ export enum BuiltInToolNames {
   // Agent self-compaction (agent-self-compaction.md)
   CompactConversation = "compact_conversation",
 
+  // MCP server management (mcp-server-management.md)
+  McpServerManagement = "mcp_server_management",
+
   // excluded from allTools for now
   ViewRepoMap = "view_repo_map",
   ViewSubdirectory = "view_subdirectory",

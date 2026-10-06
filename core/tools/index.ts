@@ -14,6 +14,7 @@ export const getBaseToolDefinitions = () => [
   toolDefinitions.createRuleBlock,
   toolDefinitions.fetchUrlContentTool,
   toolDefinitions.compactConversationTool,
+  toolDefinitions.mcpServerManagementTool,
 ];
 
 export const getConfigDependentToolDefinitions = async (

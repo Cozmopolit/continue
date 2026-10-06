@@ -14,6 +14,7 @@ import { fetchUrlContentImpl } from "./implementations/fetchUrlContent";
 import { fileGlobSearchImpl } from "./implementations/globSearch";
 import { grepSearchImpl } from "./implementations/grepSearch";
 import { lsToolImpl } from "./implementations/lsTool";
+import { mcpServerManagementImpl } from "./implementations/mcpServerManagement";
 import { readCurrentlyOpenFileImpl } from "./implementations/readCurrentlyOpenFile";
 import { readFileImpl } from "./implementations/readFile";
 
@@ -232,6 +233,8 @@ export async function callBuiltInTool(
       return await getWorkspaceRootImpl(args, extras);
     case BuiltInToolNames.CompactConversation:
       return await compactConversationImpl(args, extras);
+    case BuiltInToolNames.McpServerManagement:
+      return await mcpServerManagementImpl(args, extras);
     default:
       throw new Error(
         toolNotFoundMessage(
