@@ -316,11 +316,12 @@ den sie spart.
 Tool: die fork-seitige `compact_conversation` (NICHT `citt_compact_conversation` —
 die CITT-Runtime kennt Continue-Conversations nicht).
 
-**Auto-continue** (`autoContinue: true`, optional `continueMessage`): die
-Compaction forkt wie immer in eine neue Session, startet dort aber sofort
-den Folge-Run — mit der Continue-Message (Default: „Proceed with the next
-step as planned.") als erster, sichtbarer User-Message — ohne auf den User
-zu warten. Nur an echten Workstream-Grenzen einsetzen: dort, wo sonst ein
+**Auto-continue** (`continueMessage`-Parameter): die Compaction forkt wie
+immer in eine neue Session, startet dort aber sofort den Folge-Run — mit
+der Continue-Message als erster, sichtbarer User-Message — ohne auf den
+User zu warten. Auto-continue ist genau dann aktiv, wenn `continueMessage`
+gesetzt ist; ohne Message wartet die neue Session auf externen Input. Nur
+an echten Workstream-Grenzen einsetzen: dort, wo sonst ein
 „weiter mit X" des Users käme und der nächste Schritt bereits feststeht;
 niemals mid-task. Die Continue-Message konkret formulieren („Beginne Phase
 3: …") — der Folge-Run sieht nur die Summary plus diese Message. Das

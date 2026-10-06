@@ -1,7 +1,6 @@
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { ContextItem, McpUiState } from "core";
 import { BuiltInToolNames, CLIENT_TOOLS_IMPLS } from "core/tools/builtIn";
-import { DEFAULT_AUTO_CONTINUE_MESSAGE } from "core/tools/definitions/compactConversation";
 import { ContinueError, ContinueErrorReason } from "core/util/errors";
 
 import { callClientTool } from "../../util/clientTools/callClientTool";
@@ -119,20 +118,21 @@ export const callToolById = createAsyncThunk<
   // Agent self-compaction auto-continue
   // (agent-self-compaction-auto-continue.md): resolve the pending payload
   // and check the circuit-breaker budget at tool-call time, so the
-  // confirmation the agent receives is honest. Budget exhaustion still
-  // compacts — only the follow-up run is denied, and the confirmation is
-  // replaced before it reaches the history. The trim-or-default resolution
-  // mirrors compactConversationImpl — keep both in sync.
+  // confirmation the agent receives is honest. A non-blank continueMessage
+  // IS the auto-continue request — there is no separate flag. Budget
+  // exhaustion still compacts — only the follow-up run is denied, and the
+  // confirmation is replaced before it reaches the history. The trim
+  // resolution mirrors compactConversationImpl — keep both in sync.
   const isSelfCompactionCall =
     toolCallState.toolCall.function.name ===
     BuiltInToolNames.CompactConversation;
   let selfCompactionPayload: PendingSelfCompaction | undefined;
   if (isSelfCompactionCall && !error) {
     const args = (toolCallState.parsedArgs ?? {}) as {
-      autoContinue?: boolean;
       continueMessage?: string;
     };
-    if (args.autoContinue === true) {
+    const continueMessage = args.continueMessage?.trim();
+    if (continueMessage) {
       const session = getState().session;
       const wouldBe = session.currentRunWasAutoContinue
         ? session.consecutiveAutoContinues + 1
@@ -148,11 +148,7 @@ export const callToolById = createAsyncThunk<
         );
         selfCompactionPayload = {};
       } else {
-        selfCompactionPayload = {
-          autoContinueMessage: args.continueMessage?.trim()
-            ? args.continueMessage.trim()
-            : DEFAULT_AUTO_CONTINUE_MESSAGE,
-        };
+        selfCompactionPayload = { autoContinueMessage: continueMessage };
       }
     } else {
       selfCompactionPayload = {};

@@ -13,13 +13,17 @@ multi-phase agent workflows this forces the user to act as a pure "continue"
 signal between workstreams, even though the agent knows exactly where the
 workstream boundary is and what comes next.
 
-Give the tool an optional auto-continue mode: after the fork, a synthetic
-user message ("proceed as planned", or an agent-provided text) is submitted
-into the new session, starting the next run without user intervention.
+Give the tool an optional auto-continue mode: after the fork, an
+agent-provided synthetic user message is submitted into the new session,
+starting the next run without user intervention. Providing the message IS
+the opt-in — there is deliberately no separate boolean flag: a flag the
+model forgets to set silently degrades an intended auto-continue to a
+plain compaction (observed failure class), so the message alone carries
+the truth.
 
 ## Scope
 
-- Core: `compact_conversation` tool definition (new optional parameters) and
+- Core: `compact_conversation` tool definition (new optional parameter) and
   implementation (confirmation wording).
 - GUI: pending-flag payload (was boolean), budget check in `callToolById`,
   auto-continue dispatch in the run-end trigger, circuit-breaker state.
@@ -55,7 +59,7 @@ Existing pieces this extends:
   synthetic user message — `streamResponseThunk({ editorState: <tiptap
 doc>, modifiers })`. Auto-continue reuses exactly this entry point.
 - **Tool args in the GUI**: `ToolCallState.parsedArgs` is available in
-  `callToolById`, so the new parameters can be evaluated at tool-call time.
+  `callToolById`, so the new parameter can be evaluated at tool-call time.
 
 **Circuit breaker.** Auto-continue removes the last external gate on run
 chaining: an agent could compact-and-continue indefinitely without any
@@ -96,11 +100,12 @@ successful fork) the chain ends there.
 ## Solution
 
 ```
-agent calls compact_conversation({ autoContinue?: boolean, continueMessage?: string })
-  core impl: scheduling confirmation (wording reflects auto-continue mode)
+agent calls compact_conversation({ continueMessage?: string })
+  core impl: scheduling confirmation (wording reflects whether a
+  follow-up run was requested)
   callToolById (on success):
-    autoContinue not requested -> setPendingSelfCompaction({})   [today's behavior]
-    autoContinue requested:
+    no/blank continueMessage -> setPendingSelfCompaction({})   [plain compaction]
+    continueMessage present (auto-continue requested):
       wouldBe = currentRunWasAutoContinue ? consecutiveAutoContinues + 1 : 1
       wouldBe > MAX_AUTO_CONTINUE_CHAIN (10)
         -> setPendingSelfCompaction({})                         [compaction only]
@@ -108,7 +113,7 @@ agent calls compact_conversation({ autoContinue?: boolean, continueMessage?: str
            budget-denied message before updateToolCallOutput
       otherwise
         -> setPendingSelfCompaction({ autoContinueMessage:
-             continueMessage ?? DEFAULT_AUTO_CONTINUE_MESSAGE })
+             continueMessage.trim() })
   run ends normally, session saved by the wrapper
   streamResponseThunk post-wrapper:
     pending flag set; guards unchanged (not aborted, not edit, no compaction
@@ -130,11 +135,13 @@ agent calls compact_conversation({ autoContinue?: boolean, continueMessage?: str
          on failure: toast only — no counter change, chain ends
 ```
 
-- **Tool parameters**: `autoContinue?: boolean` (default false),
-  `continueMessage?: string` (only meaningful with `autoContinue: true`).
-  `DEFAULT_AUTO_CONTINUE_MESSAGE` is exported from the core tool definition
-  file (single source for definition description, impl confirmation, and
-  the GUI fallback): `"Proceed with the next step as planned."`
+- **Tool parameter**: `continueMessage?: string`. Providing a non-blank
+  message IS the auto-continue request — there is no separate flag and no
+  default text. A blank/whitespace-only message counts as absent: plain
+  compaction. (An earlier revision had an `autoContinue` boolean gating
+  the message plus a default text; both were removed because models
+  repeatedly sent the message without the flag, silently degrading the
+  intended auto-continue to a plain compaction.)
 - **Pending-flag type**: `pendingSelfCompaction: false | { autoContinueMessage?: string }`.
   Presence of `autoContinueMessage` marks the auto-continue request.
 - **New session state**: `consecutiveAutoContinues: number` (init 0),
@@ -143,7 +150,7 @@ agent calls compact_conversation({ autoContinue?: boolean, continueMessage?: str
   explicit reset: `currentRunWasAutoContinue === false` re-bases it to 1 at
   the next auto-continue.
 - **Repeated tool calls within one run**: the last call wins (payload
-  overwrite), same as today's implicit boolean behavior.
+  overwrite).
 - The auto-continue message is a normal, visible, abortable user message in
   the new session's history — all user controls (stop, edit) apply.
 - **Tool description / systemMessageDescription** keep their usage-guiding
@@ -156,6 +163,8 @@ agent calls compact_conversation({ autoContinue?: boolean, continueMessage?: str
 - Normal case: run ends, fork switches into the new session, and a follow-up
   run starts there with the continue message as its first user message;
   the source session remains untouched.
+- No/blank continue message: plain compaction exactly as without the
+  auto-continue feature — the new session waits for external input.
 - Budget exhausted (11th consecutive auto-continue requested): compaction
   proceeds, no auto-continue; the agent's confirmation says so, and the run
   ends waiting for external input.
@@ -167,13 +176,13 @@ agent calls compact_conversation({ autoContinue?: boolean, continueMessage?: str
 
 ## Implementation Checklist
 
-- [x] `core/tools/definitions/compactConversation.ts`: add `autoContinue` /
-      `continueMessage` parameters; export `DEFAULT_AUTO_CONTINUE_MESSAGE`;
-      description + `systemMessageDescription` cover auto-continue
-      semantics and discipline.
-- [x] `core/tools/implementations/compactConversation.ts`: read args,
-      confirmation wording reflects auto-continue (with the resolved
-      message); comment update.
+- [x] `core/tools/definitions/compactConversation.ts`: add the
+      `continueMessage` parameter; description + `systemMessageDescription`
+      cover auto-continue semantics (message presence = opt-in) and
+      discipline.
+- [x] `core/tools/implementations/compactConversation.ts`: read
+      `continueMessage` (trim; non-blank = auto-continue), confirmation
+      wording reflects the mode (naming the message); comment update.
 - [x] `gui/src/redux/slices/sessionSlice.ts`: `pendingSelfCompaction`
       payload type; `consecutiveAutoContinues` + `currentRunWasAutoContinue`
       state; `MAX_AUTO_CONTINUE_CHAIN = 10`; `setPendingSelfCompaction`
