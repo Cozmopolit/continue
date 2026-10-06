@@ -166,6 +166,7 @@ describe("streamResponseThunk", () => {
         }),
         payload: undefined,
       },
+      { type: "session/setCurrentRunWasAutoContinue", payload: false },
       {
         type: "chat/streamWrapper/pending",
         meta: expect.objectContaining({
@@ -278,6 +279,7 @@ describe("streamResponseThunk", () => {
         type: "session/rescueInterruptedReasoning",
         payload: undefined,
       },
+      { type: "session/markBoardDelivered", payload: undefined },
       {
         type: "session/setInactive",
         payload: undefined,
@@ -601,6 +603,7 @@ describe("streamResponseThunk", () => {
     const actionTypes = dispatchedActions.map((action: any) => action.type);
     expect(actionTypes).toEqual([
       "chat/streamResponse/pending",
+      "session/setCurrentRunWasAutoContinue",
       "chat/streamWrapper/pending",
       "session/submitEditorAndInitAtIndex",
       "session/resetNextCodeBlockToApplyIndex",
@@ -635,6 +638,7 @@ describe("streamResponseThunk", () => {
       "session/streamUpdate",
       "session/addPromptCompletionPair",
       "session/rescueInterruptedReasoning",
+      "session/markBoardDelivered",
       "session/setInactive",
       "chat/streamNormalInput/fulfilled",
       "session/saveCurrent/pending",
@@ -969,6 +973,7 @@ describe("streamResponseThunk", () => {
         },
         payload: undefined,
       },
+      { type: "session/setCurrentRunWasAutoContinue", payload: false },
       {
         type: "chat/streamWrapper/pending",
         meta: {

@@ -108,6 +108,7 @@ describe("streamResponseThunk", () => {
         }),
         payload: undefined,
       },
+      { type: "session/setCurrentRunWasAutoContinue", payload: false },
       {
         type: "chat/streamWrapper/pending",
         meta: expect.objectContaining({
@@ -258,6 +259,7 @@ describe("streamResponseThunk", () => {
         }),
         payload: undefined,
       },
+      { type: "session/setCurrentRunWasAutoContinue", payload: false },
       {
         type: "chat/streamWrapper/pending",
         meta: expect.objectContaining({
@@ -566,6 +568,7 @@ describe("streamResponseThunk", () => {
         }),
         payload: undefined,
       },
+      { type: "session/setCurrentRunWasAutoContinue", payload: false },
       {
         type: "chat/streamWrapper/pending",
         meta: expect.objectContaining({

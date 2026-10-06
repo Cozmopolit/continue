@@ -1,13 +1,16 @@
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { ContextItem, McpUiState } from "core";
 import { BuiltInToolNames, CLIENT_TOOLS_IMPLS } from "core/tools/builtIn";
+import { DEFAULT_AUTO_CONTINUE_MESSAGE } from "core/tools/definitions/compactConversation";
 import { ContinueError, ContinueErrorReason } from "core/util/errors";
 
 import { callClientTool } from "../../util/clientTools/callClientTool";
 import { selectSelectedChatModel } from "../slices/configSlice";
+import type { PendingSelfCompaction } from "../slices/sessionSlice";
 import {
   acceptToolCall,
   errorToolCall,
+  MAX_AUTO_CONTINUE_CHAIN,
   setInactive,
   setPendingSelfCompaction,
   setToolCallCalling,
@@ -113,6 +116,49 @@ export const callToolById = createAsyncThunk<
     return;
   }
 
+  // Agent self-compaction auto-continue
+  // (agent-self-compaction-auto-continue.md): resolve the pending payload
+  // and check the circuit-breaker budget at tool-call time, so the
+  // confirmation the agent receives is honest. Budget exhaustion still
+  // compacts — only the follow-up run is denied, and the confirmation is
+  // replaced before it reaches the history. The trim-or-default resolution
+  // mirrors compactConversationImpl — keep both in sync.
+  const isSelfCompactionCall =
+    toolCallState.toolCall.function.name ===
+    BuiltInToolNames.CompactConversation;
+  let selfCompactionPayload: PendingSelfCompaction | undefined;
+  if (isSelfCompactionCall && !error) {
+    const args = (toolCallState.parsedArgs ?? {}) as {
+      autoContinue?: boolean;
+      continueMessage?: string;
+    };
+    if (args.autoContinue === true) {
+      const session = getState().session;
+      const wouldBe = session.currentRunWasAutoContinue
+        ? session.consecutiveAutoContinues + 1
+        : 1;
+      if (wouldBe > MAX_AUTO_CONTINUE_CHAIN) {
+        output = output?.map((item) =>
+          item.name === "Compaction scheduled"
+            ? {
+                ...item,
+                content: `Compaction request registered — but the auto-continue budget (${MAX_AUTO_CONTINUE_CHAIN} consecutive auto-continues without an externally triggered run) is exhausted, so no follow-up run was scheduled: the compaction proceeds normally at the end of this run and the new session waits for external input. End the run when you are done.`,
+              }
+            : item,
+        );
+        selfCompactionPayload = {};
+      } else {
+        selfCompactionPayload = {
+          autoContinueMessage: args.continueMessage?.trim()
+            ? args.continueMessage.trim()
+            : DEFAULT_AUTO_CONTINUE_MESSAGE,
+        };
+      }
+    } else {
+      selfCompactionPayload = {};
+    }
+  }
+
   if (error) {
     dispatch(
       updateToolCallOutput({
@@ -155,15 +201,14 @@ export const callToolById = createAsyncThunk<
       );
 
       // Agent self-compaction (agent-self-compaction.md, fork wiring:
-      // agent-self-compaction-fork-wiring.md): a successful
+      // agent-self-compaction-fork-wiring.md, auto-continue:
+      // agent-self-compaction-auto-continue.md): a successful
       // compact_conversation call schedules the fork-with-summary compaction
       // for the end of the current run (triggered post-wrapper by
-      // streamResponseThunk).
-      if (
-        toolCallState.toolCall.function.name ===
-        BuiltInToolNames.CompactConversation
-      ) {
-        dispatch(setPendingSelfCompaction(true));
+      // streamResponseThunk); the payload carries the resolved auto-continue
+      // message when one was requested and budget-approved.
+      if (selfCompactionPayload !== undefined) {
+        dispatch(setPendingSelfCompaction(selfCompactionPayload));
       }
     }
 

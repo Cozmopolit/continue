@@ -12,9 +12,14 @@ import { loadSession } from "./session";
  * clear once the session switch (which resets the board buffer) is done
  * (board-wake-mode.md, amendment 2026-08-16 II). Errors are surfaced via
  * toast — the source session is never touched, nothing is lost.
+ *
+ * Returns the new session id, or undefined when the fork failed (the error
+ * toast has already been shown). The run-end trigger keys the auto-continue
+ * dispatch off this (agent-self-compaction-auto-continue.md); the hook
+ * caller ignores the return value.
  */
 export const forkWithSummaryThunk = createAsyncThunk<
-  void,
+  string | undefined,
   { sessionId: string; index: number },
   ThunkApiType
 >("chat/forkWithSummary", async ({ sessionId, index }, { dispatch, extra }) => {
@@ -43,12 +48,14 @@ export const forkWithSummaryThunk = createAsyncThunk<
         saveCurrentSession: false,
       }),
     );
+    return result.content.newSessionId;
   } catch (error) {
     console.error("Error forking conversation:", error);
     extra.ideMessenger.post("showToast", [
       "error",
       "Failed to start new conversation with summary",
     ]);
+    return undefined;
   } finally {
     dispatch(setCompactionLoading({ index, loading: false }));
   }

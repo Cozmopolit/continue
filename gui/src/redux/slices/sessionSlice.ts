@@ -220,6 +220,20 @@ export type ChatHistoryItemWithMessageId = ChatHistoryItem & {
   message: ChatMessage & { id: string };
 };
 
+// Auto-continue (agent-self-compaction-auto-continue.md): payload of the
+// pending self-compaction flag — autoContinueMessage present means the
+// agent requested (and was granted) an automatic follow-up run in the
+// forked session.
+export interface PendingSelfCompaction {
+  autoContinueMessage?: string;
+}
+
+// Circuit breaker for consecutive auto-continue forks
+// (agent-self-compaction-auto-continue.md): beyond this budget the
+// compaction proceeds without a follow-up run and the agent's confirmation
+// says so.
+export const MAX_AUTO_CONTINUE_CHAIN = 10;
+
 type SessionState = {
   lastSessionId?: string;
   isSessionMetadataLoading: boolean;
@@ -245,10 +259,23 @@ type SessionState = {
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
   // Agent self-compaction (agent-self-compaction.md, fork wiring:
-  // agent-self-compaction-fork-wiring.md): a successful compact_conversation
-  // tool call schedules a fork-with-summary compaction for the end of the
-  // current run.
-  pendingSelfCompaction: boolean;
+  // agent-self-compaction-fork-wiring.md, auto-continue:
+  // agent-self-compaction-auto-continue.md): a successful
+  // compact_conversation tool call schedules a fork-with-summary compaction
+  // for the end of the current run. The payload carries the resolved
+  // follow-up message when auto-continue was requested (and budget-
+  // approved); false means no compaction pending.
+  pendingSelfCompaction: false | PendingSelfCompaction;
+  // Auto-continue circuit breaker: consecutive auto-continue forks without
+  // an external run trigger in between. Redux-only by design — an app
+  // restart resets the chain (after a restart only external triggers can
+  // start runs anyway). Never reset explicitly: a false
+  // currentRunWasAutoContinue re-bases the chain to 1 on the next bump.
+  consecutiveAutoContinues: number;
+  // Set at every run entry (streamResponseThunk arg, default false) —
+  // streamResponseThunk is the single run entry point, so any externally
+  // triggered run re-bases the chain. Also reset by the newSession reducer.
+  currentRunWasAutoContinue: boolean;
   // Set by abortStream (every abort/error path), cleared by setActive (run
   // start) — the run-end compaction trigger drops pending requests when set.
   streamAborted: boolean;
@@ -278,6 +305,8 @@ export const INITIAL_SESSION_STATE: SessionState = {
   newestToolbarPreviewForInput: {},
   compactionLoading: {},
   pendingSelfCompaction: false,
+  consecutiveAutoContinues: 0,
+  currentRunWasAutoContinue: false,
   streamAborted: false,
   board: { ...EMPTY_BOARD_SESSION_STATE },
 };
@@ -909,6 +938,10 @@ export const sessionSlice = createSlice({
       // A scheduled self-compaction belongs to the previous session
       // (agent-self-compaction.md).
       state.pendingSelfCompaction = false;
+      // Same for the run-source flag (agent-self-compaction-auto-continue.md)
+      // — the chain counter deliberately survives: a false flag re-bases it
+      // to 1 on the next bump.
+      state.currentRunWasAutoContinue = false;
 
       state.inlineErrorMessage = undefined;
       state.isPruned = false;
@@ -1220,8 +1253,23 @@ export const sessionSlice = createSlice({
         delete state.compactionLoading[index];
       }
     },
-    setPendingSelfCompaction: (state, action: PayloadAction<boolean>) => {
+    setPendingSelfCompaction: (
+      state,
+      action: PayloadAction<false | PendingSelfCompaction>,
+    ) => {
       state.pendingSelfCompaction = action.payload;
+    },
+    // Auto-continue circuit breaker (agent-self-compaction-auto-continue.md).
+    setCurrentRunWasAutoContinue: (state, action: PayloadAction<boolean>) => {
+      state.currentRunWasAutoContinue = action.payload;
+    },
+    // Payload: whether the just-finished run was itself auto-continued
+    // (secured before the fork dispatch — the fork's loadSession resets the
+    // flag via the newSession reducer).
+    bumpAutoContinueChain: (state, action: PayloadAction<boolean>) => {
+      state.consecutiveAutoContinues = action.payload
+        ? state.consecutiveAutoContinues + 1
+        : 1;
     },
     setInlineErrorMessage: (
       state,
@@ -1344,6 +1392,8 @@ export const {
   setContextPercentage,
   setCompactionLoading,
   setPendingSelfCompaction,
+  setCurrentRunWasAutoContinue,
+  bumpAutoContinueChain,
 } = sessionSlice.actions;
 
 export const { selectIsGatheringContext } = sessionSlice.selectors;

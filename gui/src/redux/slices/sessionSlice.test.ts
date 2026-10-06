@@ -85,7 +85,9 @@ describe("sessionSlice streamUpdate", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    pendingSelfCompaction: false,
+    pendingSelfCompaction: false as const,
+    consecutiveAutoContinues: 0,
+    currentRunWasAutoContinue: false,
     streamAborted: false,
     board: {
       messages: [],
@@ -495,7 +497,9 @@ describe("sessionSlice setContextPercentage", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    pendingSelfCompaction: false,
+    pendingSelfCompaction: false as const,
+    consecutiveAutoContinues: 0,
+    currentRunWasAutoContinue: false,
     streamAborted: false,
     board: {
       messages: [],
@@ -599,7 +603,9 @@ describe("sessionSlice endActiveReasoning", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    pendingSelfCompaction: false,
+    pendingSelfCompaction: false as const,
+    consecutiveAutoContinues: 0,
+    currentRunWasAutoContinue: false,
     streamAborted: false,
     board: {
       messages: [],
@@ -720,7 +726,9 @@ describe("sessionSlice rescueInterruptedReasoning", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    pendingSelfCompaction: false,
+    pendingSelfCompaction: false as const,
+    consecutiveAutoContinues: 0,
+    currentRunWasAutoContinue: false,
     streamAborted: false,
     board: {
       messages: [],
@@ -993,7 +1001,9 @@ describe("sessionSlice newSession board reset", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    pendingSelfCompaction: false,
+    pendingSelfCompaction: false as const,
+    consecutiveAutoContinues: 0,
+    currentRunWasAutoContinue: false,
     streamAborted: false,
     board: {
       messages: [
@@ -1120,7 +1130,9 @@ describe("Thinking reasoning_details stream accumulation (resent-user-messages i
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    pendingSelfCompaction: false,
+    pendingSelfCompaction: false as const,
+    consecutiveAutoContinues: 0,
+    currentRunWasAutoContinue: false,
     streamAborted: false,
     board: {
       messages: [],
@@ -1301,7 +1313,9 @@ describe("sessionSlice clearDanglingMessages tool-call cancellation", () => {
     newestToolbarPreviewForInput: {},
     isSessionMetadataLoading: false,
     compactionLoading: {},
-    pendingSelfCompaction: false,
+    pendingSelfCompaction: false as const,
+    consecutiveAutoContinues: 0,
+    currentRunWasAutoContinue: false,
     streamAborted: false,
     board: {
       messages: [],
