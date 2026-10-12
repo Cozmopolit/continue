@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../board/boardState", () => ({
   loadBoardState: vi.fn(),
@@ -14,6 +14,7 @@ import { MCPManagerSingleton } from "../context/mcp/MCPManagerSingleton";
 import {
   dumpTranscript,
   findTranscriptConnection,
+  resetDumpThrottle,
   TRANSCRIPT_FALLBACK_MEMORY,
 } from "./client";
 
@@ -40,7 +41,9 @@ function setConnections(connections: unknown[]) {
 }
 
 function makeConfigHandler(
-  settings: { memory?: string; enabled?: boolean } | undefined,
+  settings:
+    | { memory?: string; enabled?: boolean; intervalSeconds?: number }
+    | undefined,
 ): ConfigHandler {
   return {
     loadConfig: vi.fn().mockResolvedValue({
@@ -49,14 +52,14 @@ function makeConfigHandler(
   } as unknown as ConfigHandler;
 }
 
-function makeSession(): Session {
+function makeSession(content = "hallo"): Session {
   return {
     sessionId: "s1",
     title: "T",
     workspaceDirectory: "C:\\ws",
     history: [
       {
-        message: { role: "user", content: "hallo" },
+        message: { role: "user", content },
         contextItems: [],
       } as unknown as ChatHistoryItem,
     ],
@@ -67,6 +70,7 @@ const ide = {} as unknown as IDE;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetDumpThrottle();
   loadBoardStateMock.mockResolvedValue(undefined);
 });
 
@@ -167,5 +171,116 @@ describe("dumpTranscript", () => {
     ).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("rpc kaputt"));
     warn.mockRestore();
+  });
+});
+
+describe("dumpTranscript throttle", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("dumps the first save immediately (leading) and throttles a rapid second save into the window close (trailing)", async () => {
+    const conn = makeConnection(true);
+    setConnections([conn]);
+    await dumpTranscript(
+      makeSession("MARK_V1"),
+      ide,
+      makeConfigHandler(undefined),
+    );
+    expect(conn.transcriptDump).toHaveBeenCalledOnce();
+
+    // Second save inside the open window: no dump, only pending.
+    await dumpTranscript(
+      makeSession("MARK_V2"),
+      ide,
+      makeConfigHandler(undefined),
+    );
+    expect(conn.transcriptDump).toHaveBeenCalledOnce();
+
+    // Window close: trailing dump carries the latest state.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(conn.transcriptDump).toHaveBeenCalledTimes(2);
+    expect(conn.transcriptDump.mock.calls[1][0].text).toContain("MARK_V2");
+  });
+
+  it("collapses a save storm into one trailing dump with the newest state", async () => {
+    const conn = makeConnection(true);
+    setConnections([conn]);
+    await dumpTranscript(
+      makeSession("MARK_V1"),
+      ide,
+      makeConfigHandler(undefined),
+    );
+    for (const marker of ["MARK_V2", "MARK_V3", "MARK_V4"]) {
+      await dumpTranscript(
+        makeSession(marker),
+        ide,
+        makeConfigHandler(undefined),
+      );
+    }
+    expect(conn.transcriptDump).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(conn.transcriptDump).toHaveBeenCalledTimes(2);
+    expect(conn.transcriptDump.mock.calls[1][0].text).toContain("MARK_V4");
+  });
+
+  it("keeps dumping every interval during continuous activity", async () => {
+    const conn = makeConnection(true);
+    setConnections([conn]);
+    const save = (marker: string) =>
+      dumpTranscript(makeSession(marker), ide, makeConfigHandler(undefined));
+
+    await save("MARK_V1"); // t=0: leading dump, window 0–30
+    await vi.advanceTimersByTimeAsync(10_000);
+    await save("MARK_V2"); // t=10: pending
+    await vi.advanceTimersByTimeAsync(10_000);
+    await save("MARK_V3"); // t=20: pending (latest)
+    await vi.advanceTimersByTimeAsync(10_000); // t=30: trailing dump MARK_V3, window 30–60
+    expect(conn.transcriptDump).toHaveBeenCalledTimes(2);
+    expect(conn.transcriptDump.mock.calls[1][0].text).toContain("MARK_V3");
+
+    await save("MARK_V4"); // t=30+: pending
+    await vi.advanceTimersByTimeAsync(10_000);
+    await save("MARK_V5"); // t=40: pending (latest)
+    await vi.advanceTimersByTimeAsync(20_000); // t=60: trailing dump MARK_V5
+    expect(conn.transcriptDump).toHaveBeenCalledTimes(3);
+    expect(conn.transcriptDump.mock.calls[2][0].text).toContain("MARK_V5");
+  });
+
+  it("does not dump trailing when nothing was saved during the window", async () => {
+    const conn = makeConnection(true);
+    setConnections([conn]);
+    await dumpTranscript(
+      makeSession("MARK_V1"),
+      ide,
+      makeConfigHandler(undefined),
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(conn.transcriptDump).toHaveBeenCalledOnce();
+  });
+
+  it("sizes the window from transcriptDump.intervalSeconds", async () => {
+    const conn = makeConnection(true);
+    setConnections([conn]);
+    await dumpTranscript(
+      makeSession("MARK_V1"),
+      ide,
+      makeConfigHandler({ intervalSeconds: 5 }),
+    );
+    await dumpTranscript(
+      makeSession("MARK_V2"),
+      ide,
+      makeConfigHandler({ intervalSeconds: 5 }),
+    );
+    expect(conn.transcriptDump).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(conn.transcriptDump).toHaveBeenCalledTimes(2);
+    expect(conn.transcriptDump.mock.calls[1][0].text).toContain("MARK_V2");
   });
 });

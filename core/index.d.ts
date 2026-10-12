@@ -2042,6 +2042,12 @@ export interface TranscriptDumpConfig {
   memory?: string;
   /** Kill-switch (default true; absent server capability also disables). */
   enabled?: boolean;
+  /**
+   * Throttle window in seconds: at most one dump per window and session
+   * (leading), a trailing dump with the latest state is guaranteed when the
+   * window closes. Default 30; values < 1 clamp to 1.
+   */
+  intervalSeconds?: number;
 }
 
 // Payload of `transcript/dump` (continue-transcript-dump.md): the fork

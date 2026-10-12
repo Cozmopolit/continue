@@ -6,6 +6,11 @@ transcriptDump); volle Suite + Commit über zeniths Gate
 (#5333927844); CITT-seitige Bau-Reihenfolge: Storage
 (`RegisterDataFragment`) → `transcript/dump`-Methode → Fork-Hook (diese
 Spec)
+**Amendment 2026-10-12:** Save-Throttle (Leading/Trailing-Fenster, Default
+30 s, Config-Feld `intervalSeconds`) gegen Save-Stürme aus dem Tool-Loop
+(ein Save pro Tool-Result, bei N parallelen Tools N Saves) — Build
+config-yaml grün, Core-Typecheck grün, gezielte Tests 32/32 grün
+(core-vitest, transcriptDump)
 **Date:** 2026-08-18
 **Vertrag:** Board-Topic „continue-transcript-dump" (#5333526847 +
 Renderer-Festlegungen des Users 2026-08-18); CITT-Schwester-Spec
@@ -31,7 +36,7 @@ Logik beidseitig minimal. Der große Run-Engine-Ersatz ist parked
 **Out of Scope:** Thinking/Reasoning (explizit verworfen, User-Entscheidung),
 System-Prompt (ebenfalls verworfen; liegt ohnehin nicht im Save-Payload),
 Tool-Result-Volltexte, Embeddings/semantische Suche (CITT-seitig LIKE),
-Debounce (KISS — erst bei Beobachtung von Save-Stürmen), GUI-Settings,
+GUI-Settings,
 Edit-Mode-Sessions (speichern nicht → keine Dumps), die CITT-seitige
 Implementierung selbst.
 
@@ -39,10 +44,14 @@ Implementierung selbst.
 
 Verifizierte Fakten (Recon 2026-08-18):
 
-- **Hook-Punkt:** Jeder abgeschlossene User-Turn (inkl. Tool-Loop) endet in
-  genau einem Save: streamThunkWrapper → saveCurrentSession →
-  `history/save`. Der Core-Handler ist der einzige Choke-Point; das
-  Save-Payload enthält die volle History inkl. toolCallStates.
+- **Hook-Punkt:** streamThunkWrapper → saveCurrentSession → `history/save`.
+  Der Core-Handler ist der einzige Choke-Point; das Save-Payload enthält die
+  volle History inkl. toolCallStates. **Korrektur (Amendment 2026-10-12):**
+  der Save feuert nicht nur am Turn-Ende — `streamResponseAfterToolCall`
+  hüllt jedes einzelne Tool-Result in einen eigenen streamThunkWrapper,
+  also ein Save pro Tool-Result (bei N parallelen Tools N Saves plus
+  Folge-Stream). Save-Stürme sind im Tool-Loop der Normalfall →
+  Save-Throttle (s. Solution).
 - **Session-ID:** GUI-generierte UUID, stabil über Session-Lebensdauer,
   Webview-Reloads (redux-persist) und Resume via History. Fresh-Boot
   (workspace-fresh-boot.md) erzeugt bewusst neue Sessions → neue IDs →
@@ -81,12 +90,17 @@ resultSchema, { signal, timeout })`; `boardPending()` ist die
 ## Solution
 
 ```
-Turn-Ende: streamThunkWrapper → saveCurrentSession → "history/save"
+Jeder Save: streamThunkWrapper → saveCurrentSession → "history/save"
   → core-Handler: HistoryManager.save(session)        (unverändert)
   → void dumpTranscript(session, ide, configHandler)  // fire-and-forget,
       │                                               // niemals await/throw
       ├─ skip wenn: history leer | enabled=false | keine transcript-
       │            fähige Connection (Capability-Gate)
+      ├─ Save-Throttle (pro Session, Fenster = intervalSeconds):
+      │   Fenster offen → neuesten Stand als pending merken, fertig;
+      │   kein Fenster → Fenster öffnen, sofort dumpen (leading);
+      │   Fensterende + pending → erneuter vollständiger Durchlauf
+      │   (trailing, Gates mit frischer Config geprüft)
       ├─ text = renderTranscript(session)             // pure
       └─ connection.transcriptDump({ memory, name, text, meta })
             → CittMcpServer: Replace-by-Name, Chunking, Header, Store
@@ -107,6 +121,38 @@ CITT-Header). `name` = `transcript-continue-<sessionId>`.
 `meta.agent` = Agent-Handle aus `.continue/board-state.json` (entfällt
 ohne Board-State); `meta.workspace` = `session.workspaceDirectory`;
 `meta.title` = `session.title`.
+
+### Save-Throttle (Amendment 2026-10-12)
+
+Jeder `history/save` triggert `dumpTranscript`, und der Tool-Loop speichert
+pro Tool-Result (s. Analysis). Ungedrosselt entstehen N+1 Volltext-Dumps
+pro Run — bei N parallelen Tool-Calls N Dumps allein aus den Result-Saves,
+kumulativ wachsend. Die Throttle sitzt im Core-Client (einziger Choke-Point
+für alle Save-Quellen), pro Session:
+
+- **Fenster** (`intervalSeconds`, Default 30, Minimum 1 — kleinere Werte
+  werden geclamppt): beginnt mit dem ersten Save, der alle Gates passiert,
+  und läuft unabhängig von weiteren Saves aus. Saves verlängern das Fenster
+  **nicht** (bewusst kein Debounce — bei durchgehender Tool-Aktivität
+  verhungerte der Dump sonst bis Run-Ende).
+- **Leading:** der fensteröffnende Save dump t sofort.
+- **Pending:** Saves im offenen Fenster merken nur den neuesten Stand
+  (latest wins — Dumps sind kumulative Volltexte, Zwischenstände obsolet).
+- **Trailing:** Fensterende mit Pending → vollständiger Wiedereintritt durch
+  `dumpTranscript` (Gates mit frischer Config, neues Fenster) mit dem
+  letzten Stand; ohne Pending → kein Dump.
+
+Garantien: maximal 1 Dump pro Fenster und Session; bei Aktivität mindestens
+1 Dump pro Fenster; jeder Save ist spätestens ein Fenster später
+persistiert. Dumps folgen Save-Ereignissen — während eines einzelnen
+langlaufenden Tool-Calls existiert kein neuer Stand (kein Save), also auch
+nichts zu dumpen.
+
+Umsetzung: Map `sessionId → { timer, pending }` im Client; Check-and-Set
+synchron nach den Gate-Awaits (atomar per Run-to-Completion); Timer
+`unref`'d, damit er keinen Prozess am Leben hält. Skips (leere History,
+`enabled: false`, Capability-Gate) laufen vor der Throttle und hinterlassen
+keinen State.
 
 ### Renderer-Regeln (verbindlich)
 
@@ -131,7 +177,8 @@ Compaction-Markierungen:
   synthetische Fork-Item leer rendert — so überlebt die Fork-Überleitung im
   Archiv der neuen Session (Amendment 2026-08-18, after-hours)
 - Kumulativ: jeder Dump rendert die komplette History neu; Skip bei leerer
-  History. Kein inkrementelles Protokoll, kein Debounce.
+  History. Kein inkrementelles Protokoll; die Dump-Frequenz regelt die
+  Save-Throttle (s. oben).
 
 ### Config
 
@@ -139,6 +186,7 @@ Compaction-Markierungen:
 transcriptDump:
   memory: transcripts:custom # optionaler Override (Default s.u.)
   enabled: true # Kill-Switch (Default true)
+  intervalSeconds: 30 # Throttle-Fenster (Default 30, Minimum 1)
 ```
 
 Global in `~/.continue/config.yaml`. **Memory-Default (User-Präzisierung

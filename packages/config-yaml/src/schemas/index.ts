@@ -115,6 +115,9 @@ const modelsUsesSchema = z
 const transcriptDumpSchema = z.object({
   memory: z.string().optional(),
   enabled: z.boolean().optional(),
+  // Permissive on purpose: core clamps invalid values — a bad value must
+  // never break the whole config parse.
+  intervalSeconds: z.number().optional(),
 });
 
 export const configYamlSchema = baseConfigYamlSchema.extend({
