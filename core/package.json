@@ -127,7 +127,7 @@
   },
   "engine-strict": true,
   "engines": {
-    "node": ">=20.20.1"
+    "node": ">=24.22.0"
   },
   "overrides": {
     "tar": "^7.5.13"

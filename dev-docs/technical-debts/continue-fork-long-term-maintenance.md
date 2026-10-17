@@ -3,6 +3,71 @@
 **Status:** Open (accepted risk)
 **Date:** 2026-07-25
 
+## Status update 2026-10-17 (autumn window entered)
+
+The "Autumn 2026" window from the timing estimate is now; findings verified and
+directions decided:
+
+- **Node toolchain bump started** — spec:
+  `specifications/node-24-toolchain-bump.md`. Target: Node 24 LTS (active until
+  ~2028). Note: `.nvmrc`/`engines` were still pinned to 20.20.1 while the dev
+  machine already ran 22.14.0 — the pin was stale, not the runtime.
+- **MCP SDK v2 has shipped** (2026-07-27): the TypeScript v2 line is published
+  under new package names (`@modelcontextprotocol/client`, 2.3.1 verified); the
+  old `@modelcontextprotocol/sdk` package remains the 1.x maintenance line
+  (1.32.1; fixes until ~early 2027). The early-warning signal "SDK flips to 2.x
+  stable" has therefore fired — under a different package name. Decision: the
+  client port is **out of scope for now** — it is a joint migration to be planned
+  with the CITT server side (this repo is the MCP client, CITT.MCP is the server;
+  either side migrating alone kills the tunnel handshake). Nothing breaks while
+  both sides stay on v1.
+- **JetBrains frozen**: no investment in `binary/`/`pkg` compatibility. If it
+  breaks under Node 24, JetBrains support dies unmourned (no productive usage).
+- **Indexing island declared dead**: the vectordb / onnxruntime /
+  @xenova/transformers / sqlite3 stack is unused in our deployments. It only
+  needs to _build_ under Node 24, not work; on hard failure it gets removed, not
+  repaired. Clean excision (deps + degraded context providers) is a separate
+  follow-up project.
+- Lockfiles are fresher than this document assumed (core: 2026-07,
+  vscode/gui: 2026-10 — not frozen since 2026-03).
+
+## Status update 2026-10-17 (Node 24 done, audit baseline)
+
+The autumn toolchain move landed (spec: `specifications/node-24-toolchain-bump.md`):
+
+- **Node 24.22.0 is the build toolchain** (`.nvmrc`, `engines` in core,
+  core/vendor, gui, extensions/vscode). Full clean rebuild reproducible; full
+  test runner green (2 catalogued full-load flakes, solo green); VSIX
+  `continue-2.2.4.vsix` builds (~16 MB larger than 2.2.3 — freshly resolved
+  LanceDB native binary, not investigated further).
+- Structural fix along the way: all `packages/*` internal `@continuedev/*`
+  refs are now `file:` links (was: registry semver + manual junctions).
+- npm audit baseline per workspace (2026-10-17, total/critical/high):
+
+  | workspace    | total | crit | high |     | workspace         | total | crit | high |
+  | ------------ | ----- | ---- | ---- | --- | ----------------- | ----- | ---- | ---- |
+  | root         | 12    | 1    | 9    |     | config-yaml       | 69    | 2    | 58   |
+  | core         | 92    | 7    | 66   |     | continue-sdk      | 16    | 4    | 7    |
+  | gui          | 101   | 8    | 36   |     | fetch             | 43    | 4    | 33   |
+  | vscode       | 76    | 10   | 38   |     | llm-info          | 35    | 2    | 29   |
+  | cli          | 98    | 8    | 50   |     | openai-adapters   | 65    | 5    | 37   |
+  | config-types | 0     | 0    | 0    |     | terminal-security | 9     | 3    | 4    |
+
+  Not actioned (would invalidate the freshly green gates): `npm audit fix`
+  is its own workstream with its own gate; make it a quarterly ritual.
+
+- New candidates for the follow-up list:
+  - **Indexing island excision** (as decided): vectordb / onnxruntime-node /
+    @xenova/transformers / sqlite3 + degraded context providers. Note:
+    `vectordb` is already removed from `extensions/vscode`; it remains in
+    `core` (installs fine there under Node 24 — excision is about maintenance
+    surface, not breakage).
+  - **dbinfoz / @database provider review**: dbinfoz (pulls sqlite3 into
+    vscode) is used by exactly one file (`core/context/providers/
+DatabaseContextProvider.ts`). If @database is unused, it is excision
+    candidate #2 — removing it also frees the sqlite3 install quirk in
+    vscode (`--ignore-scripts` workaround, see environment-gotchas.md).
+
 ## Problem
 
 This repo forks Continue at v2.1.0 — the **final release**. Continue was

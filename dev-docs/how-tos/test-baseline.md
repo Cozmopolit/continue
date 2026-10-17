@@ -25,6 +25,13 @@ Specs: gui 490→496 Tests — refreshSessionMetadata-Scoping-Matrix in
 `redux/thunks/session.test.ts` (+5), redacted-Thinking-Cleanup in
 `redux/slices/sessionSlice.test.ts` (+1); ext-vscode 112→113 Tests —
 Workspace-Gate-Regressionstest in `util/externalFileEventBuffer.vitest.ts`).
+**Zahlen-Refresh 2026-10-17 (Node-24-Toolchain)** (Erster Voll-Lauf unter
+Node 24.22.0, Gate der node-24-toolchain-bump-Spec: 7/8 Suiten grün —
+core-jest 976, core-vitest 111 Files/1946, gui 555, config-yaml 287,
+fetch 137, openai-adapters 160, vscode 113. Zwei katalogisierte
+Volllast-Flakes, beide solo deterministisch grün: cli `TUIChat.editMessage`
+(bekannt) und gui `ApplyScenarios.test.tsx` unhandled Teardown-Error (neu,
+s. „Bewusst nicht behoben"). Kein Code-Fail.)
 Ziel: Nie wieder "überraschende" pre-existing Test-Failures bei Feature-Arbeit.
 Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen werden.
 
@@ -38,13 +45,13 @@ Vor jeder Implementierung kann ein neuer Lauf gegen diese Tabelle abgeglichen we
 | Suite                      | Runner     | Kommando                                      | Erwartetes Ergebnis                                                                                                                 |
 | -------------------------- | ---------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `core` (Jest)              | jest (ESM) | `cd core; npm test`                           | 52 Suites passed, 7 skipped, 0 failed (954 Tests passed, 89 skipped)                                                                |
-| `core` (Vitest)            | vitest     | `cd core; npm run vitest`                     | 106 Files (105 passed, 1 skipped), 0 failed (siehe Timing-Hinweis unten)                                                            |
-| `gui`                      | vitest     | `cd gui; npm test`                            | 48 Files / 535 Tests, 0 failed                                                                                                      |
+| `core` (Vitest)            | vitest     | `cd core; npm run vitest`                     | 111 Files (110 passed, 1 skipped), 1946 passed, 34 skipped Tests (siehe Timing-Hinweis unten)                                       |
+| `gui`                      | vitest     | `cd gui; npm test`                            | 50 Files / 555 Tests (+1 unhandled Teardown-Error unter Volllast, s. „Bewusst nicht behoben")                                       |
 | `packages/config-yaml`     | jest (ESM) | `cd packages/config-yaml; npm test`           | 15 Suites / 287 passed, 1 skipped                                                                                                   |
 | `packages/fetch`           | vitest     | `cd packages/fetch; npm test`                 | 8 Files / 137 passed (inkl. e2e, siehe OpenSSL)                                                                                     |
 | `packages/openai-adapters` | vitest     | `cd packages/openai-adapters; npx vitest run` | 17 Files / 160 passed, 5 skipped                                                                                                    |
 | `extensions/vscode`        | vitest     | `cd extensions/vscode; npm test`              | 7 Files / 113 passed                                                                                                                |
-| `extensions/cli`           | vitest     | `cd extensions/cli; npm test`                 | ~160 Files / ~1720 Tests, 0 failed (siehe FORCE_COLOR)                                                                              |
+| `extensions/cli`           | vitest     | `cd extensions/cli; npm test`                 | ~159 Files / ~1720 Tests, 1 katalogisierter Volllast-Flake (siehe FORCE_COLOR + „Bewusst nicht behoben")                            |
 | `binary`                   | jest       | —                                             | **nicht teil der Baseline**: einziger Test (`test/binary.test.ts`) ist ein Integrationstest, der das gebaute Binary (`out/`) spawnt |
 
 ## Umgebungs-Fallen auf dieser Machine (Windows)
@@ -153,6 +160,12 @@ Alle Fixes sind **test-only**; kein Produktionscode geändert.
   (4 Solo-Durchläufe: 3× grün, 1× rot; unabhängig von aktuellem Worktree,
   gegen sauberen HEAD verifiziert). Bei Failure: Baseline-Referenz genügt —
   keine weiteren Isolations-Runs (Test-Disziplin, running-tests.md).
+- `gui`: `src/pages/gui/chat-tests/ApplyScenarios.test.tsx` — 1 unhandled
+  error (`ReferenceError: window is not defined`), der die jsdom-Umgebung
+  nach Teardown trifft (ein Timer/Callback überlebt den Teardown); alle
+  Tests grün, Suite-Exit trotzdem 1. Beobachtet 2026-10-17 im
+  Runner-Voll-Lauf (Node 24); solo deterministisch grün. Bei Failure zuerst
+  Datei solo nachlaufen lassen.
 - `gui`: `MockIdeMessenger` hat weiterhin kein `history/load`-Default → kosmetischer
   `console.error` im History-Test (kein Testimpact).
 - `core` Jest: "Jest did not exit one second after the test run" (open handles) —

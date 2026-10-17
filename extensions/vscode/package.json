@@ -24,7 +24,7 @@
   "publisher": "Continue",
   "engines": {
     "vscode": "^1.70.0",
-    "node": ">=20.20.1"
+    "node": ">=24.22.0"
   },
   "engine-strict": true,
   "galleryBanner": {
@@ -772,13 +772,14 @@
     "undici": "^6.24.0",
     "uuid": "^9.0.1",
     "uuidv4": "^6.2.13",
-    "vectordb": "0.4.20",
     "vitest": "^3.1.4",
     "vscode-languageclient": "^8.0.2",
     "ws": "^8.19.0",
     "yarn": "^1.22.21"
   },
   "overrides": {
+    "prebuild-install": "^7.1.2",
+    "node-abi": "^3.92.0",
     "vitest": {
       "@types/node": "^16.18.119"
     },
