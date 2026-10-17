@@ -47,14 +47,14 @@ The autumn toolchain move landed (spec: `specifications/node-24-toolchain-bump.m
   | workspace    | total | crit | high |     | workspace         | total | crit | high |
   | ------------ | ----- | ---- | ---- | --- | ----------------- | ----- | ---- | ---- |
   | root         | 12    | 1    | 9    |     | config-yaml       | 69    | 2    | 58   |
-  | core         | 92    | 7    | 66   |     | continue-sdk      | 16    | 4    | 7    |
-  | gui          | 101   | 8    | 36   |     | fetch             | 43    | 4    | 33   |
-  | vscode       | 76    | 10   | 38   |     | llm-info          | 35    | 2    | 29   |
-  | cli          | 98    | 8    | 50   |     | openai-adapters   | 65    | 5    | 37   |
-  | config-types | 0     | 0    | 0    |     | terminal-security | 9     | 3    | 4    |
+  | core         | 66    | 3    | 48   |     | continue-sdk      | 16    | 4    | 7    |
+  | gui          | 49    | 2    | 6    |     | fetch             | 43    | 4    | 33   |
+  | vscode       | 39    | 2    | 21   |     | llm-info          | 35    | 2    | 29   |
+  | cli          | 98    | 8    | 50   |     | openai-adapters   | 53    | 2    | 26   |
+  | config-types | 0     | 0    | 0    |     | terminal-security | 8     | 2    | 4    |
 
-  Not actioned (would invalidate the freshly green gates): `npm audit fix`
-  is its own workstream with its own gate; make it a quarterly ritual.
+  First quarterly `npm audit fix` workstream executed the same day — see
+  "Status update 2026-10-17 (audit-fix workstream executed)" below.
 
 - New candidates for the follow-up list:
   - **Indexing island excision** (as decided): vectordb / onnxruntime-node /
@@ -148,6 +148,9 @@ findings are 100% dev-only; cli ships almost nothing but the bundled core.
 
 ### Derived action list for the quarterly `npm audit fix` workstream
 
+(Executed the same day — outcome documented in "Status update 2026-10-17
+(audit-fix workstream executed)" below; list kept as the decision record.)
+
 1. `handlebars` bump in core (kills 3 crit + 3 high) — top item.
 2. `shell-quote` bump in core + terminal-security (kills 1 crit + 1 high;
    security-critical component).
@@ -162,6 +165,48 @@ findings are 100% dev-only; cli ships almost nothing but the bundled core.
 8. Remainder: batched `npm audit fix` per workspace behind the test gate;
    indexing-island findings (protobufjs/onnx, sharp, undici/cheerio,
    extract-zip/puppeteer) resolve themselves with Tranche 4'.
+
+## Status update 2026-10-17 (audit-fix workstream executed)
+
+The 8-point action list was executed the same day in five gate commits
+(`fba4034d3` core, `4978ef2f7` terminal-security, `1df1d93ac`
+openai-adapters, `e56a6700b` vscode, `2a62758bc` gui) plus a final gate:
+
+- **core**: handlebars ^4.7.10, shell-quote ^1.12.0, axios ^1.20.0; dead
+  `tar` direct dep removed (override kept, ^7.5.22); plus a semver-safe
+  `npm audit fix` sweep (17 findings, incl. proxy-addr).
+- **terminal-security**: shell-quote ^1.12.0.
+- **openai-adapters**: semver-safe sweep (protobufjs 7.6.6, fast-xml-\*).
+  No `@google/genai` major needed — the protobufjs fix was lockfile-level
+  (`fixAvailable: true`).
+- **vscode**: `vitest`/`jsdom`/`axios` moved to devDependencies (removes
+  the classification quirk); semver-safe sweep (express/proxy-addr,
+  handlebars, systeminformation, ws, …); tar override ^7.5.22.
+- **gui**: semver-safe sweep (prosemirror-view, lodash-es, linkify-it, …).
+
+PROD findings (total, crit) before → after: core 52/5 → 29/1, gui 64/2 →
+36/0, vscode 51/5 → 20/0, openai-adapters 16/1 → 0/0, terminal-security
+1/1 → 0/0; cli 1, root 2, fetch 1 unchanged; continue-sdk 16 (crit 4)
+unchanged (consumed by nothing — irrelevant to shipped products).
+
+Remaining PROD findings, all deliberately deferred:
+
+- **core protobufjs** (crit, via onnx-proto) — indexing island, resolves
+  with Tranche 4'.
+- **core 18 high** — island chains (sharp, undici/cheerio, mysql2 via
+  dbinfoz, node-forge via win-ca/mac-ca, ws via socket.io-client Flowise)
+  - @xmldom via plist; no lockfile-level fix available.
+- **gui 31 moderate** — @tiptap v2 cluster (fix = TipTap v3 major
+  migration, own project), mermaid, react-router, katex/remark-math, uuid
+  (all majors).
+- **vscode 7 high / 8 moderate** — dbinfoz/@database island (excision
+  candidate #2), tailwind-in-dependencies chain (fix = tailwind 4 major),
+  http-proxy-middleware (major), uuid/uuidv4 (major).
+
+Gates: targeted suites per workspace green; final full runner 7/9 green
+(binary skipped by design) with four catalogued timing flakes —
+core ListenableGenerator (baseline reference), cli TUIChat.editMessage
+(solo green), cli CtrlC/serve (green at file level; test-baseline.md).
 
 ## Problem
 

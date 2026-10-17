@@ -152,7 +152,10 @@ Alle Fixes sind **test-only**; kein Produktionscode geändert.
   handling functions > exports the necessary functions for exit message handling"
   und `src/commands/serve.test.ts` "serve command > should pass the --org flag
   through to initializeServices" — beobachtet 2026-08-19 im Runner-Gesamtlauf
-  (je 30s-Timeout, solo deterministisch grün in ~13s).
+  (je 30s-Timeout, solo deterministisch grün in ~13s). Schärfung 2026-10-17:
+  auf lastiger Maschine (z.B. Defender-Scan nach Massen-`npm install`) können
+  beide auch im Solo-Suite-Lauf reißen; Diskriminator ist dann der Lauf auf
+  Dateiebene (`--filter <Dateiname>`) — dort grün in ~16s.
 - `core` (Vitest): `autocomplete/generation/ListenableGenerator.vitest.ts`
   „should allow listeners to receive values" flakt (Timing-Race:
   Listener-Spy sieht 1, 2 statt des letzten Werts) — beobachtet
@@ -160,6 +163,11 @@ Alle Fixes sind **test-only**; kein Produktionscode geändert.
   (4 Solo-Durchläufe: 3× grün, 1× rot; unabhängig von aktuellem Worktree,
   gegen sauberen HEAD verifiziert). Bei Failure: Baseline-Referenz genügt —
   keine weiteren Isolations-Runs (Test-Disziplin, running-tests.md).
+- `core` (Vitest): `filesChangedWiring.vitest.ts` (refreshSubmenuItems-
+  Coalescing) — Timing-Fenster-Assertions; beobachtet 2026-10-17 im
+  Solo-Suite-Lauf auf lastiger Maschine (2 Tests rot), Dateiebene grün
+  (5/5 in ~22s). Gleiche Klasse wie CtrlC/serve: last-sensitiv,
+  Diskriminator ist der Datei-Level-Lauf.
 - `gui`: `src/pages/gui/chat-tests/ApplyScenarios.test.tsx` — 1 unhandled
   error (`ReferenceError: window is not defined`), der die jsdom-Umgebung
   nach Teardown trifft (ein Timer/Callback überlebt den Teardown); alle
