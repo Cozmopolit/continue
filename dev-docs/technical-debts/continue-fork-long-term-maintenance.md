@@ -68,6 +68,101 @@ DatabaseContextProvider.ts`). If @database is unused, it is excision
     candidate #2 — removing it also frees the sqlite3 install quirk in
     vscode (`--ignore-scripts` workaround, see environment-gotchas.md).
 
+## Status update 2026-10-17 (audit runtime/dev breakdown)
+
+Method: `npm audit --json` (full + `--omit=dev`) for all 12 workspaces under
+Node 24; dedup by package+advisory → **340 unique advisories** (16 critical).
+PROD classification via `--omit=dev`; bundle relevance verified via lockfile
+parent chains + import checks in src.
+
+Per-workspace PROD findings (of total): core 52/92 (crit 5), gui 64/101
+(crit 2), vscode 51/76 (crit 5), cli 1/98, root 2/12, continue-sdk 16/16
+(crit 4), openai-adapters 16/65 (crit 1), fetch 1/43, terminal-security 1/9
+(crit 1), config-types/config-yaml/llm-info 0 — config-yaml's and llm-info's
+findings are 100% dev-only; cli ships almost nothing but the bundled core.
+
+**Key distortions found during verification:**
+
+- **vscode manifest quirk**: `vitest` sits in `dependencies` (not dev), so
+  its whole tree (vite, tinypool, postcss, nanoid, …) classifies as PROD —
+  ~2 critical + many high findings are pure noise; nothing of it is bundled.
+  Same class: `jsdom`, `axios` (declared, never imported in vscode/src).
+- **continue-sdk is consumed by nothing** in the repo — its 16 findings
+  (4 critical: express, shell-quote via generator-CLI, basic-ftp) are
+  irrelevant to all shipped products.
+- **tar is a dead direct dep in core** (declared, never imported) — its
+  critical advisory is lockfile noise; the transitive tar chain is
+  install-time only (sqlite3/node-gyp).
+- **axios IS runtime in core after all**: dynamic `await import("axios")` in
+  the deprecated GitLab MR context provider (`ex instanceof AxiosError`
+  value-use) → axios + form-data ship in the bundle.
+
+### Tier 1 — ships in the VSIX, fix available, critical
+
+| package     | advisories (sev)                          | where it ships                                                                                         |
+| ----------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| handlebars  | 2× crit 9.8, 1× crit, 3× high             | core prompt templating (autocomplete, llm) — direct dep, imported                                      |
+| shell-quote | crit 8.1 + high 7.5 (parse DoS)           | `core/util/sanitization.ts` (terminal-cmd sanitizing!) + terminal-security (bundled into core/gui/cli) |
+| proxy-addr  | crit 9.1                                  | express server in `vscode/src/activation/proxy.ts` (localhost :65433)                                  |
+| protobufjs  | crit 9.8 + 3× high                        | `@google/genai` in openai-adapters (ships); onnx-proto in core (indexing island, dies with Tranche 4') |
+| axios       | ~15× high (7.0–8.7, MitM/proto-pollution) | core dynamic import (deprecated GitLab MR provider); declared-but-unimported in vscode                 |
+| form-data   | crit + high                               | axios dep (core + vscode chains)                                                                       |
+
+### Tier 2 — ships, high severity, notable
+
+- **prosemirror-view** (paste XSS) — TipTap chat-input editor in gui; real
+  webview attack surface (paste → webview XSS → IdeMessenger).
+- **lodash-es** 8.1 (`_.template` injection) — via mermaid/chevrotain;
+  mermaid renders LLM-controlled diagram source in the gui.
+- **linkify-it** (7.5 + unscored) — via markdown-it chat rendering; DoS via
+  LLM-controlled text.
+- **fast-uri** (7× 7.5, host confusion/SSRF) — via ajv (config/schema
+  validation, core + gui).
+- **js-yaml** (3× 7.5, DoS) — YAML config parsing (core, vscode, cli).
+- **undici** (7.4–7.5, TLS validation bypass via SOCKS5/proxy paths) — core
+  via cheerio (docs crawler = indexing island) + mac-ca; vscode's undici is
+  build-scripts only (download-copy-sqlite.js).
+- **@modelcontextprotocol/sdk** OAuth advisory (7.5) — OAuth flow unused in
+  our tunnel (tools/prompts/resources only); low practical risk.
+- **systeminformation** (2× command injection) — ships via
+  `vscode/src/util/battery.ts`, but only `si.battery()` is called, not the
+  vulnerable `versions()`/`networkInterfaces()` paths.
+- **mysql2** (auth downgrade → plaintext creds) — via dbinfoz; dies with
+  excision candidate #2 (@database review).
+- **ws** (7.5) — core via socket.io-client (Flowise provider), jsdom,
+  puppeteer; vscode root ws is script-side. **socket.io-parser** (7.5) —
+  Flowise provider only.
+- **fast-xml-builder** (6.1) — via fast-xml-parser in openai-adapters.
+- **node-forge** (7.5) — via win-ca/mac-ca (corporate CA-store integration);
+  fix path awkward (win-ca pins old node-forge).
+- **@xmldom/xmldom** (11× high) — via plist (local plist parsing); low.
+- **hono** (7.1) — MCP SDK server side, client-only usage; low.
+- **sharp** (3 libvips CVEs) — via @xenova/transformers; indexing island.
+- Install-time only: **extract-zip** (puppeteer Chrome download),
+  **http-cache-semantics** (node-gyp/make-fetch-happen), **basic-ftp**
+  (get-uri proxy chain; FTP unused).
+- DoS-only glob family (**brace-expansion**, **braces**, **minimatch**) —
+  patterns are user-controlled config; low.
+- **nanoid** (7.4 + 2× 5.9) — via postcss/tailwind (build-time) + vitest
+  tree; noise in the vscode classification.
+
+### Derived action list for the quarterly `npm audit fix` workstream
+
+1. `handlebars` bump in core (kills 3 crit + 3 high) — top item.
+2. `shell-quote` bump in core + terminal-security (kills 1 crit + 1 high;
+   security-critical component).
+3. vscode manifest hygiene: move `vitest` (+ audit `jsdom`, `axios`) to
+   devDependencies — kills ~2 crit + double-digit highs of classification
+   noise; zero bundle impact.
+4. `axios` bump in core (kills ~15 highs); consider dropping the declared
+   vscode axios dep.
+5. `express`/`proxy-addr` bump in vscode (1 crit).
+6. `@google/genai` bump in openai-adapters (1 crit via protobufjs).
+7. Remove dead `tar` dep from core (1 crit + 2 high of noise).
+8. Remainder: batched `npm audit fix` per workspace behind the test gate;
+   indexing-island findings (protobufjs/onnx, sharp, undici/cheerio,
+   extract-zip/puppeteer) resolve themselves with Tranche 4'.
+
 ## Problem
 
 This repo forks Continue at v2.1.0 — the **final release**. Continue was
