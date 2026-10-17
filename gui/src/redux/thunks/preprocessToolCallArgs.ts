@@ -3,6 +3,7 @@ import { ContinueErrorReason } from "core/util/errors";
 
 import { IIdeMessenger } from "../../context/IdeMessenger";
 import {
+  applyToolCallRepair,
   errorToolCall,
   setProcessedToolCallArgs,
   updateToolCallOutput,
@@ -28,6 +29,19 @@ export async function preprocessToolCalls(
         preprocessedArgs = result.content.preprocessedArgs;
         errorMessage = result.content.errorMessage;
         errorReason = result.content.errorReason;
+        // tool-call-repair.md canonicalization: dispatch is independent of
+        // the preprocessedArgs branch below — tools without a
+        // preprocessArgs hook are exactly the silently corruptible cases.
+        const { repairedArgs, repairEvents } = result.content;
+        if (repairEvents?.length) {
+          dispatch(
+            applyToolCallRepair({
+              toolCallId: tcState.toolCallId,
+              repairedArgs,
+              repairEvents,
+            }),
+          );
+        }
       } else {
         errorMessage = result.error;
         errorReason = ContinueErrorReason.Unknown;

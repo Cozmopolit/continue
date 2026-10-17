@@ -512,6 +512,24 @@ interface McpUiState {
   content: McpUiResourceContents;
 }
 
+// tool-call-repair.md: one deterministic pre-execution arg repair event.
+// Key names and decisions only — never argument values.
+interface ToolCallRepairEvent {
+  /**
+   * "rename": unknown key matched a schema key (args changed).
+   * "shape-wrap": scalar wrapped into a single-element array (args changed).
+   * "shape-unwrap": single-element array unwrapped to scalar (args changed).
+   * "unknown-key": no unique repair candidate — key left untouched.
+   */
+  kind: "rename" | "shape-wrap" | "shape-unwrap" | "unknown-key";
+  /** The argument key as emitted by the model. */
+  key: string;
+  /** The schema key a rename targeted (rename kind only). */
+  repairedTo?: string;
+  /** Why an unknown key was not repaired (unknown-key kind only). */
+  reason?: "no-candidate" | "ambiguous" | "conflict";
+}
+
 // Will exist only on "assistant" messages with tool calls
 interface ToolCallState {
   toolCallId: string;
@@ -519,6 +537,7 @@ interface ToolCallState {
   status: ToolStatus;
   parsedArgs: any;
   processedArgs?: Record<string, any>; // Added in preprocesing step
+  repairEvents?: ToolCallRepairEvent[]; // Added by deterministic arg repair
   output?: ContextItem[];
   tool?: Tool;
   mcpUiState?: McpUiState;
@@ -1894,6 +1913,7 @@ export interface ContinueConfig {
   experimental?: ExperimentalConfig;
   analytics?: AnalyticsConfig;
   transcriptDump?: TranscriptDumpConfig;
+  toolCallRepair?: ToolCallRepairConfig;
   docs?: SiteIndexingConfig[];
   tools: Tool[];
   mcpServerStatuses: MCPServerStatus[];
@@ -2048,6 +2068,14 @@ export interface TranscriptDumpConfig {
    * window closes. Default 30; values < 1 clamp to 1.
    */
   intervalSeconds?: number;
+}
+
+// tool-call-repair.md: top-level config.yaml block for deterministic
+// tool-call arg repair (transitory rollout flag; intended end state is
+// always-on, with flag removal as a later explicit step).
+export interface ToolCallRepairConfig {
+  /** Master switch (default false — every repair hook is a strict no-op). */
+  enabled?: boolean;
 }
 
 // Payload of `transcript/dump` (continue-transcript-dump.md): the fork

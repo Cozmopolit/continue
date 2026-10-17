@@ -191,6 +191,7 @@ export async function configYamlToContinueConfig(options: {
     rules: [],
     requestOptions: { ...unrolledAssistant.requestOptions },
     transcriptDump: unrolledAssistant.transcriptDump,
+    toolCallRepair: unrolledAssistant.toolCallRepair,
   };
 
   const config = nonNullifyConfigYaml(unrolledAssistant);

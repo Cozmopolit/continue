@@ -20,6 +20,7 @@ import Ollama from "./llm/llms/Ollama";
 import { EditAggregator } from "./nextEdit/context/aggregateEdits";
 import { createNewPromptFileV2 } from "./promptFiles/createNewPromptFile";
 import { callTool } from "./tools/callTool";
+import { repairToolCallArgs } from "./tools/argRepair";
 import { suggestToolNames, toolNotFoundMessage } from "./tools/suggestToolName";
 import { ChatDescriber } from "./util/chatDescriber";
 import { compactConversation } from "./util/conversationCompaction";
@@ -45,6 +46,7 @@ import {
   Position,
   RangeInFile,
   ToolCall,
+  ToolCallRepairEvent,
   type ContextItem,
   type IDE,
 } from ".";
@@ -1181,12 +1183,43 @@ export class Core {
         );
       }
 
+      // tool-call-repair.md: deterministic arg repair runs at the top of
+      // the preprocess stage — before tool.preprocessArgs and (upstream in
+      // the GUI) before policy evaluation, so policy sees the repaired
+      // form. Flag-gated; well-formed calls pass through untouched.
+      let repairedArgs: Record<string, unknown> | undefined;
+      let repairEvents: ToolCallRepairEvent[] | undefined;
+      let effectiveArgs = args;
+      if (config.toolCallRepair?.enabled) {
+        const repair = repairToolCallArgs(args, tool.function.parameters);
+        if (repair.events.length > 0) {
+          repairEvents = repair.events;
+          // Keys and decisions only — never argument values.
+          console.debug(
+            `[tool-call-repair] ${toolName}: ` +
+              repair.events
+                .map((e) =>
+                  e.kind === "rename"
+                    ? `rename ${e.key}→${e.repairedTo}`
+                    : `${e.kind} ${e.key}${e.reason ? ` (${e.reason})` : ""}`,
+                )
+                .join(", "),
+          );
+        }
+        if (repair.args !== args) {
+          repairedArgs = repair.args;
+          effectiveArgs = repair.args;
+        }
+      }
+
       try {
-        const preprocessedArgs = await tool.preprocessArgs?.(args, {
+        const preprocessedArgs = await tool.preprocessArgs?.(effectiveArgs, {
           ide: this.ide,
         });
         return {
           preprocessedArgs,
+          repairedArgs,
+          repairEvents,
         };
       } catch (e) {
         let errorReason =

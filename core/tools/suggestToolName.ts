@@ -2,7 +2,7 @@
 // (tool-name-did-you-mean.md).
 
 /** Levenshtein edit distance; classic two-row DP. */
-function levenshtein(a: string, b: string): number {
+export function levenshtein(a: string, b: string): number {
   if (a === b) {
     return 0;
   }

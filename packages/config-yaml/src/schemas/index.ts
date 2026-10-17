@@ -120,6 +120,12 @@ const transcriptDumpSchema = z.object({
   intervalSeconds: z.number().optional(),
 });
 
+// tool-call-repair.md: fork-local top-level block (deterministic tool-call
+// arg repair). Deliberately not part of blockSchema — top-level only.
+const toolCallRepairSchema = z.object({
+  enabled: z.boolean().optional(),
+});
+
 export const configYamlSchema = baseConfigYamlSchema.extend({
   models: z
     .array(
@@ -161,6 +167,7 @@ export const configYamlSchema = baseConfigYamlSchema.extend({
   prompts: z.array(blockOrSchema(promptSchema)).optional(),
   docs: z.array(blockOrSchema(docSchema)).optional(),
   transcriptDump: transcriptDumpSchema.optional(),
+  toolCallRepair: toolCallRepairSchema.optional(),
 });
 
 export type ConfigYaml = z.infer<typeof configYamlSchema>;
@@ -174,6 +181,7 @@ export const assistantUnrolledSchema = baseConfigYamlSchema.extend({
   prompts: z.array(promptSchema.nullable()).optional(),
   docs: z.array(docSchema.nullable()).optional(),
   transcriptDump: transcriptDumpSchema.optional(),
+  toolCallRepair: toolCallRepairSchema.optional(),
 });
 
 export type AssistantUnrolled = z.infer<typeof assistantUnrolledSchema>;
@@ -187,6 +195,7 @@ export const assistantUnrolledSchemaNonNullable = baseConfigYamlSchema.extend({
   prompts: z.array(promptSchema).optional(),
   docs: z.array(docSchema).optional(),
   transcriptDump: transcriptDumpSchema.optional(),
+  toolCallRepair: toolCallRepairSchema.optional(),
 });
 
 export type AssistantUnrolledNonNullable = z.infer<

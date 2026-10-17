@@ -44,6 +44,7 @@ import {
   SlashCommandDescWithSource,
   StreamDiffLinesPayload,
   ToolCall,
+  ToolCallRepairEvent,
 } from "../";
 import { AutocompleteCodeSnippet } from "../autocomplete/snippets/types";
 import { GetLspDefinitionsFunction } from "../autocomplete/types";
@@ -345,6 +346,8 @@ export type ToCoreFromIdeOrWebviewProtocol = {
     { toolName: string; args: Record<string, unknown> },
     {
       preprocessedArgs?: Record<string, unknown>;
+      repairedArgs?: Record<string, unknown>;
+      repairEvents?: ToolCallRepairEvent[];
       errorReason?: ContinueErrorReason;
       errorMessage?: string;
     },

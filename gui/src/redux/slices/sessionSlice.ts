@@ -18,6 +18,7 @@ import {
   ThinkingChatMessage,
   Tool,
   ToolCallDelta,
+  ToolCallRepairEvent,
   ToolCallState,
 } from "core";
 import { mergeReasoningDetails } from "core/llm/openaiTypeConverters";
@@ -1149,6 +1150,34 @@ export const sessionSlice = createSlice({
         toolCallState.processedArgs = action.payload.newArgs;
       }
     },
+    // tool-call-repair.md canonicalization: when — and only when — repair
+    // changed the args, replace BOTH parsedArgs and the raw arguments
+    // string, so every downstream consumer (policy evaluation, client
+    // impls, core re-parse, transcript dump, session-persist round-trip)
+    // sees the repaired form. Repair events record from→to keys only,
+    // never values.
+    applyToolCallRepair: (
+      state,
+      action: PayloadAction<{
+        toolCallId: string;
+        repairedArgs?: Record<string, any>;
+        repairEvents: ToolCallRepairEvent[];
+      }>,
+    ) => {
+      const toolCallState = findToolCallById(
+        state.history,
+        action.payload.toolCallId,
+      );
+      if (toolCallState) {
+        if (action.payload.repairedArgs) {
+          toolCallState.parsedArgs = action.payload.repairedArgs;
+          toolCallState.toolCall.function.arguments = JSON.stringify(
+            action.payload.repairedArgs,
+          );
+        }
+        toolCallState.repairEvents = action.payload.repairEvents;
+      }
+    },
     cancelToolCall: (
       state,
       action: PayloadAction<{
@@ -1371,6 +1400,7 @@ export const {
   setToolCallCalling,
   cancelToolCall,
   errorToolCall,
+  applyToolCallRepair,
   acceptToolCall,
   setToolGenerated,
   updateToolCallOutput,

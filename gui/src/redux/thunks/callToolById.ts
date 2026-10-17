@@ -155,11 +155,49 @@ export const callToolById = createAsyncThunk<
     }
   }
 
+  // tool-call-repair.md feedback: surface deterministic repairs to the
+  // model as part of the tool result — key names only, never values.
+  const repairNoteItems: ContextItem[] = [];
+  const repairEvents = toolCallState.repairEvents;
+  if (repairEvents?.length) {
+    const renamed = repairEvents.filter((e) => e.kind === "rename");
+    const reshaped = repairEvents.filter(
+      (e) => e.kind === "shape-wrap" || e.kind === "shape-unwrap",
+    );
+    const unknown = repairEvents.filter((e) => e.kind === "unknown-key");
+    const notes: string[] = [];
+    if (renamed.length > 0) {
+      notes.push(
+        `Note: argument keys were automatically repaired: ${renamed.map((e) => `${e.key} → ${e.repairedTo}`).join(", ")}. Use the exact schema names next time.`,
+      );
+    }
+    if (reshaped.length > 0) {
+      notes.push(
+        `Note: argument shape was automatically normalized for: ${reshaped.map((e) => `${e.key} (${e.kind === "shape-wrap" ? "wrapped into a single-element array" : "unwrapped to a scalar"})`).join(", ")}.`,
+      );
+    }
+    if (unknown.length > 0) {
+      notes.push(
+        `Warning: unknown argument(s) ${unknown.map((e) => e.key).join(", ")} — this tool does not declare them; they were ignored.`,
+      );
+    }
+    if (notes.length > 0) {
+      repairNoteItems.push({
+        icon: "info",
+        name: "Tool Call Repair",
+        description: "",
+        content: notes.join("\n"),
+        hidden: false,
+      });
+    }
+  }
+
   if (error) {
     dispatch(
       updateToolCallOutput({
         toolCallId,
         contextItems: [
+          ...repairNoteItems,
           {
             icon: "problems",
             name: "Tool Call Error",
@@ -170,11 +208,11 @@ export const callToolById = createAsyncThunk<
         ],
       }),
     );
-  } else if (output?.length) {
+  } else if (output?.length || repairNoteItems.length > 0) {
     dispatch(
       updateToolCallOutput({
         toolCallId,
-        contextItems: output,
+        contextItems: [...repairNoteItems, ...(output ?? [])],
         mcpUiState,
       }),
     );

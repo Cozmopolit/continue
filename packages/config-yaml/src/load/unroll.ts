@@ -380,6 +380,8 @@ export async function unrollBlocks(
     requestOptions: assistant.requestOptions,
     // continue-transcript-dump.md: not a block section — plain passthrough.
     transcriptDump: assistant.transcriptDump,
+    // tool-call-repair.md: not a block section — plain passthrough.
+    toolCallRepair: assistant.toolCallRepair,
   };
 
   if (injectRequestOptions) {
@@ -401,6 +403,7 @@ export async function unrollBlocks(
     | "env"
     | "requestOptions"
     | "transcriptDump" // continue-transcript-dump.md: not a block section
+    | "toolCallRepair" // tool-call-repair.md: not a block section
   >)[] = ["models", "context", "data", "mcpServers", "prompts", "docs"];
 
   // Process all sections in parallel
